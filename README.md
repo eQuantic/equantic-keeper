@@ -1,0 +1,175 @@
+# eQuantic Keeper
+
+Cofre de segredos para o dia a dia de desenvolvimento — tokens de API, client id/secret,
+usuário e senha de painéis, credenciais de container registry, chaves SSH, `.env`, certificados
+e o que mais você precisa consultar toda hora.
+
+É uma aplicação **100% estática**, hospedada no **GitHub Pages**, que autentica com a sua **conta
+Google** e guarda um único arquivo **cifrado** na pasta oculta do seu **Google Drive**. Não existe
+servidor, banco de dados nem backend: a criptografia acontece inteira no seu navegador.
+
+---
+
+## Como funciona
+
+```
+ você digita a senha mestra
+          │
+          ▼
+  PBKDF2-SHA256 (720k iterações)  ──► HKDF ──┬──► chave AES-GCM-256  ──► cifra o cofre
+                                              └──► verificador (público)
+          │
+          ▼
+   { header público + ciphertext }  ──►  Google Drive (appDataFolder)
+                                    ──►  localStorage (cache offline)
+```
+
+O Google recebe **apenas bytes cifrados**. A senha mestra nunca sai do navegador, não é
+transmitida, não é salva e não pode ser recuperada.
+
+### Modelo de segurança
+
+| Item | Decisão |
+| --- | --- |
+| Derivação de chave | PBKDF2-SHA256, 720.000 iterações (piso de 210.000), salt aleatório de 16 bytes |
+| Separação de chaves | HKDF-SHA256 divide o material em chave de cifragem e verificador |
+| Cifra | AES-GCM-256 com IV de 12 bytes novo a cada gravação e tag de 128 bits |
+| Integridade do cabeçalho | O header público entra como *additional authenticated data* — adulterá-lo invalida a tag |
+| Chave em memória | `CryptoKey` não-extraível; apagada ao bloquear, ao fechar a aba e por inatividade |
+| Escopo do Google | Somente `drive.appdata` (pasta oculta exclusiva do app) + e-mail/perfil |
+| Token OAuth | Access token de curta duração, mantido apenas em memória |
+| Área de transferência | Limpeza automática (padrão: 30s) após copiar um segredo |
+| CSP | `default-src 'none'` com allow-list mínima; sem scripts inline; bloqueio de iframe |
+| Busca | Nunca indexa valores secretos — só nome, descrição, tags e campos não sensíveis |
+
+**O que este modelo não protege:** um dispositivo comprometido (keylogger, malware, extensão
+maliciosa) enxerga o cofre aberto do mesmo jeito que você. E se você esquecer a senha mestra,
+os dados são irrecuperáveis — por construção.
+
+---
+
+## Recursos
+
+- **12 tipos de segredo** com campos próprios: API Token, API Client/Secret, Usuário e senha,
+  Container Registry, Cloud/Provider, Chave SSH, Banco de dados, Variáveis/`.env`, Certificado,
+  Webhook, Licença e Nota segura — além de campos personalizados em qualquer item.
+- **Códigos 2FA (TOTP)** gerados no próprio cofre, a partir de um segredo base32 ou de uma URI
+  `otpauth://` (RFC 6238, SHA-1/256/512).
+- **Gerador** de senhas e frases-senha com `crypto.getRandomValues` e amostragem sem viés.
+- **Sincronização multi-dispositivo** com mesclagem item a item (o mais recente vence) e
+  *tombstones*, para que exclusões se propaguem em vez de ressuscitar.
+- **Backups**: snapshots diários rotativos no próprio Drive, exportação cifrada `.keeper.json`,
+  importação com mesclagem e exportação em texto puro (sem lock-in).
+- **PWA offline**: instalável, com o cofre cifrado em cache — dá para consultar segredos sem rede.
+- Busca instantânea, pastas, tags, favoritos, lixeira, tema claro/escuro, `Ctrl+K` para buscar e
+  `Ctrl+L` para bloquear.
+
+---
+
+## Publicando a sua instância
+
+### 1. Crie a credencial OAuth no Google
+
+1. Abra o [Google Cloud Console](https://console.cloud.google.com/apis/credentials) e crie um projeto.
+2. Ative a **Google Drive API** (*APIs & Services → Library*).
+3. Configure a **tela de consentimento OAuth** (tipo *External*). Enquanto o app estiver em
+   *Testing*, adicione as contas que vão usá-lo em *Test users*.
+4. Em *Credentials*, crie um **OAuth client ID** do tipo **Web application**.
+5. Em **Authorized JavaScript origins**, adicione a origem do seu Pages — por exemplo
+   `https://equantic.github.io` (ou o seu domínio próprio). Não é preciso informar redirect URI:
+   o fluxo usa o Google Identity Services em popup.
+6. Copie o **Client ID** (algo como `1234567890-abc.apps.googleusercontent.com`). Ele é um
+   identificador **público**, não um segredo.
+
+> O escopo pedido é apenas `drive.appdata`. O Google mostra isso como "Ver e gerenciar seus
+> próprios dados de configuração no Google Drive" — o app não enxerga nenhum outro arquivo seu.
+
+### 2. Configure o repositório
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
+   - Nome: `GOOGLE_OAUTH_CLIENT_ID`
+   - Valor: o client id do passo anterior.
+
+Se você preferir não fixar o client id no build, deixe a variável vazia: o app pede o client id
+na primeira execução e o guarda no `localStorage` daquele navegador.
+
+### 3. Faça o deploy
+
+Um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes, constrói e
+publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em página de
+projeto, `/` em domínio próprio).
+
+---
+
+## Desenvolvimento
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm test           # testes unitários (cripto, cofre, TOTP, gerador, busca)
+npm run typecheck
+npm run build      # typecheck + build de produção em dist/
+npm run icons      # regenera os ícones do PWA
+npm run smoke      # teste de integração no navegador (após npm run build)
+```
+
+O `npm run smoke` sobe o `vite preview`, semeia um cofre cifrado por uma implementação
+independente do formato e percorre o app com o Playwright: configuração inicial, senha errada,
+desbloqueio, busca, revelar segredo, TOTP, criação de item, tema e bloqueio. Ele precisa do
+navegador instalado uma vez: `npx playwright install chromium`.
+
+Para testar o login do Google localmente, adicione `http://localhost:5173` às *Authorized
+JavaScript origins* da credencial. Sem isso, o app ainda funciona: crie o cofre, use offline e
+conecte o Drive depois.
+
+### Estrutura
+
+```
+src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
+src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
+src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
+src/components/ ItemDetail · ItemEditor · SecretValue/TOTP · Generator · SettingsDialog · ui · icons
+```
+
+---
+
+## Formato do cofre
+
+O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mesmo envelope:
+
+```jsonc
+{
+  "format": "equantic-keeper.vault",
+  "version": 1,
+  "cipher": "AES-GCM-256",
+  "kdf": { "algo": "PBKDF2-SHA256", "iterations": 720000, "salt": "<base64>" },
+  "verifier": "<base64, 16 bytes>",   // HKDF info "equantic-keeper:verify:v1"
+  "iv": "<base64, 12 bytes>",
+  "data": "<base64: AES-GCM(payload)>",
+  "updatedAt": "2026-08-27T23:59:00.000Z"
+}
+```
+
+- **AAD** = `format|version|cipher|kdf.algo|kdf.iterations|kdf.salt`
+- **Chave** = `HKDF-SHA256(PBKDF2(senha, salt, iterations), salt, "equantic-keeper:enc:v1")`
+- **Payload** (cifrado) = `{ "items": [...], "preferences": {...} }`
+
+O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
+cofre sem este app. O teste de integração do repositório faz exatamente isso.
+
+---
+
+## Limitações conhecidas
+
+- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar.
+- O `appDataFolder` é invisível no Drive: para levar os dados embora, use *Exportar cofre cifrado*.
+- A gravação no Drive não é atômica. O app mescla antes de escrever e detecta divergência de
+  revisão, mas duas edições no mesmo segundo em dispositivos diferentes podem exigir uma
+  sincronização extra.
+- Enquanto a tela de consentimento estiver em *Testing*, o Google limita o app a 100 usuários de
+  teste e o consentimento expira a cada 7 dias.
+
+## Licença
+
+MIT — veja [LICENSE](LICENSE).
