@@ -45,6 +45,7 @@ export function ItemDetail({
   const { actions, payload } = useKeeper();
   const type = getType(item.type);
   const conceal = payload?.preferences.concealSecrets ?? true;
+  const holder = payload?.people.find((person) => person.id === item.holderId && !person.deletedAt);
   const filled = type.fields.filter((field) => (item.fields[field.id] ?? '').trim().length > 0);
   const extras = Object.entries(item.fields).filter(
     ([key, value]) => value?.trim() && !type.fields.some((field) => field.id === key),
@@ -63,6 +64,11 @@ export function ItemDetail({
           <h2 className="truncate text-base font-semibold text-ink">{item.name || 'Sem título'}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Badge color={type.accent}>{type.label}</Badge>
+            {holder ? (
+              <Badge className="bg-raised text-muted">
+                <Icon name="users" size={11} /> {holder.name}
+              </Badge>
+            ) : null}
             {item.folder ? (
               <Badge className="bg-raised text-muted">
                 <Icon name="folder" size={11} /> {item.folder}

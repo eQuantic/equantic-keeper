@@ -95,6 +95,7 @@ function item(id: string, name: string, minutesAgo: number): VaultItem {
     name,
     description: '',
     folder: '',
+    holderId: '',
     tags: [],
     fields: { token: `token-${id}` },
     customFields: [],

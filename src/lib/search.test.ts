@@ -24,7 +24,27 @@ const items: VaultItem[] = [
     fields: { registry: 'equantic.azurecr.io', password: 'acr-token-value' },
   }),
   make({ id: '3', name: 'Nota antiga', type: 'note', deletedAt: '2026-01-01T00:00:00.000Z' }),
+  make({
+    id: '4',
+    type: 'pt-residencia',
+    name: 'Título de residência 2024',
+    folder: 'Portugal',
+    holderId: 'p-maria',
+    fields: { documentNumber: 'RP-99887', entidade: 'AIMA', expiresAt: '2027-03-10' },
+  }),
+  make({
+    id: '5',
+    type: 'br-cpf',
+    name: 'CPF do João',
+    holderId: 'p-joao',
+    fields: { cpf: '123.456.789-00' },
+  }),
 ];
+
+const holderNames = new Map([
+  ['p-maria', 'Maria Silva'],
+  ['p-joao', 'João Silva'],
+]);
 
 describe('matches', () => {
   it('finds items by name regardless of accents and case', () => {
@@ -50,7 +70,7 @@ describe('matches', () => {
 
 describe('applyFilters', () => {
   it('hides trashed items from the active view and vice versa', () => {
-    expect(applyFilters(items, EMPTY_FILTERS, 'name').map((item) => item.id)).toEqual(['2', '1']);
+    expect(applyFilters(items, EMPTY_FILTERS, 'name').map((item) => item.id)).toEqual(['2', '5', '1', '4']);
     expect(applyFilters(items, { ...EMPTY_FILTERS, view: 'trash' }, 'name').map((item) => item.id)).toEqual(['3']);
   });
 
@@ -71,6 +91,48 @@ describe('applyFilters', () => {
 describe('collectTags / collectFolders', () => {
   it('counts only active items', () => {
     expect(collectTags(items).map((entry) => entry.tag).sort()).toEqual(['azure', 'ci', 'github']);
-    expect(collectFolders(items)).toEqual([{ folder: 'Infra', count: 2 }]);
+    expect(collectFolders(items)).toEqual([
+      { folder: 'Infra', count: 2 },
+      { folder: 'Portugal', count: 1 },
+    ]);
+  });
+});
+
+describe('documentos e titulares', () => {
+  it('encontra um documento pelo nome do titular, que não fica no item', () => {
+    // O item guarda só o `holderId`; quem procura digita "Maria".
+    expect(matches(items[3]!, 'maria')).toBe(false);
+    expect(matches(items[3]!, 'maria', 'Maria Silva')).toBe(true);
+  });
+
+  it('busca pelos dados do documento, que não são segredo', () => {
+    expect(matches(items[3]!, 'RP-99887')).toBe(true);
+    expect(matches(items[4]!, '123.456.789-00')).toBe(true);
+  });
+
+  it('separa o cofre de desenvolvimento do de documentos', () => {
+    const docs = applyFilters(items, { ...EMPTY_FILTERS, category: 'doc' }, 'name');
+    expect(docs.map((item) => item.id)).toEqual(['5', '4']);
+    const dev = applyFilters(items, { ...EMPTY_FILTERS, category: 'dev' }, 'name');
+    expect(dev.map((item) => item.id)).toEqual(['2', '1']);
+  });
+
+  it('filtra por titular', () => {
+    const maria = applyFilters(items, { ...EMPTY_FILTERS, holderId: 'p-maria' }, 'name');
+    expect(maria.map((item) => item.id)).toEqual(['4']);
+  });
+
+  it('combina titular e busca textual', () => {
+    const found = applyFilters(
+      items,
+      { ...EMPTY_FILTERS, holderId: 'p-joao', query: 'silva' },
+      'name',
+      holderNames,
+    );
+    expect(found.map((item) => item.id)).toEqual(['5']);
+  });
+
+  it('não devolve nada para um titular sem itens', () => {
+    expect(applyFilters(items, { ...EMPTY_FILTERS, holderId: 'p-ninguem' }, 'name')).toEqual([]);
   });
 });

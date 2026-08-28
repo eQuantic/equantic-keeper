@@ -3,13 +3,17 @@ import { useMemo, useState, type FormEvent } from 'react';
 import {
   SECRET_TYPES,
   createItem,
+  createPerson,
   getType,
   isMultilineKind,
   isSecretKind,
   type CustomField,
   type FieldDef,
+  type SecretTypeDef,
   type VaultItem,
 } from '../lib/model';
+import { activePeople } from '../lib/vault';
+import { useKeeper } from '../state/keeper';
 import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
 import { GeneratorDialog } from './Generator';
@@ -136,11 +140,32 @@ export function ItemEditor({
 }) {
   const [draft, setDraft] = useState<VaultItem>(() => item ?? createItem('api-token'));
   const [typePickerOpen, setTypePickerOpen] = useState(!item);
+  const [typeQuery, setTypeQuery] = useState('');
+  const [addingPerson, setAddingPerson] = useState(false);
+  const [newPerson, setNewPerson] = useState('');
+  const { payload, actions } = useKeeper();
+  const people = activePeople(payload?.people ?? []);
   const isNew = !item;
   const type = getType(draft.type);
 
   const canSave = draft.name.trim().length > 0;
+  /**
+   * A holder only makes sense once there is a family to point at. Someone who
+   * uses Keeper purely for API tokens never sees the field.
+   */
+  const showHolder = type.category === 'doc' || people.length > 0 || !!draft.holderId;
   const patch = (changes: Partial<VaultItem>) => setDraft((current) => ({ ...current, ...changes }));
+
+  /** Adds a holder without leaving the form, and selects them right away. */
+  const commitNewPerson = () => {
+    const name = newPerson.trim();
+    if (!name) return;
+    const person = createPerson(name);
+    void actions.savePerson(person);
+    patch({ holderId: person.id });
+    setNewPerson('');
+    setAddingPerson(false);
+  };
   const setField = (id: string, value: string) =>
     setDraft((current) => ({ ...current, fields: { ...current.fields, [id]: value } }));
 
@@ -161,44 +186,72 @@ export function ItemEditor({
     });
   };
 
-  const grouped = useMemo(() => SECRET_TYPES, []);
+  // With 30+ types a flat grid stops being browsable, so the picker groups by
+  // origin and offers a filter.
+  const groups = useMemo(() => {
+    const order = ['Portugal', 'Brasil', 'Geral', 'Desenvolvimento'];
+    const needle = typeQuery.trim().toLocaleLowerCase('pt-BR');
+    const buckets = new Map<string, SecretTypeDef[]>();
+    for (const candidate of SECRET_TYPES) {
+      const heading = candidate.category === 'dev' ? 'Desenvolvimento' : candidate.group;
+      const haystack = `${candidate.label} ${candidate.description} ${candidate.group}`.toLocaleLowerCase('pt-BR');
+      if (needle && !haystack.includes(needle)) continue;
+      buckets.set(heading, [...(buckets.get(heading) ?? []), candidate]);
+    }
+    return [...buckets.entries()].sort(([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  }, [typeQuery]);
 
   if (typePickerOpen) {
     return (
       <Modal
         open
         onClose={onClose}
-        title="Novo segredo"
+        title="Novo item"
         subtitle="Escolha o tipo — os campos se ajustam automaticamente."
         wide
       >
-        <div className="grid gap-2 sm:grid-cols-2">
-          {grouped.map((candidate) => (
-            <button
-              key={candidate.id}
-              type="button"
-              onClick={() => {
-                setDraft(createItem(candidate.id));
-                setTypePickerOpen(false);
-              }}
-              className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3 text-left transition hover:border-accent/50 hover:bg-raised"
-            >
-              <span
-                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                style={{
-                  color: candidate.accent,
-                  backgroundColor: `color-mix(in srgb, ${candidate.accent} 14%, transparent)`,
-                }}
-              >
-                <Icon name={candidate.icon} size={16} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink">{candidate.label}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted">{candidate.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <TextInput
+          value={typeQuery}
+          onChange={(event) => setTypeQuery(event.target.value)}
+          placeholder="Filtrar tipos: residência, CPF, passaporte, token…"
+          autoFocus
+          className="mb-4"
+        />
+        {groups.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{typeQuery}”.</p>
+        ) : null}
+        {groups.map(([heading, types]) => (
+          <section key={heading} className="mb-5 last:mb-0">
+            <p className="mb-2 text-[11px] font-medium tracking-wider text-faint uppercase">{heading}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {types.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    setDraft(createItem(candidate.id));
+                    setTypePickerOpen(false);
+                  }}
+                  className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3 text-left transition hover:border-accent/50 hover:bg-raised"
+                >
+                  <span
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      color: candidate.accent,
+                      backgroundColor: `color-mix(in srgb, ${candidate.accent} 14%, transparent)`,
+                    }}
+                  >
+                    <Icon name={candidate.icon} size={16} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-ink">{candidate.label}</span>
+                    <span className="mt-0.5 block text-xs leading-snug text-muted">{candidate.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
       </Modal>
     );
   }
@@ -238,6 +291,62 @@ export function ItemEditor({
             />
           </Field>
         </div>
+
+        {showHolder ? (
+          <Field
+            label="Titular"
+            wrapper="div"
+            hint="De quem é este documento. Deixe vazio para itens sem titular."
+            actions={
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingPerson((open) => !open);
+                  setNewPerson('');
+                }}
+                className="flex items-center gap-1 text-[11px] text-accent hover:underline"
+              >
+                <Icon name={addingPerson ? 'x' : 'plus'} size={11} />
+                {addingPerson ? 'cancelar' : 'nova pessoa'}
+              </button>
+            }
+          >
+            {addingPerson ? (
+              <div className="flex gap-2">
+                <TextInput
+                  value={newPerson}
+                  onChange={(event) => setNewPerson(event.target.value)}
+                  placeholder="Nome da pessoa"
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      // The form's submit would otherwise save a half-filled item.
+                      event.preventDefault();
+                      commitNewPerson();
+                    }
+                  }}
+                />
+                <Button size="sm" icon="check" disabled={!newPerson.trim()} onClick={commitNewPerson}>
+                  Adicionar
+                </Button>
+              </div>
+            ) : (
+              <select
+                value={draft.holderId}
+                onChange={(event) => patch({ holderId: event.target.value })}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              >
+                <option value="">— sem titular —</option>
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                    {person.relation ? ` · ${person.relation}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        ) : null}
 
         <Field label="Descrição">
           <TextInput

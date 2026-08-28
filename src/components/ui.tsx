@@ -85,21 +85,33 @@ export function Spinner({ size = 14 }: { size?: number }) {
   );
 }
 
+/**
+ * Label + control + hint/error.
+ *
+ * `wrapper` exists because a `<label>` is the wrong element for a composite
+ * field: when a control inside it is removed by its own click handler, the
+ * browser falls back to the label's activation behaviour and fires a second
+ * click on whatever labelable element comes first — usually the button in
+ * `actions`. Pass `wrapper="div"` whenever the field holds more than one
+ * control.
+ */
 export function Field({
   label,
   hint,
   error,
   children,
   actions,
+  wrapper: Wrapper = 'label',
 }: {
   label: string;
   hint?: string;
   error?: string;
   children: ReactNode;
   actions?: ReactNode;
+  wrapper?: 'label' | 'div';
 }) {
   return (
-    <label className="block">
+    <Wrapper className="block">
       <span className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-xs font-medium tracking-wide text-muted uppercase">{label}</span>
         {actions}
@@ -107,7 +119,7 @@ export function Field({
       {children}
       {hint && !error ? <span className="mt-1 block text-xs text-faint">{hint}</span> : null}
       {error ? <span className="mt-1 block text-xs text-danger">{error}</span> : null}
-    </label>
+    </Wrapper>
   );
 }
 

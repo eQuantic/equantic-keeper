@@ -1,12 +1,13 @@
-/** Account, security, appearance, backup and danger-zone settings. */
+/** Account, people, security, appearance, backup and danger-zone settings. */
 import { useRef, useState } from 'react';
-import { Button, Field, Modal, PasswordInput, Switch } from './ui';
+import { Button, Field, IconButton, Modal, PasswordInput, Switch, TextInput } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
 import { exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
+import { createPerson, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
-import { TOMBSTONE_TTL_DAYS } from '../lib/vault';
+import { TOMBSTONE_TTL_DAYS, activePeople } from '../lib/vault';
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -15,6 +16,131 @@ function Section({ title, description, children }: { title: string; description?
       {description ? <p className="mt-0.5 mb-3 text-xs leading-relaxed text-muted">{description}</p> : <div className="mb-3" />}
       {children}
     </section>
+  );
+}
+
+/**
+ * One holder. Edits are kept locally while typing and committed on blur, so a
+ * name never reaches the vault (and the Drive sync) half-typed.
+ */
+function PersonRow({
+  person,
+  count,
+  onSave,
+  onRemove,
+}: {
+  person: Person;
+  count: number;
+  onSave: (person: Person) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState(person);
+
+  const commit = (next: Person) => {
+    if (next.name.trim() === person.name && next.relation === person.relation && next.birthDate === person.birthDate) {
+      return;
+    }
+    if (!next.name.trim()) {
+      setDraft(person);
+      return;
+    }
+    onSave(next);
+  };
+
+  return (
+    // Grid, not flex: `TextInput` is `w-full`, so per-input widths would fight it.
+    <div className="grid items-center gap-2 rounded-lg border border-line bg-canvas p-2 sm:grid-cols-[minmax(0,1fr)_8rem_9.5rem_auto_auto]">
+      <TextInput
+        aria-label="Nome do titular"
+        value={draft.name}
+        onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+        onBlur={() => commit(draft)}
+      />
+      <TextInput
+        aria-label="Parentesco"
+        placeholder="parentesco"
+        value={draft.relation}
+        onChange={(event) => setDraft({ ...draft, relation: event.target.value })}
+        onBlur={() => commit(draft)}
+      />
+      <TextInput
+        type="date"
+        aria-label="Data de nascimento"
+        value={draft.birthDate}
+        onChange={(event) => {
+          const next = { ...draft, birthDate: event.target.value };
+          setDraft(next);
+          commit(next);
+        }}
+      />
+      <span className="px-1 text-right text-xs whitespace-nowrap text-faint">
+        {count === 1 ? '1 item' : `${count} itens`}
+      </span>
+      <IconButton
+        icon="trash"
+        label={`Remover ${person.name || 'titular'}`}
+        onClick={() => {
+          const warning = count
+            ? `Remover ${person.name}? Os ${count} item(ns) desta pessoa continuam no cofre, apenas sem titular.`
+            : `Remover ${person.name}?`;
+          if (confirm(warning)) onRemove();
+        }}
+      />
+    </div>
+  );
+}
+
+function PeopleSection() {
+  const { actions, payload } = useKeeper();
+  const [newName, setNewName] = useState('');
+  const people = activePeople(payload?.people ?? []);
+  const items = payload?.items ?? [];
+
+  const add = () => {
+    const name = newName.trim();
+    if (!name) return;
+    void actions.savePerson(createPerson(name));
+    setNewName('');
+  };
+
+  return (
+    <Section
+      title="Pessoas"
+      description="Titulares dos documentos: você, cônjuge, filhos. Cada item pode apontar para uma pessoa."
+    >
+      <div className="space-y-2">
+        {people.map((person) => (
+          <PersonRow
+            key={person.id}
+            person={person}
+            count={items.filter((item) => item.holderId === person.id && !item.deletedAt).length}
+            onSave={(next) => void actions.savePerson(next)}
+            onRemove={() => void actions.removePerson(person.id)}
+          />
+        ))}
+        {people.length === 0 ? (
+          <p className="text-xs text-muted">Nenhuma pessoa cadastrada ainda.</p>
+        ) : null}
+        <div className="flex gap-2">
+          <TextInput
+            className="flex-1"
+            aria-label="Nome da nova pessoa"
+            placeholder="Nome da pessoa"
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                add();
+              }
+            }}
+          />
+          <Button size="sm" icon="plus" onClick={add} disabled={!newName.trim()}>
+            Adicionar
+          </Button>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -128,6 +254,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </div>
         ) : null}
       </Section>
+
+      <PeopleSection />
 
       <Section title="Segurança">
         <div className="space-y-1">
