@@ -37,7 +37,22 @@ export class DriveError extends Error {
   }
 }
 
-export class DriveClient {
+/**
+ * The slice of Drive the sync engine depends on. Depending on the interface
+ * rather than the concrete client keeps `sync.ts` testable against an in-memory
+ * double, with no network and no casts.
+ */
+export interface DriveApi {
+  findVault(): Promise<DriveFileMeta | null>;
+  getMeta(fileId: string): Promise<DriveFileMeta>;
+  download(fileId: string): Promise<VaultFile>;
+  fetchVault(): Promise<RemoteVault | null>;
+  create(name: string, file: VaultFile): Promise<DriveFileMeta>;
+  update(fileId: string, file: VaultFile): Promise<DriveFileMeta>;
+  rotateBackups(file: VaultFile): Promise<void>;
+}
+
+export class DriveClient implements DriveApi {
   constructor(private readonly auth: GoogleAuth) {}
 
   /** Adds auth, retries once with a fresh token when the current one is stale. */
