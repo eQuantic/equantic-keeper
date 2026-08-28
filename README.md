@@ -134,9 +134,20 @@ na primeira execução e o guarda no `localStorage` daquele navegador.
 
 ### 3. Faça o deploy
 
-Um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes, constrói e
-publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em página de
-projeto, `/` em domínio próprio).
+Em *Settings → Pages → Build and deployment*, escolha **Source: GitHub Actions**. Isto não é
+detalhe: com a opção *Deploy from a branch*, o GitHub roda o próprio build Jekyll da raiz do
+repositório **em paralelo** com o workflow deste projeto, e os dois publicam no mesmo site. Quem
+terminar por último vence — e quando é o Jekyll, o que vai ao ar é o código-fonte, com um
+`index.html` que aponta para `/src/main.tsx` e não executa no navegador.
+
+> Sintoma de que a origem está errada: `curl https://SEU-DOMINIO/README.md` responde 200, e
+> `/manifest.webmanifest` responde 404. Num deploy correto é o contrário. Um *service worker* já
+> instalado continua servindo a versão anterior do app, então o problema costuma aparecer primeiro
+> para quem abre o site pela primeira vez.
+
+Feito isso, um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes,
+constrói e publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em
+página de projeto, `/` em domínio próprio).
 
 **Domínio próprio:** configure em *Settings → Pages → Custom domain*. O GitHub grava o valor num
 arquivo `CNAME` na raiz do repositório, e o build copia esse arquivo para dentro de `dist/` — assim
