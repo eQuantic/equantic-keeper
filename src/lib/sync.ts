@@ -7,13 +7,13 @@
  * data. Merging requires decrypting the remote copy, which only works when both
  * sides share the same master password.
  */
-import type { DriveClient } from './drive';
+import type { DriveApi } from './drive';
 import { VAULT_FILE_NAME } from './drive';
 import type { DerivedKey } from './crypto';
 import { matchesKey, mergePayloads, openVault, sealVault, type VaultFile, type VaultPayload } from './vault';
 
 export interface SyncContext {
-  drive: DriveClient;
+  drive: DriveApi;
   derived: DerivedKey;
   /** Drive file id, when this device already knows it. */
   driveFileId?: string | undefined;
