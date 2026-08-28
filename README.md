@@ -75,20 +75,41 @@ os dados são irrecuperáveis — por construção.
 1. Abra o [Google Cloud Console](https://console.cloud.google.com/apis/credentials) e crie um projeto.
 2. Ative a **Google Drive API** (*APIs & Services → Library*).
 3. Configure a **tela de consentimento OAuth** (tipo *External*). Enquanto o app estiver em
-   *Testing*, adicione as contas que vão usá-lo em *Test users*.
-4. Em *Credentials*, crie um **OAuth client ID** do tipo **Web application**.
-5. Em **Authorized JavaScript origins**, adicione a origem exata onde o app roda — sem barra no
+   *Testing*, adicione as contas que vão usá-lo em *Test users* — quem não estiver na lista recebe
+   `Erro 403: access_denied`.
+4. Em **Data access**, adicione o escopo `https://www.googleapis.com/auth/drive.appdata`. Se ele
+   não estiver declarado ali, o Google concede apenas e-mail/perfil e o app recusa o login.
+5. Em *Credentials*, crie um **OAuth client ID** do tipo **Web application**.
+6. Em **Authorized JavaScript origins**, adicione a origem exata onde o app roda — sem barra no
    final e sem caminho. Para a instância oficial: `https://keeper.equantic.tech`; num fork sem
    domínio próprio, `https://<usuário>.github.io`. Não é preciso informar redirect URI: o fluxo
    usa o Google Identity Services em popup.
 
    > Se a origem não bater exatamente com a barra de endereços, o popup do Google recusa com
    > `origin_mismatch` — é o erro mais comum nesta configuração.
-6. Copie o **Client ID** (algo como `1234567890-abc.apps.googleusercontent.com`). Ele é um
+7. Copie o **Client ID** (algo como `1234567890-abc.apps.googleusercontent.com`). Ele é um
    identificador **público**, não um segredo.
 
 > O escopo pedido é apenas `drive.appdata`. O Google mostra isso como "Ver e gerenciar seus
 > próprios dados de configuração no Google Drive" — o app não enxerga nenhum outro arquivo seu.
+
+#### Problemas comuns no login
+
+| Sintoma | Causa | Correção |
+| --- | --- | --- |
+| `Erro 403: access_denied`, "não concluiu o processo de verificação" | A tela está em *Testing* e a conta não é testadora | Adicione a conta em *Audience → Test users*, ou publique o app |
+| "O acesso à pasta do app no Drive não foi concedido" | O escopo não está em *Data access*, ou a caixa da permissão não foi marcada na tela do Google | Declare o escopo e, ao entrar de novo, marque a permissão do Drive |
+| `origin_mismatch` no popup | A origem não bate exatamente com a barra de endereços | Registre a origem sem barra final e sem caminho |
+
+> As permissões aparecem como **caixas que começam desmarcadas**. Clicar em "Continuar" sem marcar
+> a do Drive concede só a identidade, e o app recusa o login em vez de criar um cofre que não
+> conseguiria sincronizar depois.
+
+**Vale publicar?** Todos os escopos usados aqui — `drive.appdata`, `userinfo.email` e
+`userinfo.profile` — são classificados pelo Google como *non-sensitive*, que exigem apenas a
+verificação básica. Publicar (*Audience → Publish app*) evita o teto de 100 testadores e a
+autorização de teste expirando, que força um consentimento interativo novo quando a renovação
+silenciosa falha.
 
 ### 2. Configure o repositório
 
