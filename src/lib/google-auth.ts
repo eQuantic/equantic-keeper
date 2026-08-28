@@ -155,7 +155,8 @@ export class GoogleAuth {
           settle(() =>
             reject(
               new GoogleAuthError(
-                'A permissão de acesso ao Drive (pasta do app) não foi concedida.',
+                'O acesso à pasta do app no Drive não foi concedido. Tente entrar de novo e marque a ' +
+                  'caixa dessa permissão na tela do Google — o cofre não sincroniza sem ela.',
                 'missing_scope',
               ),
             ),
