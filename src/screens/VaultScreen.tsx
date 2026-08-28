@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SECRET_TYPES, getType, isSecretKind, type VaultItem } from '../lib/model';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
-import { activeItems, trashedItems } from '../lib/vault';
+import { activeItems, activePeople, trashedItems } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
 import { Badge, Button, EmptyState, IconButton } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
@@ -74,7 +74,15 @@ export function VaultScreen() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const items = payload?.items ?? [];
-  const visible = useMemo(() => applyFilters(items, filters, sort), [items, filters, sort]);
+  const people = useMemo(() => activePeople(payload?.people ?? []), [payload]);
+  const holderNames = useMemo(
+    () => new Map(people.map((person) => [person.id, person.name])),
+    [people],
+  );
+  const visible = useMemo(
+    () => applyFilters(items, filters, sort, holderNames),
+    [items, filters, sort, holderNames],
+  );
   const tags = useMemo(() => collectTags(items), [items]);
   const folders = useMemo(() => collectFolders(items), [items]);
   const active = useMemo(() => activeItems(items), [items]);
@@ -86,6 +94,39 @@ export function VaultScreen() {
     for (const item of active) counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
     return counts;
   }, [active]);
+
+  /** Only worth splitting the sidebar in two when the vault actually holds both. */
+  const categoryCounts = useMemo(() => {
+    let dev = 0;
+    let doc = 0;
+    for (const item of active) {
+      if (getType(item.type).category === 'doc') doc += 1;
+      else dev += 1;
+    }
+    return { dev, doc };
+  }, [active]);
+
+  const holderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of active) {
+      if (item.holderId) counts.set(item.holderId, (counts.get(item.holderId) ?? 0) + 1);
+    }
+    return counts;
+  }, [active]);
+
+  /** Only types actually in use, bucketed by origin so the sidebar stays short. */
+  const typeGroups = useMemo(() => {
+    const order = ['Portugal', 'Brasil', 'Geral', 'Desenvolvimento'];
+    const buckets = new Map<string, typeof SECRET_TYPES>();
+    for (const type of SECRET_TYPES) {
+      if (!typeCounts.get(type.id)) continue;
+      const heading = type.category === 'dev' ? 'Desenvolvimento' : type.group;
+      buckets.set(heading, [...(buckets.get(heading) ?? []), type]);
+    }
+    return [...buckets.entries()].sort(
+      ([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
+    );
+  }, [typeCounts]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -142,11 +183,37 @@ export function VaultScreen() {
       <div className="space-y-0.5">
         <NavItem
           icon="layers"
-          label="Todos os segredos"
+          label="Tudo"
           count={active.length}
-          activeState={filters.view === 'active' && !filters.type && !filters.tag && !filters.folder && !filters.favoritesOnly}
+          activeState={
+            filters.view === 'active' &&
+            !filters.type &&
+            !filters.tag &&
+            !filters.folder &&
+            !filters.holderId &&
+            !filters.category &&
+            !filters.favoritesOnly
+          }
           onClick={() => setFilter({ ...EMPTY_FILTERS, query: filters.query })}
         />
+        {categoryCounts.dev > 0 && categoryCounts.doc > 0 ? (
+          <>
+            <NavItem
+              icon="terminal"
+              label="Desenvolvimento"
+              count={categoryCounts.dev}
+              activeState={filters.category === 'dev'}
+              onClick={() => setFilter({ ...EMPTY_FILTERS, category: 'dev', query: filters.query })}
+            />
+            <NavItem
+              icon="idCard"
+              label="Documentos"
+              count={categoryCounts.doc}
+              activeState={filters.category === 'doc'}
+              onClick={() => setFilter({ ...EMPTY_FILTERS, category: 'doc', query: filters.query })}
+            />
+          </>
+        ) : null}
         <NavItem
           icon="star"
           label="Favoritos"
@@ -163,23 +230,47 @@ export function VaultScreen() {
         />
       </div>
 
-      <div>
-        <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Tipos</p>
-        <div className="space-y-0.5">
-          {SECRET_TYPES.filter((type) => typeCounts.get(type.id)).map((type) => (
-            <NavItem
-              key={type.id}
-              icon={type.icon}
-              accent={type.accent}
-              label={type.label}
-              count={typeCounts.get(type.id)}
-              activeState={filters.type === type.id}
-              onClick={() => setFilter({ ...EMPTY_FILTERS, type: type.id, query: filters.query })}
-            />
-          ))}
-          {typeCounts.size === 0 ? <p className="px-2.5 text-xs text-faint">Nenhum segredo ainda.</p> : null}
+      {people.length > 0 ? (
+        <div>
+          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Pessoas</p>
+          <div className="space-y-0.5">
+            {people.map((person) => (
+              <NavItem
+                key={person.id}
+                icon="users"
+                label={person.name}
+                count={holderCounts.get(person.id) ?? 0}
+                activeState={filters.holderId === person.id}
+                onClick={() =>
+                  setFilter({ ...EMPTY_FILTERS, holderId: person.id, query: filters.query })
+                }
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
+
+      {typeGroups.map(([heading, types]) => (
+        <div key={heading}>
+          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">{heading}</p>
+          <div className="space-y-0.5">
+            {types.map((type) => (
+              <NavItem
+                key={type.id}
+                icon={type.icon}
+                accent={type.accent}
+                label={type.label}
+                count={typeCounts.get(type.id)}
+                activeState={filters.type === type.id}
+                onClick={() => setFilter({ ...EMPTY_FILTERS, type: type.id, query: filters.query })}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+      {typeCounts.size === 0 ? (
+        <p className="px-2.5 text-xs text-faint">Nenhum item ainda.</p>
+      ) : null}
 
       {folders.length > 0 ? (
         <div>

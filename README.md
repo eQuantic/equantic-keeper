@@ -1,8 +1,9 @@
 # eQuantic Keeper
 
-Cofre de segredos para o dia a dia de desenvolvimento — tokens de API, client id/secret,
-usuário e senha de painéis, credenciais de container registry, chaves SSH, `.env`, certificados
-e o que mais você precisa consultar toda hora.
+Cofre para o que você precisa consultar toda hora: segredos de desenvolvimento — tokens de API,
+client id/secret, usuário e senha de painéis, credenciais de container registry, chaves SSH,
+`.env`, certificados — e documentos pessoais de Portugal e do Brasil, seus e de quem mora com
+você: títulos de residência, cartão de cidadão, NIF, NISS, CPF, RG, certidões, passaportes.
 
 É uma aplicação **100% estática**, hospedada no **GitHub Pages**, que autentica com a sua **conta
 Google** e guarda um único arquivo **cifrado** na pasta oculta do seu **Google Drive**. Não existe
@@ -55,6 +56,16 @@ os dados são irrecuperáveis — por construção.
 - **12 tipos de segredo** com campos próprios: API Token, API Client/Secret, Usuário e senha,
   Container Registry, Cloud/Provider, Chave SSH, Banco de dados, Variáveis/`.env`, Certificado,
   Webhook, Licença e Nota segura — além de campos personalizados em qualquer item.
+- **21 tipos de documento pessoal**, cada um com os campos que aquele papel realmente tem:
+  - *Portugal*: título de residência (por emissão, com entidade, processo e validade), Cartão de
+    Cidadão, NIF, NISS, número de utente, registo criminal, comprovativo de morada e contrato de
+    arrendamento.
+  - *Brasil*: CPF, RG, CNH, título de eleitor, certidões (nascimento, casamento, óbito — com
+    matrícula, cartório, livro/folha/termo e apostila), antecedentes criminais e CTPS.
+  - *Geral*: passaporte, visto, diploma, cartão de vacinação, seguro de saúde e um tipo genérico.
+- **Titulares**: cada item pode pertencer a uma pessoa (você, cônjuge, filhos). A barra lateral
+  filtra por pessoa e a busca encontra o documento pelo nome dela, que não fica guardado no item.
+  Remover uma pessoa nunca apaga os documentos dela — eles apenas ficam sem titular.
 - **Códigos 2FA (TOTP)** gerados no próprio cofre, a partir de um segredo base32 ou de uma URI
   `otpauth://` (RFC 6238, SHA-1/256/512).
 - **Gerador** de senhas e frases-senha com `crypto.getRandomValues` e amostragem sem viés.
@@ -139,7 +150,7 @@ desatualizada se o domínio mudasse.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # testes unitários (cripto, cofre, TOTP, gerador, busca)
+npm test           # testes unitários (cripto, cofre, sync, TOTP, gerador, busca, documentos)
 npm run typecheck
 npm run build      # typecheck + build de produção em dist/
 npm run icons      # regenera os ícones do PWA
@@ -148,8 +159,10 @@ npm run smoke      # teste de integração no navegador (após npm run build)
 
 O `npm run smoke` sobe o `vite preview`, semeia um cofre cifrado por uma implementação
 independente do formato e percorre o app com o Playwright: configuração inicial, senha errada,
-desbloqueio, busca, revelar segredo, TOTP, criação de item, tema e bloqueio. Ele precisa do
-navegador instalado uma vez: `npx playwright install chromium`.
+desbloqueio, busca, revelar segredo, TOTP, criação de item, cadastro de um documento com titular,
+filtro por pessoa, tema e bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
+também é exercitada em navegador de verdade. Ele precisa do navegador instalado uma vez:
+`npx playwright install chromium`.
 
 Para testar o login do Google localmente, adicione `http://localhost:5173` às *Authorized
 JavaScript origins* da credencial. Sem isso, o app ainda funciona: crie o cofre, use offline e
@@ -159,6 +172,7 @@ conecte o Drive depois.
 
 ```
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
+               model (tipos de segredo) · documents (tipos de documento pessoal)
 src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
 src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
 src/components/ ItemDetail · ItemEditor · SecretValue/TOTP · Generator · SettingsDialog · ui · icons
@@ -173,7 +187,7 @@ O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mes
 ```jsonc
 {
   "format": "equantic-keeper.vault",
-  "version": 1,
+  "version": 2,
   "cipher": "AES-GCM-256",
   "kdf": { "algo": "PBKDF2-SHA256", "iterations": 720000, "salt": "<base64>" },
   "verifier": "<base64, 16 bytes>",   // HKDF info "equantic-keeper:verify:v1"
@@ -185,7 +199,9 @@ O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mes
 
 - **AAD** = `format|version|cipher|kdf.algo|kdf.iterations|kdf.salt`
 - **Chave** = `HKDF-SHA256(PBKDF2(senha, salt, iterations), salt, "equantic-keeper:enc:v1")`
-- **Payload** (cifrado) = `{ "items": [...], "preferences": {...} }`
+- **Payload** (cifrado) = `{ "items": [...], "people": [...], "preferences": {...} }`
+- **Versão 2** acrescentou `people` (titulares) e `item.holderId`. Cofres v1 abrem normalmente;
+  um cliente antigo se recusa a abrir um cofre mais novo em vez de descartar o que não entende.
 
 O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
 cofre sem este app. O teste de integração do repositório faz exatamente isso.

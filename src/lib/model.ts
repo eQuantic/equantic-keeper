@@ -1,4 +1,5 @@
 /** Domain model: what a "secret" is, and the field schema of each kind. */
+import { DOCUMENT_TYPES } from './documents';
 
 export type FieldKind =
   | 'text'
@@ -19,10 +20,16 @@ export interface FieldDef {
   hint?: string;
 }
 
+export type TypeCategory = 'dev' | 'doc';
+
 export interface SecretTypeDef {
   id: string;
   label: string;
   description: string;
+  /** Splits the sidebar between developer secrets and personal documents. */
+  category: TypeCategory;
+  /** Sub-heading inside the category, e.g. "Portugal" or "Brasil". */
+  group: string;
   /** Key into the icon set (see components/icons.tsx). */
   icon: string;
   /** CSS color token used for the type badge. */
@@ -44,6 +51,8 @@ export interface VaultItem {
   description: string;
   /** Free-form grouping, e.g. a client or project name. */
   folder: string;
+  /** `Person.id` this document belongs to. Empty for items with no holder. */
+  holderId: string;
   tags: string[];
   /** Values keyed by `FieldDef.id` of the item's type. */
   fields: Record<string, string>;
@@ -55,7 +64,9 @@ export interface VaultItem {
   deletedAt?: string;
 }
 
-export const SECRET_TYPES: SecretTypeDef[] = [
+type BaseTypeDef = Omit<SecretTypeDef, 'category' | 'group'>;
+
+const DEV_TYPE_LIST: BaseTypeDef[] = [
   {
     id: 'api-token',
     label: 'API Token',
@@ -226,11 +237,18 @@ export const SECRET_TYPES: SecretTypeDef[] = [
   },
 ];
 
+export const SECRET_TYPES: SecretTypeDef[] = [
+  ...DEV_TYPE_LIST.map((type) => ({ ...type, category: 'dev' as const, group: 'Desenvolvimento' })),
+  ...DOCUMENT_TYPES,
+];
+
 const TYPE_INDEX = new Map(SECRET_TYPES.map((t) => [t.id, t]));
 
 export const FALLBACK_TYPE: SecretTypeDef = {
   id: 'unknown',
   label: 'Outro',
+  category: 'dev',
+  group: 'Desenvolvimento',
   description: 'Tipo desconhecido (criado por uma versão mais nova do app).',
   icon: 'note',
   accent: '#94a3b8',
@@ -249,6 +267,34 @@ export function isMultilineKind(kind: FieldKind): boolean {
   return kind === 'multiline' || kind === 'multilineSecret';
 }
 
+/**
+ * Whose document this is. Modelled as its own entity rather than a folder name
+ * so "everything of Maria's" and "every residence permit" stay independent
+ * questions, and so renaming a person does not orphan their documents.
+ */
+export interface Person {
+  id: string;
+  name: string;
+  /** Free text: "esposa", "filho", "eu". */
+  relation: string;
+  birthDate: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Tombstone, so removing a person propagates instead of coming back. */
+  deletedAt?: string;
+}
+
+export function createPerson(name: string, relation = ''): Person {
+  return {
+    id: crypto.randomUUID(),
+    name: name.trim(),
+    relation,
+    birthDate: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function createItem(type: string): VaultItem {
   const now = new Date().toISOString();
   return {
@@ -257,6 +303,7 @@ export function createItem(type: string): VaultItem {
     name: '',
     description: '',
     folder: '',
+    holderId: '',
     tags: [],
     fields: {},
     customFields: [],

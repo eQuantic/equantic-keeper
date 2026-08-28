@@ -17,10 +17,15 @@ import {
   seal,
   timingSafeEqual,
 } from './crypto';
-import type { VaultItem } from './model';
+import type { Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
-export const VAULT_VERSION = 1;
+/**
+ * v2 adds `people` and `holderId`. The bump matters: a client that predates it
+ * would silently drop the family list on its next save, so refusing to open a
+ * newer vault (which `unlockVault` already does) is the safe failure.
+ */
+export const VAULT_VERSION = 2;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -39,6 +44,8 @@ export interface VaultFile {
 
 export interface VaultPayload {
   items: VaultItem[];
+  /** Document holders: you, spouse, children. */
+  people: Person[];
   /** Preferences that follow the vault across devices. */
   preferences: VaultPreferences;
 }
@@ -58,7 +65,7 @@ export const DEFAULT_PREFERENCES: VaultPreferences = {
 };
 
 export function emptyPayload(): VaultPayload {
-  return { items: [], preferences: { ...DEFAULT_PREFERENCES } };
+  return { items: [], people: [], preferences: { ...DEFAULT_PREFERENCES } };
 }
 
 /** Header bytes bound to the ciphertext through AES-GCM additional data. */
@@ -141,9 +148,28 @@ export function matchesKey(file: VaultFile, derived: DerivedKey): boolean {
 export function normalizePayload(raw: unknown): VaultPayload {
   const source = (raw ?? {}) as Partial<VaultPayload>;
   const items = Array.isArray(source.items) ? source.items.filter(isItemLike).map(normalizeItem) : [];
+  const people = Array.isArray(source.people) ? source.people.filter(isPersonLike).map(normalizePerson) : [];
   return {
     items,
+    people,
     preferences: { ...DEFAULT_PREFERENCES, ...(source.preferences ?? {}) },
+  };
+}
+
+function isPersonLike(value: unknown): value is Person {
+  return !!value && typeof value === 'object' && typeof (value as Person).id === 'string';
+}
+
+function normalizePerson(person: Person): Person {
+  const now = new Date().toISOString();
+  return {
+    id: person.id,
+    name: typeof person.name === 'string' ? person.name : '',
+    relation: typeof person.relation === 'string' ? person.relation : '',
+    birthDate: typeof person.birthDate === 'string' ? person.birthDate : '',
+    createdAt: person.createdAt ?? now,
+    updatedAt: person.updatedAt ?? person.createdAt ?? now,
+    ...(person.deletedAt ? { deletedAt: person.deletedAt } : {}),
   };
 }
 
@@ -159,6 +185,7 @@ function normalizeItem(item: VaultItem): VaultItem {
     name: typeof item.name === 'string' ? item.name : '',
     description: typeof item.description === 'string' ? item.description : '',
     folder: typeof item.folder === 'string' ? item.folder : '',
+    holderId: typeof item.holderId === 'string' ? item.holderId : '',
     tags: Array.isArray(item.tags) ? item.tags.filter((t) => typeof t === 'string') : [],
     fields: item.fields && typeof item.fields === 'object' ? item.fields : {},
     customFields: Array.isArray(item.customFields) ? item.customFields : [],
@@ -181,9 +208,19 @@ export function mergePayloads(local: VaultPayload, remote: VaultPayload): VaultP
     const other = byId.get(item.id);
     if (!other || Date.parse(item.updatedAt) >= Date.parse(other.updatedAt)) byId.set(item.id, item);
   }
+  const peopleById = new Map<string, Person>();
+  for (const person of remote.people) peopleById.set(person.id, person);
+  for (const person of local.people) {
+    const other = peopleById.get(person.id);
+    if (!other || Date.parse(person.updatedAt) >= Date.parse(other.updatedAt)) peopleById.set(person.id, person);
+  }
+
   const localNewer = Date.parse(lastTouch(local)) >= Date.parse(lastTouch(remote));
   return {
     items: purgeTombstones([...byId.values()]),
+    // Tombstoned people stay in the payload for the same reason items do: a
+    // third device still holding the live record would otherwise resurrect it.
+    people: purgeTombstones([...peopleById.values()]),
     preferences: localNewer ? local.preferences : remote.preferences,
   };
 }
@@ -192,9 +229,9 @@ function lastTouch(payload: VaultPayload): string {
   return payload.items.reduce((max, item) => (item.updatedAt > max ? item.updatedAt : max), '');
 }
 
-export function purgeTombstones(items: VaultItem[], now = Date.now()): VaultItem[] {
+export function purgeTombstones<T extends { deletedAt?: string }>(entries: T[], now = Date.now()): T[] {
   const cutoff = now - TOMBSTONE_TTL_DAYS * 24 * 60 * 60 * 1000;
-  return items.filter((item) => !item.deletedAt || Date.parse(item.deletedAt) > cutoff);
+  return entries.filter((entry) => !entry.deletedAt || Date.parse(entry.deletedAt) > cutoff);
 }
 
 export function activeItems(items: VaultItem[]): VaultItem[] {
@@ -203,4 +240,9 @@ export function activeItems(items: VaultItem[]): VaultItem[] {
 
 export function trashedItems(items: VaultItem[]): VaultItem[] {
   return items.filter((item) => !!item.deletedAt);
+}
+
+/** People still on the list — tombstones are kept in the payload, not shown. */
+export function activePeople(people: Person[]): Person[] {
+  return people.filter((person) => !person.deletedAt);
 }

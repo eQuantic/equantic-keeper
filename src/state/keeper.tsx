@@ -19,7 +19,7 @@ import type { DerivedKey } from '../lib/crypto';
 import { deriveKey, timingSafeEqual } from '../lib/crypto';
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
-import type { VaultItem } from '../lib/model';
+import type { Person, VaultItem } from '../lib/model';
 import {
   DEFAULT_PREFERENCES,
   createVault as buildVault,
@@ -64,6 +64,8 @@ export interface KeeperActions {
   purgeItem(id: string): Promise<void>;
   emptyTrash(): Promise<void>;
   toggleFavorite(id: string): Promise<void>;
+  savePerson(person: Person): Promise<void>;
+  removePerson(id: string): Promise<void>;
   updatePreferences(patch: Partial<VaultPreferences>): Promise<void>;
   syncNow(force?: boolean): Promise<void>;
   changeMasterPassword(current: string, next: string): Promise<void>;
@@ -430,6 +432,44 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [patchItem],
   );
 
+  const savePerson = useCallback(
+    (person: Person) =>
+      mutate((payload) => {
+        const next = { ...person, name: person.name.trim(), updatedAt: new Date().toISOString() };
+        const exists = payload.people.some((candidate) => candidate.id === person.id);
+        return {
+          ...payload,
+          people: exists
+            ? payload.people.map((candidate) => (candidate.id === person.id ? next : candidate))
+            : [...payload.people, next],
+        };
+      }),
+    [mutate],
+  );
+
+  /**
+   * Removing a holder must not orphan their documents: the items stay, they
+   * simply stop pointing at a person. Losing a document because a name was
+   * deleted would be the worst possible trade. The person is tombstoned rather
+   * than dropped, or the next device to sync would hand the name back.
+   */
+  const removePerson = useCallback(
+    (id: string) =>
+      mutate((payload) => {
+        const stamp = new Date().toISOString();
+        return {
+          ...payload,
+          people: payload.people.map((person) =>
+            person.id === id ? { ...person, updatedAt: stamp, deletedAt: stamp } : person,
+          ),
+          items: payload.items.map((item) =>
+            item.holderId === id ? { ...item, holderId: '', updatedAt: stamp } : item,
+          ),
+        };
+      }),
+    [mutate],
+  );
+
   const updatePreferences = useCallback(
     (prefs: Partial<VaultPreferences>) =>
       mutate((payload) => ({ ...payload, preferences: { ...payload.preferences, ...prefs } })),
@@ -606,6 +646,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       purgeItem,
       emptyTrash,
       toggleFavorite,
+      savePerson,
+      removePerson,
       updatePreferences,
       syncNow,
       changeMasterPassword,
@@ -629,7 +671,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       lock,
       patch,
       purgeItem,
+      removePerson,
       restoreItem,
+      savePerson,
       saveItem,
       setClientId,
       signOut,

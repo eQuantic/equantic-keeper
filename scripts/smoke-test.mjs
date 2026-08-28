@@ -216,6 +216,8 @@ const PAYLOAD = {
 const errors = [];
 
 let failures = 0;
+/** Kept module-level so a crash can still photograph what the page looked like. */
+let currentPage = null;
 
 const run = async () => {
   const preview = await startPreview();
@@ -223,6 +225,7 @@ const run = async () => {
     process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
   );
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  currentPage = page;
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
@@ -310,6 +313,60 @@ const run = async () => {
   await check('cache local não contém texto puro', async () => !cached.includes('db.staging.internal'));
   await check('cache local é um cofre cifrado', async () => cached.includes('equantic-keeper.vault'));
 
+  // 8b. Documents: a residence permit filed under a brand-new holder. The
+  // seeded vault is a v1 file with neither `people` nor `holderId`, so this
+  // also proves the migration works in a real browser.
+  await page.click('button:has-text("Novo")');
+  await page.waitForSelector('text=Escolha o tipo');
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'residência');
+  await page.waitForTimeout(200);
+  await check('filtro do seletor de tipos reduz a lista', async () => {
+    const labels = await page.locator('[role="dialog"] section button span.font-medium').allTextContents();
+    return labels.length > 0 && labels.every((label) => /resid/i.test(label));
+  });
+  await page.screenshot({ path: `${OUT}/06-tipos-documento.png` });
+
+  await page.click('button:has-text("Título de residência")');
+  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Título de residência — Maria');
+  await page.click('button:has-text("nova pessoa")');
+  await page.fill('input[placeholder="Nome da pessoa"]', 'Maria Teste');
+  // Exact match: the same dialog also offers "Adicionar campo personalizado".
+  await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  await check('titular criado sem sair do formulário', async () => {
+    // The holder picker is the editor's only <select>.
+    const select = page.locator('[role="dialog"] select');
+    const value = await select.inputValue();
+    return value !== '' && (await select.locator(`option[value="${value}"]`).textContent())?.includes('Maria Teste');
+  });
+  await page.locator('label:has-text("Número do título") input').first().fill('RP-2024-99887');
+  await page.locator('label:has-text("Válido até") input').first().fill('2027-03-10');
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Título de residência — Maria")', { timeout: 5000 });
+  await check('documento salvo com os campos do tipo', async () =>
+    (await page.locator('aside:has(h2) >> text=RP-2024-99887').count()) > 0);
+  await check('detalhe mostra o titular', async () =>
+    (await page.locator('aside:has(h2) >> text=Maria Teste').count()) > 0);
+  await page.screenshot({ path: `${OUT}/07-documento.png` });
+
+  // 8c. The holder becomes a filter of its own, next to the type filters.
+  await check('barra lateral separa documentos de desenvolvimento', async () =>
+    (await page.locator('nav button:has-text("Documentos")').count()) > 0 &&
+    (await page.locator('nav button:has-text("Desenvolvimento")').count()) > 0);
+  await page.click('nav button:has-text("Maria Teste")');
+  await page.waitForTimeout(300);
+  await check('filtrar por titular mostra só os itens dela', async () =>
+    (await page.locator('main li').count()) === 1);
+  await page.click('nav button:has-text("Tudo")');
+  await page.waitForTimeout(300);
+  await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 7);
+
+  // 8d. Searching by the holder's name finds a document that never stores it.
+  await page.fill('input[type="search"]', 'maria teste');
+  await page.waitForTimeout(300);
+  await check('busca pelo nome do titular encontra o documento', async () =>
+    (await page.locator('main li').count()) === 1);
+  await page.fill('input[type="search"]', '');
+
   // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');
   await page.waitForSelector('text=Entropia estimada');
@@ -319,6 +376,24 @@ const run = async () => {
   // 10. Light theme.
   await page.locator('nav button:has-text("Configurações")').click();
   await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
+
+  // 10b. The holder added from the editor is managed here, and edits stick.
+  const holderName = page.locator('[role="dialog"] input[aria-label="Nome do titular"]');
+  await check('configurações listam o titular', async () => {
+    return (await holderName.count()) === 1 && (await holderName.inputValue()) === 'Maria Teste';
+  });
+  await check('mostra quantos itens são daquela pessoa', async () =>
+    (await page.locator('[role="dialog"] >> text=1 item').count()) > 0);
+  await page.locator('[role="dialog"] input[aria-label="Parentesco"]').fill('esposa');
+  await holderName.click(); // blur commits the edit
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
+  await check('o parentesco editado sobrevive ao fechar e reabrir', async () =>
+    (await page.locator('[role="dialog"] input[aria-label="Parentesco"]').inputValue()) === 'esposa');
+  await page.screenshot({ path: `${OUT}/08-pessoas.png` });
+
   await page.selectOption('select[aria-label="Tema"]', 'light');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/05-settings-light.png` });
@@ -342,7 +417,11 @@ const run = async () => {
   console.log(`\n${failures === 0 ? 'Tudo verde' : `${failures} verificação(ões) falharam`} · capturas em ${OUT}`);
 };
 
-run().catch((error) => {
+run().catch(async (error) => {
   console.error('EXCEÇÃO:', error.message);
+  if (currentPage) {
+    await currentPage.screenshot({ path: `${OUT}/erro.png` }).catch(() => {});
+    console.error(`estado da página em ${OUT}/erro.png`);
+  }
   process.exit(1);
 });

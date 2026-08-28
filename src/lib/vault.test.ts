@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DecryptionError, MIN_ITERATIONS } from './crypto';
-import type { VaultItem } from './model';
+import type { Person, VaultItem } from './model';
 import {
   TOMBSTONE_TTL_DAYS,
+  VAULT_VERSION,
+  activePeople,
   WrongPasswordError,
   createVault,
   emptyPayload,
@@ -23,10 +25,23 @@ function item(id: string, updatedAt: string, extra: Partial<VaultItem> = {}): Va
     name: `item-${id}`,
     description: '',
     folder: '',
+    holderId: '',
     tags: [],
     fields: {},
     customFields: [],
     favorite: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt,
+    ...extra,
+  };
+}
+
+function person(id: string, updatedAt: string, extra: Partial<Person> = {}): Person {
+  return {
+    id,
+    name: `pessoa-${id}`,
+    relation: '',
+    birthDate: '',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt,
     ...extra,
@@ -86,6 +101,51 @@ describe('normalizePayload', () => {
     expect(payload.items[0]).toMatchObject({ id: 'ok', type: 'note', tags: [], favorite: false });
     expect(payload.preferences.autoLockMinutes).toBeGreaterThan(0);
   });
+
+  /**
+   * A vault written before v2 has no `people` and no `holderId`. Opening it
+   * must not throw and must not leave `undefined` where the UI expects a
+   * string, or the first render of the holder filter would crash.
+   */
+  it('abre um cofre v1, sem pessoas nem titular', () => {
+    const payload = normalizePayload({
+      items: [{ id: 'antigo', type: 'api-token', name: 'PAT', fields: { token: 'x' } }],
+      preferences: { theme: 'light' },
+    });
+    expect(payload.people).toEqual([]);
+    expect(payload.items[0]?.holderId).toBe('');
+    expect(payload.preferences.theme).toBe('light');
+  });
+
+  it('descarta pessoas malformadas e completa as que faltam campos', () => {
+    const payload = normalizePayload({ people: [{ id: 'p1' }, null, { name: 'sem id' }] });
+    expect(payload.people).toHaveLength(1);
+    expect(payload.people[0]).toMatchObject({ id: 'p1', name: '', relation: '', birthDate: '' });
+  });
+
+  it('preserva a lápide de uma pessoa removida', () => {
+    const deletedAt = '2026-05-01T00:00:00.000Z';
+    const payload = normalizePayload({ people: [{ id: 'p1', name: 'ex', deletedAt }] });
+    expect(payload.people[0]?.deletedAt).toBe(deletedAt);
+    expect(activePeople(payload.people)).toEqual([]);
+  });
+});
+
+describe('versão do formato', () => {
+  it('grava a versão 2, que é a que tem pessoas', async () => {
+    const { file } = await createVault('senha', emptyPayload(), iterations);
+    expect(file.version).toBe(VAULT_VERSION);
+    expect(VAULT_VERSION).toBe(2);
+  });
+
+  it('leva as pessoas junto no ciclo cifra/decifra', async () => {
+    const payload = { ...emptyPayload(), people: [person('p1', '2026-02-01T00:00:00.000Z', { name: 'Maria' })] };
+    const { file } = await createVault('senha', payload, iterations);
+    expect(JSON.stringify(file)).not.toContain('Maria');
+
+    const opened = await unlockVault(file, 'senha');
+    expect(opened.payload.people[0]?.name).toBe('Maria');
+  });
 });
 
 describe('mergePayloads', () => {
@@ -130,13 +190,48 @@ describe('mergePayloads', () => {
     expect(merged.items[0]?.name).toBe('revivido');
   });
 
+  it('reúne as pessoas dos dois aparelhos', () => {
+    const local = { ...base, people: [person('p1', daysAgo(3))] };
+    const remote = { ...base, people: [person('p2', daysAgo(2))] };
+    expect(mergePayloads(local, remote).people.map((entry) => entry.id).sort()).toEqual(['p1', 'p2']);
+  });
+
+  it('mantém a edição mais recente do nome de uma pessoa', () => {
+    const local = { ...base, people: [person('p1', daysAgo(1), { name: 'Maria Silva' })] };
+    const remote = { ...base, people: [person('p1', daysAgo(9), { name: 'Maria' })] };
+    expect(mergePayloads(local, remote).people[0]?.name).toBe('Maria Silva');
+    expect(mergePayloads(remote, local).people[0]?.name).toBe('Maria Silva');
+  });
+
+  /**
+   * A lápide precisa sobreviver à mesclagem: se a pessoa sumisse do payload, o
+   * próximo aparelho a sincronizar devolveria o nome apagado.
+   */
+  it('propaga a remoção de uma pessoa sem ressuscitá-la', () => {
+    const deletedAt = daysAgo(2);
+    const local = { ...base, people: [person('p1', daysAgo(10))] };
+    const remote = { ...base, people: [person('p1', deletedAt, { deletedAt })] };
+    const merged = mergePayloads(local, remote);
+    expect(merged.people[0]?.deletedAt).toBe(deletedAt);
+    expect(activePeople(merged.people)).toEqual([]);
+  });
+
+  it('esquece a lápide de uma pessoa depois do prazo de retenção', () => {
+    const deletedAt = daysAgo(TOMBSTONE_TTL_DAYS + 1);
+    const local = { ...base, people: [person('p1', daysAgo(TOMBSTONE_TTL_DAYS + 5))] };
+    const remote = { ...base, people: [person('p1', deletedAt, { deletedAt })] };
+    expect(mergePayloads(local, remote).people).toHaveLength(0);
+  });
+
   it('takes preferences from the side with the newer activity', () => {
     const local = {
       items: [item('a', daysAgo(1))],
+      people: [],
       preferences: { ...base.preferences, autoLockMinutes: 1 },
     };
     const remote = {
       items: [item('b', daysAgo(20))],
+      people: [],
       preferences: { ...base.preferences, autoLockMinutes: 60 },
     };
     expect(mergePayloads(local, remote).preferences.autoLockMinutes).toBe(1);

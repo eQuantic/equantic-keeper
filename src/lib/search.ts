@@ -6,6 +6,10 @@ export interface Filters {
   type: string | null;
   tag: string | null;
   folder: string | null;
+  /** `Person.id`, or null for "anyone". */
+  holderId: string | null;
+  /** Restricts the list to one half of the catalogue. */
+  category: 'dev' | 'doc' | null;
   favoritesOnly: boolean;
   view: 'active' | 'trash';
 }
@@ -15,6 +19,8 @@ export const EMPTY_FILTERS: Filters = {
   type: null,
   tag: null,
   folder: null,
+  holderId: null,
+  category: null,
   favoritesOnly: false,
   view: 'active',
 };
@@ -32,9 +38,9 @@ function normalize(value: string): string {
  * Haystack for an item. Secret values are deliberately excluded: a search
  * should never surface a token because the user typed part of it.
  */
-function haystack(item: VaultItem): string {
+function haystack(item: VaultItem, holderName = ''): string {
   const type = getType(item.type);
-  const parts = [item.name, item.description, item.folder, type.label, ...item.tags];
+  const parts = [item.name, item.description, item.folder, type.label, type.group, holderName, ...item.tags];
   for (const field of type.fields) {
     if (!isSecretKind(field.kind)) {
       const value = item.fields[field.id];
@@ -48,10 +54,10 @@ function haystack(item: VaultItem): string {
   return normalize(parts.join(' '));
 }
 
-export function matches(item: VaultItem, query: string): boolean {
+export function matches(item: VaultItem, query: string, holderName = ''): boolean {
   const terms = normalize(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
-  const hay = haystack(item);
+  const hay = haystack(item, holderName);
   return terms.every((term) => hay.includes(term));
 }
 
@@ -66,15 +72,23 @@ export function scoreItem(item: VaultItem, query: string): number {
   return 10;
 }
 
-export function applyFilters(items: VaultItem[], filters: Filters, sort: SortMode): VaultItem[] {
+export function applyFilters(
+  items: VaultItem[],
+  filters: Filters,
+  sort: SortMode,
+  /** `Person.id` -> name, so the holder is searchable by name. */
+  holderNames: Map<string, string> = new Map(),
+): VaultItem[] {
   const wantTrash = filters.view === 'trash';
   const filtered = items.filter((item) => {
     if (wantTrash !== !!item.deletedAt) return false;
     if (filters.type && item.type !== filters.type) return false;
+    if (filters.category && getType(item.type).category !== filters.category) return false;
+    if (filters.holderId && item.holderId !== filters.holderId) return false;
     if (filters.tag && !item.tags.includes(filters.tag)) return false;
     if (filters.folder && item.folder !== filters.folder) return false;
     if (filters.favoritesOnly && !item.favorite) return false;
-    return matches(item, filters.query);
+    return matches(item, filters.query, holderNames.get(item.holderId) ?? '');
   });
 
   const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
