@@ -1,7 +1,34 @@
+import { copyFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/**
+ * GitHub writes the custom domain into a CNAME file at the repository root when
+ * you set it under Settings > Pages. The Actions deployment publishes only the
+ * build output, so copy that file into it — the settings-managed file stays the
+ * single source of truth instead of being duplicated under public/, where it
+ * would silently go stale if the domain ever changed.
+ */
+function copyCustomDomain(): Plugin {
+  let root = process.cwd();
+  let outDir = 'dist';
+  return {
+    name: 'keeper:copy-cname',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root;
+      outDir = config.build.outDir;
+    },
+    closeBundle() {
+      const source = resolve(root, 'CNAME');
+      if (existsSync(source)) copyFileSync(source, resolve(root, outDir, 'CNAME'));
+    },
+  };
+}
 
 // `VITE_BASE` is provided by the GitHub Pages workflow (`/equantic-keeper/` for a
 // project page, `/` for a custom domain). Local dev serves from the root.
@@ -17,6 +44,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    copyCustomDomain(),
     VitePWA({
       registerType: 'autoUpdate',
       // A separate file instead of an inline snippet, so the CSP can stay

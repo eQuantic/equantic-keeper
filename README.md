@@ -8,6 +8,8 @@ e o que mais você precisa consultar toda hora.
 Google** e guarda um único arquivo **cifrado** na pasta oculta do seu **Google Drive**. Não existe
 servidor, banco de dados nem backend: a criptografia acontece inteira no seu navegador.
 
+**Instância oficial: [keeper.equantic.tech](https://keeper.equantic.tech)**
+
 ---
 
 ## Como funciona
@@ -75,9 +77,13 @@ os dados são irrecuperáveis — por construção.
 3. Configure a **tela de consentimento OAuth** (tipo *External*). Enquanto o app estiver em
    *Testing*, adicione as contas que vão usá-lo em *Test users*.
 4. Em *Credentials*, crie um **OAuth client ID** do tipo **Web application**.
-5. Em **Authorized JavaScript origins**, adicione a origem do seu Pages — por exemplo
-   `https://equantic.github.io` (ou o seu domínio próprio). Não é preciso informar redirect URI:
-   o fluxo usa o Google Identity Services em popup.
+5. Em **Authorized JavaScript origins**, adicione a origem exata onde o app roda — sem barra no
+   final e sem caminho. Para a instância oficial: `https://keeper.equantic.tech`; num fork sem
+   domínio próprio, `https://<usuário>.github.io`. Não é preciso informar redirect URI: o fluxo
+   usa o Google Identity Services em popup.
+
+   > Se a origem não bater exatamente com a barra de endereços, o popup do Google recusa com
+   > `origin_mismatch` — é o erro mais comum nesta configuração.
 6. Copie o **Client ID** (algo como `1234567890-abc.apps.googleusercontent.com`). Ele é um
    identificador **público**, não um segredo.
 
@@ -99,6 +105,11 @@ na primeira execução e o guarda no `localStorage` daquele navegador.
 Um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes, constrói e
 publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em página de
 projeto, `/` em domínio próprio).
+
+**Domínio próprio:** configure em *Settings → Pages → Custom domain*. O GitHub grava o valor num
+arquivo `CNAME` na raiz do repositório, e o build copia esse arquivo para dentro de `dist/` — assim
+o artefato publicado carrega o mesmo domínio, sem uma segunda cópia em `public/` que poderia ficar
+desatualizada se o domínio mudasse.
 
 ---
 
