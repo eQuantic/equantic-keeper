@@ -1,0 +1,122 @@
+/** Filtering and ranking for the item list. */
+import { getType, isSecretKind, type VaultItem } from './model';
+
+export interface Filters {
+  query: string;
+  type: string | null;
+  tag: string | null;
+  folder: string | null;
+  favoritesOnly: boolean;
+  view: 'active' | 'trash';
+}
+
+export const EMPTY_FILTERS: Filters = {
+  query: '',
+  type: null,
+  tag: null,
+  folder: null,
+  favoritesOnly: false,
+  view: 'active',
+};
+
+export type SortMode = 'updated' | 'name' | 'created' | 'type';
+
+function normalize(value: string): string {
+  return value
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+}
+
+/**
+ * Haystack for an item. Secret values are deliberately excluded: a search
+ * should never surface a token because the user typed part of it.
+ */
+function haystack(item: VaultItem): string {
+  const type = getType(item.type);
+  const parts = [item.name, item.description, item.folder, type.label, ...item.tags];
+  for (const field of type.fields) {
+    if (!isSecretKind(field.kind)) {
+      const value = item.fields[field.id];
+      if (value) parts.push(value);
+    }
+  }
+  for (const custom of item.customFields) {
+    parts.push(custom.label);
+    if (!custom.secret) parts.push(custom.value);
+  }
+  return normalize(parts.join(' '));
+}
+
+export function matches(item: VaultItem, query: string): boolean {
+  const terms = normalize(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const hay = haystack(item);
+  return terms.every((term) => hay.includes(term));
+}
+
+export function scoreItem(item: VaultItem, query: string): number {
+  if (!query) return 0;
+  const name = normalize(item.name);
+  const q = normalize(query);
+  if (name === q) return 100;
+  if (name.startsWith(q)) return 80;
+  if (name.includes(q)) return 60;
+  if (item.tags.some((tag) => normalize(tag).includes(q))) return 40;
+  return 10;
+}
+
+export function applyFilters(items: VaultItem[], filters: Filters, sort: SortMode): VaultItem[] {
+  const wantTrash = filters.view === 'trash';
+  const filtered = items.filter((item) => {
+    if (wantTrash !== !!item.deletedAt) return false;
+    if (filters.type && item.type !== filters.type) return false;
+    if (filters.tag && !item.tags.includes(filters.tag)) return false;
+    if (filters.folder && item.folder !== filters.folder) return false;
+    if (filters.favoritesOnly && !item.favorite) return false;
+    return matches(item, filters.query);
+  });
+
+  const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+  return filtered.sort((a, b) => {
+    if (filters.query) {
+      const delta = scoreItem(b, filters.query) - scoreItem(a, filters.query);
+      if (delta !== 0) return delta;
+    }
+    switch (sort) {
+      case 'name':
+        return collator.compare(a.name, b.name);
+      case 'created':
+        return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+      case 'type':
+        return (
+          collator.compare(getType(a.type).label, getType(b.type).label) || collator.compare(a.name, b.name)
+        );
+      case 'updated':
+      default:
+        return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+    }
+  });
+}
+
+export function collectTags(items: VaultItem[]): { tag: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (item.deletedAt) continue;
+    for (const tag of item.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'pt-BR'));
+}
+
+export function collectFolders(items: VaultItem[]): { folder: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (item.deletedAt || !item.folder) continue;
+    counts.set(item.folder, (counts.get(item.folder) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([folder, count]) => ({ folder, count }))
+    .sort((a, b) => a.folder.localeCompare(b.folder, 'pt-BR'));
+}

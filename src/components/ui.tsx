@@ -1,0 +1,315 @@
+/** Small, unopinionated UI primitives shared by every screen. */
+import {
+  useEffect,
+  useId,
+  useRef,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from 'react';
+import { Icon } from './icons';
+
+type Variant = 'primary' | 'ghost' | 'outline' | 'danger' | 'subtle';
+
+const VARIANTS: Record<Variant, string> = {
+  primary: 'bg-accent text-white hover:brightness-110 border border-transparent',
+  outline: 'border border-line text-ink hover:bg-raised',
+  ghost: 'text-muted hover:text-ink hover:bg-raised border border-transparent',
+  subtle: 'bg-raised text-ink border border-line-soft hover:border-line',
+  danger: 'border border-danger/40 text-danger hover:bg-danger/10',
+};
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant;
+  icon?: string;
+  loading?: boolean;
+  size?: 'sm' | 'md';
+}
+
+export function Button({
+  variant = 'subtle',
+  icon,
+  loading,
+  size = 'md',
+  className = '',
+  children,
+  disabled,
+  ...rest
+}: ButtonProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled || loading}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-sm'
+      } ${VARIANTS[variant]} ${className}`}
+      {...rest}
+    >
+      {loading ? <Spinner /> : icon ? <Icon name={icon} size={size === 'sm' ? 14 : 16} /> : null}
+      {children}
+    </button>
+  );
+}
+
+export function IconButton({
+  icon,
+  label,
+  className = '',
+  active,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { icon: string; label: string; active?: boolean }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
+        active ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+      } ${className}`}
+      {...rest}
+    >
+      <Icon name={icon} size={16} />
+    </button>
+  );
+}
+
+export function Spinner({ size = 14 }: { size?: number }) {
+  return (
+    <span
+      className="inline-block animate-spin rounded-full border-2 border-current border-t-transparent"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+  actions,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-xs font-medium tracking-wide text-muted uppercase">{label}</span>
+        {actions}
+      </span>
+      {children}
+      {hint && !error ? <span className="mt-1 block text-xs text-faint">{hint}</span> : null}
+      {error ? <span className="mt-1 block text-xs text-danger">{error}</span> : null}
+    </label>
+  );
+}
+
+const inputClass =
+  'w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-faint transition focus:border-accent focus:outline-none disabled:opacity-60';
+
+export function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`${inputClass} ${className}`} {...rest} />;
+}
+
+export function TextArea({ className = '', rows = 4, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea rows={rows} className={`${inputClass} resize-y font-mono text-[13px] ${className}`} {...rest} />;
+}
+
+export function Badge({
+  children,
+  color,
+  className = '',
+}: {
+  children: ReactNode;
+  color?: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${className}`}
+      style={
+        color
+          ? { color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }
+          : undefined
+      }
+    >
+      {children}
+    </span>
+  );
+}
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  description?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start justify-between gap-4 py-2">
+      <div className="min-w-0">
+        <label htmlFor={id} className="text-sm text-ink">
+          {label}
+        </label>
+        {description ? <p className="mt-0.5 text-xs text-muted">{description}</p> : null}
+      </div>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
+          checked ? 'border-accent bg-accent/80' : 'border-line bg-raised'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white transition-all ${
+            checked ? 'left-5.5' : 'left-0.5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+  footer,
+  wide,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    ref.current?.focus();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <div
+        className="absolute inset-0"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        ref={ref}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`animate-in card relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none sm:rounded-card ${
+          wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
+        }`}
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-ink">{title}</h2>
+            {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
+          </div>
+          <IconButton icon="x" label="Fechar" onClick={onClose} />
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer ? (
+          <footer className="flex items-center justify-end gap-2 border-t border-line bg-raised/50 px-5 py-3">
+            {footer}
+          </footer>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-raised text-muted">
+        <Icon name={icon} size={22} />
+      </span>
+      <div>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="mx-auto mt-1 max-w-sm text-xs text-muted">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function Toast({
+  message,
+  tone = 'info',
+  onDismiss,
+}: {
+  message: string;
+  tone?: 'info' | 'error' | 'success';
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, tone === 'error' ? 9000 : 4000);
+    return () => window.clearTimeout(timer);
+  }, [message, onDismiss, tone]);
+
+  const palette =
+    tone === 'error'
+      ? 'border-danger/40 bg-danger/10 text-danger'
+      : tone === 'success'
+        ? 'border-ok/40 bg-ok/10 text-ok'
+        : 'border-line bg-raised text-ink';
+
+  return (
+    <div
+      role="status"
+      className={`animate-in pointer-events-auto flex max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur ${palette}`}
+    >
+      <Icon name={tone === 'error' ? 'warning' : tone === 'success' ? 'check' : 'layers'} size={16} />
+      <span className="flex-1 leading-snug">{message}</span>
+      <button type="button" onClick={onDismiss} aria-label="Dispensar" className="opacity-60 hover:opacity-100">
+        <Icon name="x" size={14} />
+      </button>
+    </div>
+  );
+}

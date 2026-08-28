@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>eQuantic Keeper — cofre de segredos para desenvolvedores</title>
+    <meta
+      name="description"
+      content="Cofre de segredos com criptografia ponta a ponta no navegador, sincronizado na pasta oculta do seu Google Drive."
+    />
+    <meta name="theme-color" content="#0a0d14" />
+    <meta name="color-scheme" content="dark light" />
+    <!--
+      Locks the page down to the few Google origins the OAuth + Drive flow needs.
+      'unsafe-inline' for styles is required by React inline styles and by the
+      styles the Google Identity script injects; no inline *scripts* are allowed.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none';
+               script-src 'self' https://accounts.google.com/gsi/client;
+               style-src 'self' 'unsafe-inline';
+               img-src 'self' data: blob: https://*.googleusercontent.com https://ssl.gstatic.com;
+               font-src 'self' data:;
+               connect-src 'self' https://www.googleapis.com https://accounts.google.com https://oauth2.googleapis.com;
+               frame-src https://accounts.google.com;
+               manifest-src 'self';
+               worker-src 'self';
+               base-uri 'none';
+               object-src 'none';
+               form-action 'none'"
+    />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p style="padding: 2rem; font-family: system-ui; color: #e7ebf7">
+        O eQuantic Keeper precisa de JavaScript: toda a criptografia acontece neste navegador.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
