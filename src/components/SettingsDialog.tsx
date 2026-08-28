@@ -1,6 +1,6 @@
 /** Account, security, appearance, backup and danger-zone settings. */
 import { useRef, useState } from 'react';
-import { Button, Field, Modal, Switch, TextInput } from './ui';
+import { Button, Field, Modal, PasswordInput, Switch } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
 import { exportEncrypted, exportPlaintext } from '../lib/backup';
@@ -180,17 +180,16 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         {changingPassword ? (
           <div className="mt-3 space-y-3 rounded-lg border border-line bg-canvas p-3">
             <Field label="Senha mestra atual">
-              <TextInput type="password" value={current} onChange={(event) => setCurrent(event.target.value)} />
+              <PasswordInput value={current} onChange={(event) => setCurrent(event.target.value)} />
             </Field>
             <Field
               label="Nova senha mestra"
               hint={next ? `${strength.label} · ~${strength.bits} bits` : 'Mínimo de 12 caracteres.'}
             >
-              <TextInput type="password" value={next} onChange={(event) => setNext(event.target.value)} />
+              <PasswordInput value={next} onChange={(event) => setNext(event.target.value)} />
             </Field>
             <Field label="Confirme a nova senha" error={passwordError ?? undefined}>
-              <TextInput
-                type="password"
+              <PasswordInput
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
@@ -287,8 +286,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               (o mais recente vence em caso de conflito).
             </p>
             <Field label="Senha mestra do backup" error={importError ?? undefined}>
-              <TextInput
-                type="password"
+              <PasswordInput
                 value={importPassword}
                 onChange={(event) => setImportPassword(event.target.value)}
                 autoFocus
