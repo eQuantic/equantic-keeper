@@ -254,26 +254,38 @@ const run = async () => {
   await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
   await page.screenshot({ path: `${OUT}/01-unlock.png` });
 
-  // 3. Wrong password must be rejected.
+  // 3. The reveal toggle lets the user check what they typed.
+  const master = page.locator('input[autocomplete="current-password"]');
+  await master.fill('conferindo-o-que-digitei');
+  await check('senha mestra começa oculta', async () => (await master.getAttribute('type')) === 'password');
+  await page.locator('button[aria-label="Mostrar senha"]').click();
+  await check('o olho revela a senha digitada', async () => {
+    const type = await master.getAttribute('type');
+    return type === 'text' && (await master.inputValue()) === 'conferindo-o-que-digitei';
+  });
+  await page.locator('button[aria-label="Ocultar senha"]').click();
+  await check('clicar de novo volta a ocultar', async () => (await master.getAttribute('type')) === 'password');
+
+  // 4. Wrong password must be rejected.
   await page.fill('input[type="password"]', 'senha-errada');
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=Senha mestra incorreta', { timeout: 15000 });
   await check('senha incorreta é rejeitada', async () => true);
 
-  // 4. Correct password unlocks and lists the items.
+  // 5. Correct password unlocks and lists the items.
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
   await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 5);
   await page.screenshot({ path: `${OUT}/02-vault.png` });
 
-  // 5. Search filters the list.
+  // 6. Search filters the list.
   await page.fill('input[type="search"]', 'azure');
   await page.waitForTimeout(300);
   await check('busca filtra a lista', async () => (await page.locator('main li').count()) === 1);
   await page.fill('input[type="search"]', '');
 
-  // 6. Detail pane reveals a secret only on demand.
+  // 7. Detail pane reveals a secret only on demand.
   await page.click('text=Painel DigitalOcean');
   await page.waitForSelector('text=Chave 2FA', { timeout: 5000 });
   await check('segredo começa oculto', async () => (await page.locator('text=senha-exemplo-do-painel').count()) === 0);
@@ -284,7 +296,7 @@ const run = async () => {
   await check('código TOTP é gerado', async () => /^\d{3} \d{3}$/.test((totp ?? '').trim()));
   await page.screenshot({ path: `${OUT}/03-detail.png` });
 
-  // 7. Create an item through the UI and confirm it is persisted encrypted.
+  // 8. Create an item through the UI and confirm it is persisted encrypted.
   await page.click('button:has-text("Novo")');
   await page.waitForSelector('text=Escolha o tipo');
   await page.click('button:has-text("Banco de dados")');
@@ -298,20 +310,20 @@ const run = async () => {
   await check('cache local não contém texto puro', async () => !cached.includes('db.staging.internal'));
   await check('cache local é um cofre cifrado', async () => cached.includes('equantic-keeper.vault'));
 
-  // 8. Generator produces a value.
+  // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');
   await page.waitForSelector('text=Entropia estimada');
   await page.screenshot({ path: `${OUT}/04-generator.png` });
   await page.locator('[role="dialog"] button[aria-label="Fechar"]').click();
 
-  // 9. Light theme.
+  // 10. Light theme.
   await page.locator('nav button:has-text("Configurações")').click();
   await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
   await page.selectOption('select[aria-label="Tema"]', 'light');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/05-settings-light.png` });
 
-  // 10. Lock clears the decrypted state.
+  // 11. Lock clears the decrypted state.
   await check('tema claro aplicado', async () =>
     (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light');
   await page.selectOption('select[aria-label="Tema"]', 'dark');

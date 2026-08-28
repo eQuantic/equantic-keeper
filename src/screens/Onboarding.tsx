@@ -1,6 +1,6 @@
 /** Pre-vault screens: OAuth setup, Google sign-in, vault creation and unlock. */
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Field, TextInput } from '../components/ui';
+import { Button, Field, PasswordInput, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
@@ -182,8 +182,7 @@ export function CreateVaultScreen() {
           hint="Mínimo de 12 caracteres. Uma frase longa costuma ser melhor que uma senha curta e complexa."
           error={tooShort ? 'Use pelo menos 12 caracteres.' : undefined}
         >
-          <TextInput
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoFocus
@@ -212,8 +211,7 @@ export function CreateVaultScreen() {
           </div>
         ) : null}
         <Field label="Confirme a senha mestra" error={mismatch ? 'As senhas não conferem.' : undefined}>
-          <TextInput
-            type="password"
+          <PasswordInput
             value={confirm}
             onChange={(event) => setConfirm(event.target.value)}
             autoComplete="new-password"
@@ -266,8 +264,7 @@ export function UnlockScreen() {
     >
       <form onSubmit={submit} className="space-y-4">
         <Field label="Senha mestra">
-          <TextInput
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoFocus

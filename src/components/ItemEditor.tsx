@@ -10,7 +10,7 @@ import {
   type FieldDef,
   type VaultItem,
 } from '../lib/model';
-import { Button, Field, IconButton, Modal, TextArea, TextInput } from './ui';
+import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
 import { GeneratorDialog } from './Generator';
 
@@ -67,7 +67,6 @@ function FieldInput({
   onChange: (value: string) => void;
 }) {
   const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [revealed, setRevealed] = useState(false);
   const secret = isSecretKind(field.kind);
   const generatable = field.kind === 'password' || field.kind === 'secret';
 
@@ -79,28 +78,26 @@ function FieldInput({
       rows={field.kind === 'multilineSecret' ? 6 : 4}
       spellCheck={false}
     />
+  ) : secret ? (
+    <PasswordInput
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={field.placeholder ?? ''}
+      autoComplete="off"
+      spellCheck={false}
+      revealLabel="Revelar"
+      hideLabel="Ocultar"
+    />
   ) : (
-    <div className="relative">
-      <TextInput
-        type={field.kind === 'date' ? 'date' : secret && !revealed ? 'password' : 'text'}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={field.placeholder ?? ''}
-        autoComplete="off"
-        spellCheck={false}
-        className={secret ? 'pr-10 font-mono' : field.kind === 'url' || field.kind === 'text' ? '' : 'font-mono'}
-      />
-      {secret ? (
-        <button
-          type="button"
-          onClick={() => setRevealed((current) => !current)}
-          aria-label={revealed ? 'Ocultar' : 'Revelar'}
-          className="absolute top-1/2 right-2 -translate-y-1/2 text-muted hover:text-ink"
-        >
-          <Icon name={revealed ? 'eyeOff' : 'eye'} size={15} />
-        </button>
-      ) : null}
-    </div>
+    <TextInput
+      type={field.kind === 'date' ? 'date' : 'text'}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={field.placeholder ?? ''}
+      autoComplete="off"
+      spellCheck={false}
+      className={field.kind === 'url' || field.kind === 'text' ? '' : 'font-mono'}
+    />
   );
 
   return (

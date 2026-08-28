@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -119,6 +120,40 @@ export function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLI
 
 export function TextArea({ className = '', rows = 4, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea rows={rows} className={`${inputClass} resize-y font-mono text-[13px] ${className}`} {...rest} />;
+}
+
+/**
+ * Password field with a reveal toggle. Typing a master password blind is how
+ * people lock themselves out of a vault that has no recovery, so being able to
+ * read back what was typed matters more here than in an ordinary login form.
+ * Revealed text is monospaced to keep look-alike glyphs (l/1, O/0) apart.
+ */
+export function PasswordInput({
+  className = '',
+  revealLabel = 'Mostrar senha',
+  hideLabel = 'Ocultar senha',
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { revealLabel?: string; hideLabel?: string }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...rest}
+        type={revealed ? 'text' : 'password'}
+        className={`${inputClass} pr-10 font-mono ${className}`}
+      />
+      <button
+        type="button"
+        onClick={() => setRevealed((current) => !current)}
+        aria-label={revealed ? hideLabel : revealLabel}
+        aria-pressed={revealed}
+        title={revealed ? hideLabel : revealLabel}
+        className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted transition hover:text-ink"
+      >
+        <Icon name={revealed ? 'eyeOff' : 'eye'} size={15} />
+      </button>
+    </div>
+  );
 }
 
 export function Badge({
