@@ -1,213 +1,222 @@
 # eQuantic Keeper
 
-Cofre para o que você precisa consultar toda hora: segredos de desenvolvimento — tokens de API,
-client id/secret, usuário e senha de painéis, credenciais de container registry, chaves SSH,
-`.env`, certificados — e documentos pessoais de Portugal e do Brasil, seus e de quem mora com
-você: títulos de residência, cartão de cidadão, NIF, NISS, CPF, RG, certidões, passaportes.
+A vault for the things you look up all the time: development secrets — API tokens,
+client id/secret pairs, dashboard logins, container registry credentials, SSH keys,
+`.env` files, certificates — and personal documents from Portugal and Brazil, yours and
+your household's: residence permits, Cartão de Cidadão, NIF, NISS, CPF, RG, certificates,
+passports.
 
-É uma aplicação **100% estática**, hospedada no **GitHub Pages**, que autentica com a sua **conta
-Google** e guarda um único arquivo **cifrado** na pasta oculta do seu **Google Drive**. Não existe
-servidor, banco de dados nem backend: a criptografia acontece inteira no seu navegador.
+It is a **100% static** application, hosted on **GitHub Pages**, that signs in with your
+**Google account** and stores a single **encrypted** file in the hidden app folder of your
+**Google Drive**. There is no server, no database, no backend: all cryptography happens
+in your browser.
 
-**Instância oficial: [keeper.equantic.tech](https://keeper.equantic.tech)**
+**Official instance: [keeper.equantic.tech](https://keeper.equantic.tech)**
 
 ---
 
-## Como funciona
+## How it works
 
 ```
- você digita a senha mestra
+ you type the master password
           │
           ▼
-  PBKDF2-SHA256 (720k iterações)  ──► HKDF ──┬──► chave AES-GCM-256  ──► cifra o cofre
-                                              └──► verificador (público)
+  PBKDF2-SHA256 (720k iterations)  ──► HKDF ──┬──► AES-GCM-256 key  ──► encrypts the vault
+                                              └──► verifier (public)
           │
           ▼
-   { header público + ciphertext }  ──►  Google Drive (appDataFolder)
-                                    ──►  localStorage (cache offline)
+   { public header + ciphertext }  ──►  Google Drive (appDataFolder)
+                                   ──►  localStorage (offline cache)
 ```
 
-O Google recebe **apenas bytes cifrados**. A senha mestra nunca sai do navegador, não é
-transmitida, não é salva e não pode ser recuperada.
+Google receives **encrypted bytes only**. The master password never leaves the browser,
+is never transmitted, never stored, and cannot be recovered.
 
-### Modelo de segurança
+### Security model
 
-| Item | Decisão |
+| Item | Decision |
 | --- | --- |
-| Derivação de chave | PBKDF2-SHA256, 720.000 iterações (piso de 210.000), salt aleatório de 16 bytes |
-| Separação de chaves | HKDF-SHA256 divide o material em chave de cifragem e verificador |
-| Cifra | AES-GCM-256 com IV de 12 bytes novo a cada gravação e tag de 128 bits |
-| Integridade do cabeçalho | O header público entra como *additional authenticated data* — adulterá-lo invalida a tag |
-| Chave em memória | `CryptoKey` não-extraível; apagada ao bloquear, ao fechar a aba e por inatividade |
-| Escopo do Google | Somente `drive.appdata` (pasta oculta exclusiva do app) + e-mail/perfil |
-| Token OAuth | Access token de curta duração, mantido apenas em memória |
-| Área de transferência | Limpeza automática (padrão: 30s) após copiar um segredo |
-| CSP | `default-src 'none'` com allow-list mínima; sem scripts inline; bloqueio de iframe |
-| Busca | Nunca indexa valores secretos — só nome, descrição, tags e campos não sensíveis |
+| Key derivation | PBKDF2-SHA256, 720,000 iterations (floor of 210,000), random 16-byte salt |
+| Key separation | HKDF-SHA256 splits the material into an encryption key and a verifier |
+| Cipher | AES-GCM-256 with a fresh 12-byte IV on every write and a 128-bit tag |
+| Header integrity | The public header is fed in as *additional authenticated data* — tampering with it invalidates the tag |
+| Key in memory | Non-extractable `CryptoKey`; wiped on lock, on tab close and on inactivity |
+| Google scope | Only `drive.appdata` (the app's own hidden folder) + email/profile |
+| OAuth token | Short-lived access token, held in memory only |
+| Clipboard | Automatic clearing (default: 30s) after copying a secret |
+| CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
+| Search | Never indexes secret values — only name, description, tags and non-sensitive fields |
 
-**O que este modelo não protege:** um dispositivo comprometido (keylogger, malware, extensão
-maliciosa) enxerga o cofre aberto do mesmo jeito que você. E se você esquecer a senha mestra,
-os dados são irrecuperáveis — por construção.
-
----
-
-## Recursos
-
-- **12 tipos de segredo** com campos próprios: API Token, API Client/Secret, Usuário e senha,
-  Container Registry, Cloud/Provider, Chave SSH, Banco de dados, Variáveis/`.env`, Certificado,
-  Webhook, Licença e Nota segura — além de campos personalizados em qualquer item.
-- **21 tipos de documento pessoal**, cada um com os campos que aquele papel realmente tem:
-  - *Portugal*: título de residência (por emissão, com entidade, processo e validade), Cartão de
-    Cidadão, NIF, NISS, número de utente, registo criminal, comprovativo de morada e contrato de
-    arrendamento.
-  - *Brasil*: CPF, RG, CNH, título de eleitor, certidões (nascimento, casamento, óbito — com
-    matrícula, cartório, livro/folha/termo e apostila), antecedentes criminais e CTPS.
-  - *Geral*: passaporte, visto, diploma, cartão de vacinação, seguro de saúde e um tipo genérico.
-- **Titulares**: cada item pode pertencer a uma pessoa (você, cônjuge, filhos). A barra lateral
-  filtra por pessoa e a busca encontra o documento pelo nome dela, que não fica guardado no item.
-  Remover uma pessoa nunca apaga os documentos dela — eles apenas ficam sem titular.
-- **Alerta de validade**: o cofre sabe a diferença entre a data em que um documento foi *emitido*
-  e aquela em que ele *vence*. A barra lateral separa o que já venceu do que vence em breve, a
-  lista mostra “expira em 25 dias” na linha, e a antecedência do aviso é configurável (padrão: 60
-  dias — renovar um título de residência leva meses).
-- **Anexos cifrados** (PDF, JPG, PNG, WebP, até 25 MB cada) com **visualizador embutido**: pdf.js
-  renderiza o documento dentro do app, com zoom e seleção de texto, em vez de abrir uma aba com os
-  bytes decifrados. Cada arquivo tem chave própria, cifrada com a chave mestra, e vive como um
-  objeto separado na pasta do app — trocar a senha mestra recifra o cofre, não o acervo. Um anexo
-  adicionado sem rede fica no dispositivo e sobe na próxima sincronização.
-- **Códigos 2FA (TOTP)** gerados no próprio cofre, a partir de um segredo base32 ou de uma URI
-  `otpauth://` (RFC 6238, SHA-1/256/512).
-- **Gerador** de senhas e frases-senha com `crypto.getRandomValues` e amostragem sem viés.
-- **Sincronização multi-dispositivo** com mesclagem item a item (o mais recente vence) e
-  *tombstones*, para que exclusões se propaguem em vez de ressuscitar.
-- **Backups**: snapshots diários rotativos no próprio Drive, exportação cifrada `.keeper.json`,
-  **pacote `.keeper.zip` com o cofre e os anexos**, importação com mesclagem (aceita os dois
-  formatos) e exportação em texto puro (sem lock-in).
-- **PWA offline**: instalável, com o cofre cifrado em cache — dá para consultar segredos sem rede.
-- Busca instantânea, pastas, tags, favoritos, lixeira, tema claro/escuro, `Ctrl+K` para buscar e
-  `Ctrl+L` para bloquear.
+**What this model does not protect against:** a compromised device (keylogger, malware,
+malicious extension) sees the open vault the same way you do. And if you forget the master
+password, the data is unrecoverable — by construction.
 
 ---
 
-## Publicando a sua instância
+## Features
 
-### 1. Crie a credencial OAuth no Google
+- **12 secret types** with purpose-built fields: API Token, API Client/Secret, Username and
+  password, Container Registry, Cloud/Provider, SSH Key, Database, Variables/`.env`,
+  Certificate, Webhook, License and Secure note — plus custom fields on any item.
+- **21 personal document types**, each with the fields that document actually has:
+  - *Portugal*: residence permit (per issuance, with issuing entity, process number and
+    validity), Cartão de Cidadão, NIF, NISS, health service number, criminal record,
+    proof of address and lease agreement.
+  - *Brazil*: CPF, RG, CNH, voter registration, civil registry certificates (birth,
+    marriage, death — with matrícula, registry office, book/page/term and apostille),
+    criminal background check and CTPS.
+  - *General*: passport, visa, diploma, vaccination card, health insurance and a generic type.
+- **Holders**: every item can belong to a person (you, your spouse, your children). The
+  sidebar filters by person and search finds a document by the person's name, which is not
+  stored on the item. Removing a person never deletes their documents — they just lose
+  their holder.
+- **Expiry alerts**: the vault knows the difference between the date a document was *issued*
+  and the date it *expires*. The sidebar separates what has already expired from what is
+  about to, the list shows "expires in 25 days" on the row, and the warning window is
+  configurable (default: 60 days — renewing a residence permit takes months).
+- **Encrypted attachments** (PDF, JPG, PNG, WebP, up to 25 MB each) with a **built-in
+  viewer**: pdf.js renders the document inside the app, with zoom and text selection,
+  instead of opening a tab with the decrypted bytes. Every file has its own key, wrapped by
+  the master key, and lives as a separate object in the app folder — changing the master
+  password re-encrypts the vault, not the archive. An attachment added while offline stays
+  on the device and uploads on the next sync.
+- **2FA codes (TOTP)** generated inside the vault, from a base32 secret or an
+  `otpauth://` URI (RFC 6238, SHA-1/256/512).
+- **Password and passphrase generator** using `crypto.getRandomValues` with bias-free
+  sampling.
+- **Multi-device sync** with item-by-item merging (most recent wins) and *tombstones*, so
+  deletions propagate instead of resurrecting.
+- **Backups**: rotating daily snapshots in Drive itself, encrypted `.keeper.json` export,
+  a **`.keeper.zip` bundle with the vault and the attachments**, import with merging
+  (accepts both formats) and plain-text export (no lock-in).
+- **Offline PWA**: installable, with the encrypted vault cached — you can look up secrets
+  with no network.
+- Instant search, folders, tags, favorites, trash, light/dark theme, `Ctrl+K` to search and
+  `Ctrl+L` to lock.
 
-1. Abra o [Google Cloud Console](https://console.cloud.google.com/apis/credentials) e crie um projeto.
-2. Ative a **Google Drive API** (*APIs & Services → Library*).
-3. Configure a **tela de consentimento OAuth** (tipo *External*). Enquanto o app estiver em
-   *Testing*, adicione as contas que vão usá-lo em *Test users* — quem não estiver na lista recebe
-   `Erro 403: access_denied`.
-4. Em **Data access**, adicione o escopo `https://www.googleapis.com/auth/drive.appdata`. Se ele
-   não estiver declarado ali, o Google concede apenas e-mail/perfil e o app recusa o login.
-5. Em *Credentials*, crie um **OAuth client ID** do tipo **Web application**.
-6. Em **Authorized JavaScript origins**, adicione a origem exata onde o app roda — sem barra no
-   final e sem caminho. Para a instância oficial: `https://keeper.equantic.tech`; num fork sem
-   domínio próprio, `https://<usuário>.github.io`. Não é preciso informar redirect URI: o fluxo
-   usa o Google Identity Services em popup.
+---
 
-   > Se a origem não bater exatamente com a barra de endereços, o popup do Google recusa com
-   > `origin_mismatch` — é o erro mais comum nesta configuração.
-7. Copie o **Client ID** (algo como `1234567890-abc.apps.googleusercontent.com`). Ele é um
-   identificador **público**, não um segredo.
+## Publishing your own instance
 
-> O escopo pedido é apenas `drive.appdata`. O Google mostra isso como "Ver e gerenciar seus
-> próprios dados de configuração no Google Drive" — o app não enxerga nenhum outro arquivo seu.
+### 1. Create the OAuth credential on Google
 
-#### Problemas comuns no login
+1. Open the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and create a project.
+2. Enable the **Google Drive API** (*APIs & Services → Library*).
+3. Configure the **OAuth consent screen** (type *External*). While the app is in
+   *Testing*, add the accounts that will use it under *Test users* — anyone not on the
+   list gets `Error 403: access_denied`.
+4. Under **Data access**, add the scope `https://www.googleapis.com/auth/drive.appdata`.
+   If it is not declared there, Google grants only email/profile and the app refuses the
+   login.
+5. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
+6. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
+   trailing slash and no path. For the official instance: `https://keeper.equantic.tech`;
+   on a fork without a custom domain, `https://<username>.github.io`. No redirect URI is
+   needed: the flow uses Google Identity Services in a popup.
 
-| Sintoma | Causa | Correção |
+   > If the origin does not exactly match the address bar, Google's popup refuses with
+   > `origin_mismatch` — the most common error in this setup.
+7. Copy the **Client ID** (something like `1234567890-abc.apps.googleusercontent.com`).
+   It is a **public** identifier, not a secret.
+
+> The only scope requested is `drive.appdata`. Google presents it as "See and manage its
+> own configuration data in your Google Drive" — the app cannot see any of your other files.
+
+#### Common login problems
+
+| Symptom | Cause | Fix |
 | --- | --- | --- |
-| `Erro 403: access_denied`, "não concluiu o processo de verificação" | A tela está em *Testing* e a conta não é testadora | Adicione a conta em *Audience → Test users*, ou publique o app |
-| "O acesso à pasta do app no Drive não foi concedido" | O escopo não está em *Data access*, ou a caixa da permissão não foi marcada na tela do Google | Declare o escopo e, ao entrar de novo, marque a permissão do Drive |
-| `origin_mismatch` no popup | A origem não bate exatamente com a barra de endereços | Registre a origem sem barra final e sem caminho |
+| `Error 403: access_denied`, "has not completed the verification process" | The consent screen is in *Testing* and the account is not a tester | Add the account under *Audience → Test users*, or publish the app |
+| "Access to the app's Drive folder was not granted" | The scope is not under *Data access*, or the permission checkbox was left unchecked on Google's screen | Declare the scope and, when signing in again, tick the Drive permission |
+| `origin_mismatch` in the popup | The origin does not exactly match the address bar | Register the origin without a trailing slash and without a path |
 
-> As permissões aparecem como **caixas que começam desmarcadas**. Clicar em "Continuar" sem marcar
-> a do Drive concede só a identidade, e o app recusa o login em vez de criar um cofre que não
-> conseguiria sincronizar depois.
+> The permissions show up as **checkboxes that start unchecked**. Clicking "Continue"
+> without ticking the Drive one grants identity only, and the app refuses the login instead
+> of creating a vault it could never sync.
 
-**Vale publicar?** Todos os escopos usados aqui — `drive.appdata`, `userinfo.email` e
-`userinfo.profile` — são classificados pelo Google como *non-sensitive*, que exigem apenas a
-verificação básica. Publicar (*Audience → Publish app*) evita o teto de 100 testadores e a
-autorização de teste expirando, que força um consentimento interativo novo quando a renovação
-silenciosa falha.
+**Is publishing worth it?** Every scope used here — `drive.appdata`, `userinfo.email` and
+`userinfo.profile` — is classified by Google as *non-sensitive*, which only requires basic
+verification. Publishing (*Audience → Publish app*) removes the 100-tester cap and the
+expiring test authorization that forces a fresh interactive consent whenever silent renewal
+fails.
 
-### 2. Configure o repositório
+### 2. Configure the repository
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
-   - Nome: `GOOGLE_OAUTH_CLIENT_ID`
-   - Valor: o client id do passo anterior.
+   - Name: `GOOGLE_OAUTH_CLIENT_ID`
+   - Value: the client id from the previous step.
 
-Se você preferir não fixar o client id no build, deixe a variável vazia: o app pede o client id
-na primeira execução e o guarda no `localStorage` daquele navegador.
+If you prefer not to bake the client id into the build, leave the variable empty: the app
+asks for the client id on first run and keeps it in that browser's `localStorage`.
 
-### 3. Faça o deploy
+### 3. Deploy
 
-Em *Settings → Pages → Build and deployment*, escolha **Source: GitHub Actions**. Isto não é
-detalhe: com a opção *Deploy from a branch*, o GitHub roda o próprio build Jekyll da raiz do
-repositório **em paralelo** com o workflow deste projeto, e os dois publicam no mesmo site. Quem
-terminar por último vence — e quando é o Jekyll, o que vai ao ar é o código-fonte, com um
-`index.html` que aponta para `/src/main.tsx` e não executa no navegador.
+Under *Settings → Pages → Build and deployment*, choose **Source: GitHub Actions**. This
+is not a detail: with *Deploy from a branch*, GitHub runs its own Jekyll build of the
+repository root **in parallel** with this project's workflow, and both publish to the same
+site. Whoever finishes last wins — and when it is Jekyll, what goes live is the source
+code, with an `index.html` that points at `/src/main.tsx` and does not run in a browser.
 
-> Sintoma de que a origem está errada: `curl https://SEU-DOMINIO/README.md` responde 200, e
-> `/manifest.webmanifest` responde 404. Num deploy correto é o contrário. Um *service worker* já
-> instalado continua servindo a versão anterior do app, então o problema costuma aparecer primeiro
-> para quem abre o site pela primeira vez.
+> Symptom of the wrong source: `curl https://YOUR-DOMAIN/README.md` answers 200, and
+> `/manifest.webmanifest` answers 404. A correct deploy is the other way around. A
+> *service worker* that is already installed keeps serving the previous version of the
+> app, so the problem tends to show up first for whoever opens the site for the first time.
 
-Feito isso, um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes,
-constrói e publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em
-página de projeto, `/` em domínio próprio).
+Once that is set, a push to `main` triggers `.github/workflows/deploy.yml`, which runs
+typecheck + tests, builds and publishes to Pages. Vite's `base` is resolved automatically
+(`/equantic-keeper/` on a project page, `/` on a custom domain).
 
-**Domínio próprio:** configure em *Settings → Pages → Custom domain*. O GitHub grava o valor num
-arquivo `CNAME` na raiz do repositório, e o build copia esse arquivo para dentro de `dist/` — assim
-o artefato publicado carrega o mesmo domínio, sem uma segunda cópia em `public/` que poderia ficar
-desatualizada se o domínio mudasse.
+**Custom domain:** configure it under *Settings → Pages → Custom domain*. GitHub writes
+the value to a `CNAME` file at the repository root, and the build copies that file into
+`dist/` — so the published artifact carries the same domain, without a second copy in
+`public/` that could go stale if the domain ever changed.
 
 ---
 
-## Desenvolvimento
+## Development
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # testes unitários (cripto, cofre, sync, TOTP, gerador, busca, documentos)
+npm test           # unit tests (crypto, vault, sync, TOTP, generator, search, documents)
 npm run typecheck
-npm run build      # typecheck + build de produção em dist/
-npm run icons      # regenera os ícones do PWA
-npm run smoke      # teste de integração no navegador (após npm run build)
+npm run build      # typecheck + production build in dist/
+npm run icons      # regenerates the PWA icons
+npm run smoke      # in-browser integration test (after npm run build)
 ```
 
-O `npm run smoke` sobe o `vite preview`, semeia um cofre cifrado por uma implementação
-independente do formato e percorre o app com o Playwright: configuração inicial, senha errada,
-desbloqueio, busca, revelar segredo, TOTP, criação de item, cadastro de um documento com titular,
-filtro por pessoa, anexo cifrado aberto no visualizador de PDF, alertas de validade, tema e
-bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
-também é exercitada em navegador de verdade. Ele precisa do navegador instalado uma vez:
+`npm run smoke` starts `vite preview`, seeds a vault encrypted by an independent
+implementation of the file format and walks the app with Playwright: first-run setup,
+wrong password, unlock, search, revealing a secret, TOTP, item creation, registering a
+document with a holder, filtering by person, an encrypted attachment opened in the PDF
+viewer, expiry alerts, theme and lock. The seeded vault is a **v1** file, so the migration
+to v2 is exercised in a real browser as well. It needs the browser installed once:
 `npx playwright install chromium`.
 
-Para testar o login do Google localmente, adicione `http://localhost:5173` às *Authorized
-JavaScript origins* da credencial. Sem isso, o app ainda funciona: crie o cofre, use offline e
-conecte o Drive depois.
+To test Google sign-in locally, add `http://localhost:5173` to the credential's
+*Authorized JavaScript origins*. Without it the app still works: create the vault, use it
+offline and connect Drive later.
 
-### Estrutura
+### Structure
 
 ```
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
-               model (tipos de segredo) · documents (tipos de documento pessoal)
-               attachments (envelope de chaves) · blobstore (cache cifrado em IndexedDB)
-               expiry (o que venceu e o que está para vencer) · zip (pacote de backup)
-src/assets/brand/  logotipos eQuantic — fonte única dos ícones e do favicon
-src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
-src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
+               model (secret types) · documents (personal document types)
+               attachments (key envelope) · blobstore (encrypted IndexedDB cache)
+               expiry (what expired and what is about to) · zip (backup bundle)
+src/assets/brand/  eQuantic logos — single source for the icons and the favicon
+src/state/     keeper.tsx  — state machine (auth, vault, sync)
+src/screens/   Onboarding (setup, login, creation, unlock) · VaultScreen
 src/components/ ItemDetail · ItemEditor · SecretValue/TOTP · Generator · SettingsDialog · ui · icons
 ```
 
 ---
 
-## Formato do cofre
+## Vault format
 
-O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mesmo envelope:
+The file written to Drive (`vault.keeper.json`) and the exported backup share the same
+envelope:
 
 ```jsonc
 {
@@ -223,68 +232,71 @@ O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mes
 ```
 
 - **AAD** = `format|version|cipher|kdf.algo|kdf.iterations|kdf.salt`
-- **Chave** = `HKDF-SHA256(PBKDF2(senha, salt, iterations), salt, "equantic-keeper:enc:v1")`
-- **Payload** (cifrado) = `{ "items": [...], "people": [...], "preferences": {...} }`
-- **Versão 2** acrescentou `people` (titulares) e `item.holderId`; a **3** acrescentou
-  `item.attachments`. Cofres antigos abrem normalmente; um cliente antigo é que se recusa a abrir um
-  cofre mais novo, em vez de descartar o que não entende.
+- **Key** = `HKDF-SHA256(PBKDF2(password, salt, iterations), salt, "equantic-keeper:enc:v1")`
+- **Payload** (encrypted) = `{ "items": [...], "people": [...], "preferences": {...} }`
+- **Version 2** added `people` (holders) and `item.holderId`; **version 3** added
+  `item.attachments`. Old vaults open normally; it is the old client that refuses to open
+  a newer vault, instead of discarding what it does not understand.
 
-### Anexos
+### Attachments
 
-Os bytes **não** ficam no cofre. Cada anexo é cifrado com uma chave AES-GCM própria e gravado como
-um arquivo separado na mesma pasta oculta; o cofre guarda só os metadados e essa chave, cifrada com
-a chave mestra:
+The bytes do **not** live in the vault. Each attachment is encrypted with its own AES-GCM
+key and written as a separate file in the same hidden folder; the vault stores only the
+metadata and that key, wrapped by the master key:
 
 ```jsonc
 {
   "id": "…", "name": "residencia-2024.pdf", "mimeType": "application/pdf", "size": 184320,
-  "wrapped": { "key": "<base64>", "iv": "<base64>" },  // chave do arquivo, cifrada pela mestra
-  "iv": "<base64>",                                     // IV do conteúdo
-  "driveFileId": "…"                                    // vazio até subir ao Drive
+  "wrapped": { "key": "<base64>", "iv": "<base64>" },  // file key, wrapped by the master key
+  "iv": "<base64>",                                     // content IV
+  "driveFileId": "…"                                    // empty until uploaded to Drive
 }
 ```
 
-- **AAD da chave** = `equantic-keeper:attachment-key:v1|<id>` — impede mover a chave de um registro
-  para outro.
-- **AAD do conteúdo** = `equantic-keeper:attachment:v1|<id>|<mimeType>|<size>` — adulterar o tipo
-  declarado (renomear um PDF para imagem dentro do cofre) quebra a decifragem em vez de entregar os
-  bytes ao visualizador com outro rótulo.
-- O ciphertext também fica em cache no **IndexedDB** do navegador, para abrir offline.
-- A exportação **`.keeper.json`** leva só o cofre. Para levar os arquivos junto, use *Exportar cofre
-  + anexos*, que gera um **`.keeper.zip`**:
+- **Key AAD** = `equantic-keeper:attachment-key:v1|<id>` — prevents moving a key from one
+  record to another.
+- **Content AAD** = `equantic-keeper:attachment:v1|<id>|<mimeType>|<size>` — tampering with
+  the declared type (renaming a PDF to an image inside the vault) breaks decryption instead
+  of handing the bytes to the viewer under a different label.
+- The ciphertext is also cached in the browser's **IndexedDB**, for offline opening.
+- The **`.keeper.json`** export carries the vault only. To take the files along, use
+  *Exportar cofre + anexos* ("Export vault + attachments"), which produces a
+  **`.keeper.zip`**:
 
 ```
-vault.keeper.json                    o mesmo envelope cifrado de sempre
-attachments/attachment-<id>.bin      um ciphertext por anexo, sem alteração
+vault.keeper.json                    the same encrypted envelope as always
+attachments/attachment-<id>.bin      one ciphertext per attachment, unchanged
 ```
 
-  Nada ali é legível sem a senha mestra — é o mesmo ciphertext que o Drive recebe. As entradas não
-  são comprimidas: ciphertext não comprime, e gastar CPU (e uma dependência) para não economizar
-  nada não se justifica. Ao restaurar, os anexos voltam para o dispositivo e perdem o id do Drive
-  de origem, para que **esta** conta suba a própria cópia — sem isso, um segundo dispositivo
-  herdaria uma referência que não consegue ler.
+  Nothing in it is readable without the master password — it is the same ciphertext Drive
+  receives. Entries are not compressed: ciphertext does not compress, and spending CPU (and
+  a dependency) to save nothing is not justified. On restore, attachments return to the
+  device and lose their original Drive file id, so that **this** account uploads its own
+  copy — without that, a second device would inherit a reference it cannot read.
 
-O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
-cofre sem este app. O teste de integração do repositório faz exatamente isso.
+The format is simple on purpose: with the master password and ~30 lines of Web Crypto you
+can decrypt the vault without this app. The repository's integration test does exactly that.
 
 ---
 
-## Limitações conhecidas
+## Known limitations
 
-- **Sem recuperação de senha.** Exporte um backup e guarde-o em outro lugar — o pacote
-  `.keeper.zip` inclui os anexos; o `.keeper.json`, só o cofre.
-- **Anexos órfãos.** Quando um item é apagado de vez, os bytes dele somem junto. Mas se o item sair
-  pela retenção de 90 dias, o arquivo fica no Drive — ilegível sem a chave envelopada, e ainda
-  ocupando espaço. *Configurações → Liberar espaço no Drive* remove o que nenhum item referencia e
-  já passou de 90 dias. A carência existe porque um aparelho que ficou offline pode ter a única
-  cópia do cofre que ainda aponta para aquele arquivo.
-- O `appDataFolder` é invisível no Drive: para levar os dados embora, use *Exportar cofre cifrado*.
-- A gravação no Drive não é atômica. O app mescla antes de escrever e detecta divergência de
-  revisão, mas duas edições no mesmo segundo em dispositivos diferentes podem exigir uma
-  sincronização extra.
-- Enquanto a tela de consentimento estiver em *Testing*, o Google limita o app a 100 usuários de
-  teste e o consentimento expira a cada 7 dias.
+- **No password recovery.** Export a backup and keep it somewhere else — the
+  `.keeper.zip` bundle includes the attachments; the `.keeper.json`, only the vault.
+- **Orphaned attachments.** When an item is deleted for good, its bytes go with it. But if
+  an item leaves through the 90-day trash retention, the file stays in Drive — unreadable
+  without the wrapped key, yet still taking space. *Configurações → Liberar espaço no
+  Drive* ("Free up Drive space") removes whatever no item references and is itself older
+  than 90 days. The grace period exists because a device that stayed offline may hold the
+  only copy of the vault that still points at that file.
+- The `appDataFolder` is invisible in Drive: to take your data elsewhere, use the
+  encrypted vault export.
+- Drive writes are not atomic. The app merges before writing and detects revision
+  divergence, but two edits in the same second on different devices may need one extra
+  sync.
+- While the consent screen is in *Testing*, Google caps the app at 100 test users and the
+  consent expires every 7 days.
 
-## Licença
+## License
 
-MIT — veja [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
