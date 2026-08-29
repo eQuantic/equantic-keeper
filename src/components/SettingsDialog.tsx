@@ -145,7 +145,7 @@ function PeopleSection() {
 }
 
 const selectClass =
-  'rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none';
+  'rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3 pointer-coarse:py-2.5';
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { actions, account, connected, payload, sync, busy, biometricAvailable, biometricEnrolled } =

@@ -339,7 +339,7 @@ export function ItemEditor({
               <select
                 value={draft.holderId}
                 onChange={(event) => patch({ holderId: event.target.value })}
-                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
               >
                 <option value="">— sem titular —</option>
                 {people.map((person) => (

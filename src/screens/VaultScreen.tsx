@@ -182,7 +182,7 @@ export function VaultScreen() {
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition ${
+      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition pointer-coarse:py-2.5 ${
         activeState ? 'bg-accent/12 text-ink' : 'text-muted hover:bg-raised hover:text-ink'
       }`}
     >
@@ -393,7 +393,7 @@ export function VaultScreen() {
             value={filters.query}
             onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
             placeholder="Buscar por nome, serviço, tag…"
-            className="w-full rounded-lg border border-line bg-canvas py-2 pr-16 pl-9 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none"
+            className="w-full rounded-lg border border-line bg-canvas py-2 pr-16 pl-9 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:py-3 pointer-coarse:pl-10"
             type="search"
             autoComplete="off"
           />
@@ -445,7 +445,7 @@ export function VaultScreen() {
                           : { ...EMPTY_FILTERS, expiry: status, query: filters.query },
                       )
                     }
-                    className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition ${tone} ${
+                    className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition pointer-coarse:rounded-lg pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-[13px] ${tone} ${
                       isActive ? 'ring-1 ring-current' : ''
                     }`}
                   >
@@ -480,7 +480,7 @@ export function VaultScreen() {
               <select
                 value={sort}
                 onChange={(event) => setSort(event.target.value as SortMode)}
-                className="rounded-lg border border-line bg-canvas px-2 py-1 text-xs text-muted focus:border-accent focus:outline-none"
+                className="rounded-lg border border-line bg-canvas px-2 py-1 text-xs text-muted focus:border-accent focus:outline-none pointer-coarse:rounded-[10px] pointer-coarse:px-3 pointer-coarse:py-2"
                 aria-label="Ordenar"
               >
                 <option value="updated">Recentes</option>
@@ -527,12 +527,12 @@ export function VaultScreen() {
                             setSelectedId(item.id);
                           }
                         }}
-                        className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition ${
+                        className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition pointer-coarse:py-3 ${
                           selectedId === item.id ? 'bg-accent/8' : 'hover:bg-raised'
                         }`}
                       >
                         <span
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg pointer-coarse:h-10 pointer-coarse:w-10 pointer-coarse:rounded-[10px]"
                           style={{
                             color: type.accent,
                             backgroundColor: `color-mix(in srgb, ${type.accent} 13%, transparent)`,
@@ -541,11 +541,11 @@ export function VaultScreen() {
                           <Icon name={type.icon} size={15} />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 truncate text-sm text-ink">
+                          <p className="flex items-center gap-1.5 truncate text-sm text-ink pointer-coarse:text-base">
                             {item.favorite ? <Icon name="star" size={12} className="shrink-0 text-warn" /> : null}
                             {item.name || 'Sem título'}
                           </p>
-                          <p className="mt-0.5 truncate text-xs text-muted">
+                          <p className="mt-0.5 truncate text-xs text-muted pointer-coarse:text-[13px]">
                             {item.description ||
                               item.fields.username ||
                               item.fields.service ||

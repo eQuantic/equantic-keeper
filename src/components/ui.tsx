@@ -44,7 +44,9 @@ export function Button({
       type="button"
       disabled={disabled || loading}
       className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        size === 'sm' ? 'px-2.5 py-1.5 text-xs' : 'px-3.5 py-2 text-sm'
+        size === 'sm'
+          ? 'px-2.5 py-1.5 text-xs pointer-coarse:py-2'
+          : 'px-3.5 py-2 text-sm pointer-coarse:rounded-xl pointer-coarse:px-4 pointer-coarse:py-3'
       } ${VARIANTS[variant]} ${className}`}
       {...rest}
     >
@@ -66,7 +68,7 @@ export function IconButton({
       type="button"
       title={label}
       aria-label={label}
-      className={`tap-target inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
+      className={`tap-target inline-flex h-8 w-8 items-center justify-center rounded-lg transition pointer-coarse:h-10 pointer-coarse:w-10 pointer-coarse:rounded-[10px] ${
         active ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-raised hover:text-ink'
       } ${className}`}
       {...rest}
@@ -125,7 +127,7 @@ export function Field({
 }
 
 const inputClass =
-  'w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-faint transition focus:border-accent focus:outline-none disabled:opacity-60';
+  'w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-faint transition focus:border-accent focus:outline-none disabled:opacity-60 pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3';
 
 export function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={`${inputClass} ${className}`} {...rest} />;
