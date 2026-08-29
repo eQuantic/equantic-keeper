@@ -886,13 +886,17 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       storage.setClientId(clientId);
       authRef.current = null;
       driveRef.current = null;
+      // Landing on the unlock screen without adopting the cached file left
+      // "Desbloquear" answering "Nenhum cofre carregado" until a reload.
+      const cached = storage.loadCachedVault();
+      if (cached) adoptVaultFile(cached.file, cached.driveFileId, cached.driveRevision);
       patch({
-        phase: storage.loadCachedVault() ? 'locked' : 'signin',
+        phase: cached ? 'locked' : 'signin',
         error: null,
         notice: 'Client ID salvo neste navegador.',
       });
     },
-    [patch],
+    [adoptVaultFile, patch],
   );
 
   const currentVaultFile = useCallback(() => fileRef.current, []);
