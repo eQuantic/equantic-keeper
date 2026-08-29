@@ -1,6 +1,7 @@
 /** The unlocked application: sidebar, list and detail pane. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SECRET_TYPES, getType, isSecretKind, type VaultItem } from '../lib/model';
+import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeItems, activePeople, trashedItems } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
@@ -74,14 +75,15 @@ export function VaultScreen() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const items = payload?.items ?? [];
+  const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
   const people = useMemo(() => activePeople(payload?.people ?? []), [payload]);
   const holderNames = useMemo(
     () => new Map(people.map((person) => [person.id, person.name])),
     [people],
   );
   const visible = useMemo(
-    () => applyFilters(items, filters, sort, holderNames),
-    [items, filters, sort, holderNames],
+    () => applyFilters(items, filters, sort, holderNames, warningDays),
+    [items, filters, sort, holderNames, warningDays],
   );
   const tags = useMemo(() => collectTags(items), [items]);
   const folders = useMemo(() => collectFolders(items), [items]);
@@ -105,6 +107,12 @@ export function VaultScreen() {
     }
     return { dev, doc };
   }, [active]);
+
+  /** Indexed by item id so a list row can look its own status up in O(1). */
+  const expiring = useMemo(() => {
+    const found = collectExpiring(items, warningDays);
+    return { list: found, byItem: new Map(found.map((entry) => [entry.itemId, entry])) };
+  }, [items, warningDays]);
 
   const holderCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -192,6 +200,7 @@ export function VaultScreen() {
             !filters.folder &&
             !filters.holderId &&
             !filters.category &&
+            !filters.expiry &&
             !filters.favoritesOnly
           }
           onClick={() => setFilter({ ...EMPTY_FILTERS, query: filters.query })}
@@ -229,6 +238,34 @@ export function VaultScreen() {
           onClick={() => setFilter({ ...EMPTY_FILTERS, view: 'trash', query: filters.query })}
         />
       </div>
+
+      {expiring.list.length > 0 ? (
+        <div>
+          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Validade</p>
+          <div className="space-y-0.5">
+            {expiring.list.some((entry) => entry.status === 'expired') ? (
+              <NavItem
+                icon="warning"
+                accent="var(--color-danger)"
+                label="Vencidos"
+                count={expiring.list.filter((entry) => entry.status === 'expired').length}
+                activeState={filters.expiry === 'expired'}
+                onClick={() => setFilter({ ...EMPTY_FILTERS, expiry: 'expired', query: filters.query })}
+              />
+            ) : null}
+            {expiring.list.some((entry) => entry.status === 'soon') ? (
+              <NavItem
+                icon="clock"
+                accent="var(--color-warn)"
+                label="Vencem em breve"
+                count={expiring.list.filter((entry) => entry.status === 'soon').length}
+                activeState={filters.expiry === 'soon'}
+                onClick={() => setFilter({ ...EMPTY_FILTERS, expiry: 'soon', query: filters.query })}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {people.length > 0 ? (
         <div>
@@ -435,6 +472,7 @@ export function VaultScreen() {
                 {visible.map((item) => {
                   const type = getType(item.type);
                   const quick = primarySecret(item);
+                  const expiry = expiring.byItem.get(item.id);
                   return (
                     <li key={item.id}>
                       <div
@@ -475,6 +513,18 @@ export function VaultScreen() {
                           </p>
                         </div>
                         <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                          {expiry ? (
+                            <Badge
+                              className={
+                                expiry.status === 'expired'
+                                  ? 'bg-danger/12 text-danger'
+                                  : 'bg-warn/12 text-warn'
+                              }
+                            >
+                              <Icon name={expiry.status === 'expired' ? 'warning' : 'clock'} size={11} />
+                              {describeExpiry(expiry)}
+                            </Badge>
+                          ) : null}
                           {item.folder ? <Badge className="bg-raised text-muted">{item.folder}</Badge> : null}
                           <span className="w-12 text-right text-xs text-faint">{relativeTime(item.updatedAt)}</span>
                         </div>

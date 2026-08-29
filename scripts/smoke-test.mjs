@@ -129,6 +129,8 @@ const buildVaultInPage = async (page, password, payload) =>
   );
 
 const now = new Date().toISOString();
+/** Dates as the app stores them, relative to today, so the fixture never rots. */
+const relativeDay = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const item = (over) => ({
   id: crypto.randomUUID(),
   type: 'api-token',
@@ -198,6 +200,18 @@ const PAYLOAD = {
         privateKey: '-----BEGIN OPENSSH PRIVATE KEY-----\nEXEMPLO\n-----END OPENSSH PRIVATE KEY-----',
         publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExemplo deploy@prod-01',
       },
+    }),
+    item({
+      name: 'Passaporte — vencido',
+      type: 'passaporte',
+      folder: 'Documentos',
+      fields: { documentNumber: 'CX123456', expiresAt: relativeDay(-40) },
+    }),
+    item({
+      name: 'Cartão de Cidadão — a renovar',
+      type: 'pt-cartao-cidadao',
+      folder: 'Documentos',
+      fields: { documentNumber: '12345678 9 ZZ1', expiresAt: relativeDay(25) },
     }),
     item({
       name: 'API do checkout (.env produção)',
@@ -311,7 +325,7 @@ const run = async () => {
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
-  await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 5);
+  await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 7);
   await page.screenshot({ path: `${OUT}/02-vault.png` });
 
   // 6. Search filters the list.
@@ -339,7 +353,7 @@ const run = async () => {
   await page.locator('label:has-text("Host") input').first().fill('db.staging.internal');
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("Postgres — staging")', { timeout: 5000 });
-  await check('novo item criado pela UI', async () => (await page.locator('main li').count()) === 6);
+  await check('novo item criado pela UI', async () => (await page.locator('main li').count()) === 8);
 
   const cached = await page.evaluate(() => localStorage.getItem('keeper.vault.cache.v1') ?? '');
   await check('cache local não contém texto puro', async () => !cached.includes('db.staging.internal'));
@@ -390,7 +404,7 @@ const run = async () => {
     (await page.locator('main li').count()) === 1);
   await page.click('nav button:has-text("Tudo")');
   await page.waitForTimeout(300);
-  await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 7);
+  await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 9);
 
   // 8d. Searching by the holder's name finds a document that never stores it.
   await page.fill('input[type="search"]', 'maria teste');
@@ -462,6 +476,38 @@ const run = async () => {
 
   await check('nenhum blob: sobrou registrado após fechar', async () =>
     (await page.evaluate(() => performance.getEntriesByType('resource').filter((e) => e.name.startsWith('blob:')).length)) === 0);
+
+  // 8g. Validity: what is expired, what is about to be, and what is neither.
+  await check('barra lateral separa vencidos de quem vence em breve', async () =>
+    (await page.locator('nav button:has-text("Vencidos")').count()) === 1 &&
+    (await page.locator('nav button:has-text("Vencem em breve")').count()) === 1);
+
+  await page.click('nav button:has-text("Vencidos")');
+  await page.waitForTimeout(300);
+  await check('vencidos traz só o passaporte fora do prazo', async () => {
+    const rows = await page.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('Passaporte — vencido');
+  });
+  await check('a linha diz há quanto tempo venceu', async () =>
+    (await page.locator('main li').first().innerText()).includes('expirou há 40 dias'));
+
+  await page.click('nav button:has-text("Vencem em breve")');
+  await page.waitForTimeout(300);
+  await check('vence em breve traz só o cartão a renovar', async () => {
+    const rows = await page.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('expira em 25 dias');
+  });
+  await page.screenshot({ path: `${OUT}/11-validade.png` });
+
+  // A date that is merely an issue date must never be dressed up as an expiry.
+  await page.click('nav button:has-text("Tudo")');
+  await page.waitForTimeout(300);
+  await page.click('text=Título de residência — Maria');
+  await page.waitForSelector('aside:has(h2) >> text=RP-2024-99887', { timeout: 5000 });
+  await check('data de emissão não é tratada como validade', async () => {
+    const detail = await page.locator('aside:has(h2)').innerText();
+    return detail.includes('EMITIDO EM') ? !/EMITIDO EM[\s\S]{0,40}expir/i.test(detail) : true;
+  });
 
   // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');

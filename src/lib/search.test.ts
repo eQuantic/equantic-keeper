@@ -98,6 +98,35 @@ describe('collectTags / collectFolders', () => {
   });
 });
 
+describe('filtro de validade', () => {
+  const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const comValidade: VaultItem[] = [
+    make({ id: 'v1', type: 'pt-residencia', name: 'Vencido', fields: { expiresAt: day(-3) } }),
+    make({ id: 'v2', type: 'passaporte', name: 'Vence logo', fields: { expiresAt: day(20) } }),
+    make({ id: 'v3', type: 'passaporte', name: 'Tranquilo', fields: { expiresAt: day(900) } }),
+    // Só data de emissão: no passado por natureza, e nunca um alerta.
+    make({ id: 'v4', type: 'pt-residencia', name: 'Só emissão', fields: { issuedAt: day(-900) } }),
+  ];
+
+  it('separa vencidos de quem vence em breve', () => {
+    expect(applyFilters(comValidade, { ...EMPTY_FILTERS, expiry: 'expired' }, 'name').map((i) => i.id)).toEqual([
+      'v1',
+    ]);
+    expect(applyFilters(comValidade, { ...EMPTY_FILTERS, expiry: 'soon' }, 'name').map((i) => i.id)).toEqual([
+      'v2',
+    ]);
+  });
+
+  it('a janela de aviso vem de fora e muda o resultado', () => {
+    const largo = applyFilters(comValidade, { ...EMPTY_FILTERS, expiry: 'soon' }, 'name', new Map(), 1000);
+    expect(largo.map((item) => item.id)).toEqual(['v3', 'v2']);
+  });
+
+  it('sem filtro de validade, nada é escondido', () => {
+    expect(applyFilters(comValidade, EMPTY_FILTERS, 'name')).toHaveLength(4);
+  });
+});
+
 describe('documentos e titulares', () => {
   it('encontra um documento pelo nome do titular, que não fica no item', () => {
     // O item guarda só o `holderId`; quem procura digita "Maria".

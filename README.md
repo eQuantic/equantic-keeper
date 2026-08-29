@@ -66,6 +66,10 @@ os dados são irrecuperáveis — por construção.
 - **Titulares**: cada item pode pertencer a uma pessoa (você, cônjuge, filhos). A barra lateral
   filtra por pessoa e a busca encontra o documento pelo nome dela, que não fica guardado no item.
   Remover uma pessoa nunca apaga os documentos dela — eles apenas ficam sem titular.
+- **Alerta de validade**: o cofre sabe a diferença entre a data em que um documento foi *emitido*
+  e aquela em que ele *vence*. A barra lateral separa o que já venceu do que vence em breve, a
+  lista mostra “expira em 25 dias” na linha, e a antecedência do aviso é configurável (padrão: 60
+  dias — renovar um título de residência leva meses).
 - **Anexos cifrados** (PDF, JPG, PNG, WebP, até 25 MB cada) com **visualizador embutido**: pdf.js
   renderiza o documento dentro do app, com zoom e seleção de texto, em vez de abrir uma aba com os
   bytes decifrados. Cada arquivo tem chave própria, cifrada com a chave mestra, e vive como um
@@ -176,7 +180,8 @@ npm run smoke      # teste de integração no navegador (após npm run build)
 O `npm run smoke` sobe o `vite preview`, semeia um cofre cifrado por uma implementação
 independente do formato e percorre o app com o Playwright: configuração inicial, senha errada,
 desbloqueio, busca, revelar segredo, TOTP, criação de item, cadastro de um documento com titular,
-filtro por pessoa, tema e bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
+filtro por pessoa, anexo cifrado aberto no visualizador de PDF, alertas de validade, tema e
+bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
 também é exercitada em navegador de verdade. Ele precisa do navegador instalado uma vez:
 `npx playwright install chromium`.
 
@@ -190,6 +195,7 @@ conecte o Drive depois.
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
                model (tipos de segredo) · documents (tipos de documento pessoal)
                attachments (envelope de chaves) · blobstore (cache cifrado em IndexedDB)
+               expiry (o que venceu e o que está para vencer)
 src/assets/brand/  logotipos eQuantic — fonte única dos ícones e do favicon
 src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
 src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen

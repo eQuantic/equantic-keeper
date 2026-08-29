@@ -17,6 +17,7 @@ import {
   seal,
   timingSafeEqual,
 } from './crypto';
+import { DEFAULT_WARNING_DAYS } from './expiry';
 import type { AttachmentRef, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
@@ -57,6 +58,8 @@ export interface VaultPreferences {
   clipboardClearSeconds: number;
   theme: 'dark' | 'light';
   concealSecrets: boolean;
+  /** How far ahead a validity date starts being flagged. */
+  expiryWarningDays: number;
 }
 
 export const DEFAULT_PREFERENCES: VaultPreferences = {
@@ -64,6 +67,7 @@ export const DEFAULT_PREFERENCES: VaultPreferences = {
   clipboardClearSeconds: 30,
   theme: 'dark',
   concealSecrets: true,
+  expiryWarningDays: DEFAULT_WARNING_DAYS,
 };
 
 export function emptyPayload(): VaultPayload {

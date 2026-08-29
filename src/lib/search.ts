@@ -1,4 +1,5 @@
 /** Filtering and ranking for the item list. */
+import { DEFAULT_WARNING_DAYS, expiryOf } from './expiry';
 import { getType, isSecretKind, type VaultItem } from './model';
 
 export interface Filters {
@@ -10,6 +11,8 @@ export interface Filters {
   holderId: string | null;
   /** Restricts the list to one half of the catalogue. */
   category: 'dev' | 'doc' | null;
+  /** Only what is past its validity date, or approaching it. */
+  expiry: 'expired' | 'soon' | null;
   favoritesOnly: boolean;
   view: 'active' | 'trash';
 }
@@ -21,6 +24,7 @@ export const EMPTY_FILTERS: Filters = {
   folder: null,
   holderId: null,
   category: null,
+  expiry: null,
   favoritesOnly: false,
   view: 'active',
 };
@@ -78,6 +82,8 @@ export function applyFilters(
   sort: SortMode,
   /** `Person.id` -> name, so the holder is searchable by name. */
   holderNames: Map<string, string> = new Map(),
+  /** Window used by the expiry filter; ignored when that filter is off. */
+  warningDays = DEFAULT_WARNING_DAYS,
 ): VaultItem[] {
   const wantTrash = filters.view === 'trash';
   const filtered = items.filter((item) => {
@@ -88,6 +94,7 @@ export function applyFilters(
     if (filters.tag && !item.tags.includes(filters.tag)) return false;
     if (filters.folder && item.folder !== filters.folder) return false;
     if (filters.favoritesOnly && !item.favorite) return false;
+    if (filters.expiry && expiryOf(item, warningDays)?.status !== filters.expiry) return false;
     return matches(item, filters.query, holderNames.get(item.holderId) ?? '');
   });
 
