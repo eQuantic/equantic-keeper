@@ -135,8 +135,17 @@ const buildVaultInPage = async (page, password, payload) =>
   );
 
 const now = new Date().toISOString();
-/** Dates as the app stores them, relative to today, so the fixture never rots. */
-const relativeDay = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+/**
+ * Dates as the app stores them, relative to today in *local* time. The app
+ * counts validity against the local end of day, so deriving these from UTC
+ * (toISOString) put the fixture one day off within an hour of midnight.
+ */
+const relativeDay = (offset) => {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
 const item = (over) => ({
   id: crypto.randomUUID(),
   type: 'api-token',
@@ -690,6 +699,60 @@ const run = async () => {
   await check('o segundo voltar fecha o detalhe', async () =>
     (await phone.locator('aside footer').count()) === 0 &&
     (await phone.locator('text=GitHub PAT').count()) > 0);
+
+  // 14. Biometric unlock, driven by a virtual platform authenticator with PRF.
+  // Older Chromium builds do not know the hasPrf option; skip gracefully there.
+  let virtualAuthenticator = false;
+  try {
+    const cdp = await phone.context().newCDPSession(phone);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', {
+      options: {
+        protocol: 'ctap2',
+        transport: 'internal',
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        hasPrf: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+    virtualAuthenticator = true;
+  } catch (error) {
+    console.log(`      (sem autenticador virtual com PRF: ${error.message} — biometria pulada)`);
+  }
+
+  if (virtualAuthenticator) {
+    // The availability probe runs at boot, before the authenticator existed.
+    await phone.reload({ waitUntil: 'domcontentloaded' });
+    await phone.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+    await phone.fill('input[type="password"]', PASSWORD);
+    await phone.click('button:has-text("Desbloquear")');
+    await phone.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+
+    await phone.click('button[aria-label="Menu"]');
+    const settingsEntry = phone.locator('nav button:has-text("Configurações")').filter({ visible: true });
+    await settingsEntry.click();
+    await phone.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+    await phone.click('[role="dialog"] button:has-text("Ativar desbloqueio por biometria")');
+    await phone.locator('[role="dialog"] label:has-text("Senha mestra") input').first().fill(PASSWORD);
+    await phone.getByRole('button', { name: 'Ativar', exact: true }).click();
+    await check('biometria ativada pelas configurações', async () => {
+      await phone.getByText('Desbloqueio por biometria ativado neste dispositivo.').waitFor({ timeout: 15000 });
+      return true;
+    });
+    await phone.keyboard.press('Escape');
+
+    await phone.keyboard.press('Control+l');
+    await phone.waitForSelector('text=Desbloquear cofre', { timeout: 5000 });
+    await check('tela de desbloqueio oferece biometria', async () =>
+      (await phone.locator('button:has-text("Desbloquear com biometria")').count()) === 1);
+    await phone.screenshot({ path: `${OUT}/15-mobile-biometria.png` });
+
+    await phone.click('button:has-text("Desbloquear com biometria")');
+    await phone.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    await check('biometria desbloqueia sem digitar a senha', async () => true);
+  }
 
   await phone.close();
   currentPage = page;

@@ -41,6 +41,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Cipher | AES-GCM-256 with a fresh 12-byte IV on every write and a 128-bit tag |
 | Header integrity | The public header is fed in as *additional authenticated data* — tampering with it invalidates the tag |
 | Key in memory | Non-extractable `CryptoKey`; wiped on lock, on tab close and on inactivity |
+| Biometric unlock (optional) | Master bits AES-GCM-wrapped under a key derived from a platform passkey's WebAuthn PRF output — per device, gated by Face ID / fingerprint / device PIN, invalidated by a password change |
 | Google scope | Only `drive.appdata` (the app's own hidden folder) + email/profile |
 | OAuth token | Short-lived access token, held in memory only |
 | Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
@@ -50,6 +51,25 @@ is never transmitted, never stored, and cannot be recovered.
 **What this model does not protect against:** a compromised device (keylogger, malware,
 malicious extension) sees the open vault the same way you do. And if you forget the master
 password, the data is unrecoverable — by construction.
+
+### Biometric unlock
+
+Typing a long passphrase on a phone keyboard several times a day is what pushes people
+toward short passwords, so the phone's own unlock can stand in for it. Enabling it (in
+*Configurações → Segurança*, once per device) creates a platform passkey and evaluates its
+**WebAuthn PRF extension**; the PRF output derives — through HKDF — an AES-GCM key that
+wraps the vault's master bits into a record kept in `localStorage`.
+
+- The record is ciphertext plus public parameters. Opening it requires the passkey's PRF
+  output, which the authenticator only releases after user verification (Face ID,
+  fingerprint, device PIN) — the record alone, or the storage alone, opens nothing.
+- The record pins the vault's KDF salt, so **changing the master password invalidates it**;
+  the app deletes it and asks you to re-enable. Wiping the device data removes it too.
+- The master password remains the canonical key on every device; biometrics never replace
+  it, and the vault file itself is unchanged.
+- Requires a browser with WebAuthn PRF support (Safari on iOS 18+, Chrome/Android, and
+  desktop Chrome with a platform authenticator, among others). Where unsupported, the
+  option simply does not appear.
 
 ---
 
@@ -84,6 +104,9 @@ password, the data is unrecoverable — by construction.
   `otpauth://` URI (RFC 6238, SHA-1/256/512).
 - **Password and passphrase generator** using `crypto.getRandomValues` with bias-free
   sampling.
+- **Biometric unlock** (optional, per device): a platform passkey with the WebAuthn PRF
+  extension stands in for the master passphrase — Face ID or a fingerprint instead of
+  retyping it on a phone keyboard. The passphrase remains the canonical key.
 - **Multi-device sync** with item-by-item merging (most recent wins) and *tombstones*, so
   deletions propagate instead of resurrecting.
 - **Backups**: rotating daily snapshots in Drive itself, encrypted `.keeper.json` export,

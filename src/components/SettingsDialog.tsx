@@ -148,10 +148,14 @@ const selectClass =
   'rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none';
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { actions, account, connected, payload, sync, busy } = useKeeper();
+  const { actions, account, connected, payload, sync, busy, biometricAvailable, biometricEnrolled } =
+    useKeeper();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [changingPassword, setChangingPassword] = useState(false);
+  const [enablingBiometrics, setEnablingBiometrics] = useState(false);
+  const [biometricPassword, setBiometricPassword] = useState('');
+  const [biometricError, setBiometricError] = useState<string | null>(null);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -187,6 +191,17 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       setConfirmPassword('');
     } catch (error) {
       setPasswordError(error instanceof Error ? error.message : 'Falha ao alterar a senha.');
+    }
+  };
+
+  const submitEnableBiometrics = async () => {
+    setBiometricError(null);
+    try {
+      await actions.enableBiometrics(biometricPassword);
+      setEnablingBiometrics(false);
+      setBiometricPassword('');
+    } catch (error) {
+      setBiometricError(error instanceof Error ? error.message : 'Falha ao ativar a biometria.');
     }
   };
 
@@ -338,6 +353,73 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             onChange={(checked) => void actions.updatePreferences({ concealSecrets: checked })}
           />
         </div>
+
+        {biometricAvailable ? (
+          biometricEnrolled ? (
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-lg border border-line bg-canvas p-3">
+              <span className="min-w-0 text-sm text-ink">
+                <span className="flex items-center gap-2">
+                  <Icon name="fingerprint" size={15} /> Desbloqueio por biometria
+                </span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  Ativado neste dispositivo. A senha mestra continua valendo em todos.
+                </span>
+              </span>
+              <Button size="sm" variant="ghost" onClick={actions.disableBiometrics}>
+                Desativar
+              </Button>
+            </div>
+          ) : enablingBiometrics ? (
+            <div className="mt-3 space-y-3 rounded-lg border border-line bg-canvas p-3">
+              <Field
+                label="Senha mestra"
+                hint="Confirma a senha e cria uma chave de acesso protegida por Face ID, digital ou o PIN do aparelho."
+                error={biometricError ?? undefined}
+              >
+                <PasswordInput
+                  value={biometricPassword}
+                  onChange={(event) => setBiometricPassword(event.target.value)}
+                  autoFocus
+                />
+              </Field>
+              <p className="text-xs text-muted">
+                A chave do cofre fica cifrada atrás da biometria, apenas neste dispositivo. Nada muda no
+                cofre nem no Drive, e a senha mestra continua sendo a chave definitiva.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={busy}
+                  disabled={!biometricPassword}
+                  onClick={() => void submitEnableBiometrics()}
+                >
+                  Ativar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEnablingBiometrics(false);
+                    setBiometricPassword('');
+                    setBiometricError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              className="mt-3 mr-2"
+              size="sm"
+              icon="fingerprint"
+              onClick={() => setEnablingBiometrics(true)}
+            >
+              Ativar desbloqueio por biometria
+            </Button>
+          )
+        ) : null}
 
         {changingPassword ? (
           <div className="mt-3 space-y-3 rounded-lg border border-line bg-canvas p-3">

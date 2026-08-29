@@ -102,12 +102,7 @@ export function newKdfParams(iterations = DEFAULT_ITERATIONS): KdfParams {
   };
 }
 
-/**
- * Stretch the master password and split it into an encryption key and a
- * verifier. Rejects weakened parameters so a tampered header cannot trick the
- * client into a cheap derivation.
- */
-export async function deriveKey(password: string, kdf: KdfParams): Promise<DerivedKey> {
+function validateKdf(kdf: KdfParams): Uint8Array<ArrayBuffer> {
   if (kdf.algo !== KDF_ALGO) {
     throw new Error(`Algoritmo de derivação não suportado: ${kdf.algo}`);
   }
@@ -116,7 +111,19 @@ export async function deriveKey(password: string, kdf: KdfParams): Promise<Deriv
   }
   const salt = fromBase64(kdf.salt);
   if (salt.length < 8) throw new Error('Parâmetros de derivação inválidos (salt curto).');
+  return salt;
+}
 
+/**
+ * The expensive PBKDF2 half of the schedule. Exposed on its own so the master
+ * bits can be wrapped for biometric unlock; every other caller should go
+ * through `deriveKey`, which never lets them out of this module.
+ */
+export async function deriveMasterBits(
+  password: string,
+  kdf: KdfParams,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const salt = validateKdf(kdf);
   const s = subtle();
   const passwordKey = await s.importKey('raw', utf8(password.normalize('NFKC')), 'PBKDF2', false, [
     'deriveBits',
@@ -126,8 +133,20 @@ export async function deriveKey(password: string, kdf: KdfParams): Promise<Deriv
     passwordKey,
     256,
   );
+  return new Uint8Array(masterBits);
+}
 
-  const hkdfKey = await s.importKey('raw', masterBits, 'HKDF', false, ['deriveBits', 'deriveKey']);
+/** The cheap HKDF half: splits master bits into the encryption key and the verifier. */
+export async function deriveKeyFromMasterBits(
+  masterBits: Uint8Array,
+  kdf: KdfParams,
+): Promise<DerivedKey> {
+  const salt = validateKdf(kdf);
+  const s = subtle();
+  const hkdfKey = await s.importKey('raw', masterBits as Uint8Array<ArrayBuffer>, 'HKDF', false, [
+    'deriveBits',
+    'deriveKey',
+  ]);
   const key = await s.deriveKey(
     { name: 'HKDF', hash: 'SHA-256', salt: salt, info: utf8(ENC_INFO) },
     hkdfKey,
@@ -142,6 +161,20 @@ export async function deriveKey(password: string, kdf: KdfParams): Promise<Deriv
   );
 
   return { key, verifier: toBase64(new Uint8Array(verifierBits)), kdf };
+}
+
+/**
+ * Stretch the master password and split it into an encryption key and a
+ * verifier. Rejects weakened parameters so a tampered header cannot trick the
+ * client into a cheap derivation.
+ */
+export async function deriveKey(password: string, kdf: KdfParams): Promise<DerivedKey> {
+  const masterBits = await deriveMasterBits(password, kdf);
+  try {
+    return await deriveKeyFromMasterBits(masterBits, kdf);
+  } finally {
+    masterBits.fill(0);
+  }
 }
 
 export interface SealedBox {

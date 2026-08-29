@@ -236,7 +236,7 @@ export function CreateVaultScreen() {
 }
 
 export function UnlockScreen() {
-  const { actions, busy, account, online, connected } = useKeeper();
+  const { actions, busy, account, online, connected, biometricReady } = useKeeper();
   const [password, setPassword] = useState('');
 
   const submit = (event: FormEvent) => {
@@ -265,13 +265,26 @@ export function UnlockScreen() {
           <PasswordInput
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            autoFocus
+            // With biometrics ready, autofocusing would pop the phone keyboard
+            // over the one-tap path the user actually wants.
+            autoFocus={!biometricReady}
             autoComplete="current-password"
           />
         </Field>
         <Button type="submit" variant="primary" className="w-full" loading={busy} icon="unlock" disabled={!password}>
           Desbloquear
         </Button>
+        {biometricReady ? (
+          <Button
+            variant="outline"
+            className="w-full"
+            icon="fingerprint"
+            loading={busy}
+            onClick={() => void actions.unlockWithBiometrics()}
+          >
+            Desbloquear com biometria
+          </Button>
+        ) : null}
         {!connected && online ? (
           <Button variant="ghost" className="w-full" onClick={() => void actions.connectGoogle(true)}>
             <Icon name="google" size={14} /> Reconectar conta Google
