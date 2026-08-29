@@ -341,6 +341,8 @@ const run = async () => {
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
   await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 7);
+  await check('barra inferior não aparece no desktop', async () =>
+    (await page.locator('nav[aria-label="Ações rápidas"]').filter({ visible: true }).count()) === 0);
   await page.screenshot({ path: `${OUT}/02-vault.png` });
 
   // 6. Search filters the list.
@@ -641,6 +643,21 @@ const run = async () => {
     const height = await phone.locator('main li > div').first().evaluate((el) => el.getBoundingClientRect().height);
     return height >= 62 && height <= 72;
   });
+
+  // The thumb-reach bar carries the primary commands on phones.
+  await check('barra inferior traz os comandos principais', async () =>
+    (await phone.locator('nav[aria-label="Ações rápidas"] button').count()) === 5);
+  await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Favoritos")');
+  await phone.waitForTimeout(300);
+  await check('Favoritos na barra filtra a lista', async () => (await phone.locator('main li').count()) === 1);
+  await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Favoritos")');
+  await phone.waitForTimeout(300);
+  await check('tocar de novo em Favoritos desfaz o filtro', async () => (await phone.locator('main li').count()) === 7);
+  await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Novo")');
+  await phone.waitForSelector('text=Escolha o tipo', { timeout: 5000 });
+  await check('Novo na barra abre o seletor de tipos', async () => true);
+  await phone.keyboard.press('Escape');
+  await phone.waitForSelector('text=Escolha o tipo', { state: 'detached', timeout: 5000 });
 
   // …and the sidebar's expired/soon filters surface as chips above the list,
   // because on a phone the sidebar hides behind the menu button.

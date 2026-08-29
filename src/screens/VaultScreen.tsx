@@ -56,7 +56,7 @@ function SyncBadge() {
       type="button"
       onClick={() => void actions.syncNow()}
       title={sync.message ?? (online ? 'Sincronizar agora' : 'Sem conexão')}
-      className={`hidden items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition hover:bg-raised sm:flex ${state.tone}`}
+      className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition hover:bg-raised ${state.tone}`}
     >
       <Icon name={state.icon} size={14} className={sync.status === 'syncing' ? 'animate-spin' : ''} />
       <span className="hidden md:inline">{state.text}</span>
@@ -189,6 +189,29 @@ export function VaultScreen() {
       <Icon name={icon} size={15} style={accent ? { color: accent } : undefined} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count !== undefined ? <span className="text-xs text-faint tabular-nums">{count}</span> : null}
+    </button>
+  );
+
+  const BarAction = ({
+    icon,
+    label,
+    active,
+    onClick,
+  }: {
+    icon: string;
+    label: string;
+    active?: boolean;
+    onClick: () => void;
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-16 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] transition ${
+        active ? 'text-accent' : 'text-muted'
+      }`}
+    >
+      <Icon name={icon} size={22} />
+      {label}
     </button>
   );
 
@@ -403,10 +426,16 @@ export function VaultScreen() {
         </div>
 
         <SyncBadge />
-        <IconButton icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} />
-        <IconButton icon="lock" label="Bloquear (Ctrl+L)" onClick={actions.lock} />
-        <Button variant="primary" icon="plus" onClick={() => setEditing({ item: null })} className="shrink-0">
-          <span className="hidden sm:inline">Novo</span>
+        {/* On phones these commands live in the bottom bar, within thumb reach. */}
+        <IconButton icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} className="hidden lg:inline-flex" />
+        <IconButton icon="lock" label="Bloquear (Ctrl+L)" onClick={actions.lock} className="hidden lg:inline-flex" />
+        <Button
+          variant="primary"
+          icon="plus"
+          onClick={() => setEditing({ item: null })}
+          className="hidden shrink-0 lg:inline-flex"
+        >
+          Novo
         </Button>
       </header>
 
@@ -601,6 +630,38 @@ export function VaultScreen() {
           </aside>
         ) : null}
       </div>
+
+      {/* Thumb-reach command bar on phones; desktop keeps these in the header. */}
+      <nav
+        aria-label="Ações rápidas"
+        className="flex shrink-0 items-end justify-around border-t border-line bg-surface px-2 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:hidden"
+      >
+        <BarAction icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} />
+        <BarAction
+          icon="star"
+          label="Favoritos"
+          active={filters.favoritesOnly}
+          onClick={() =>
+            setFilter(
+              filters.favoritesOnly
+                ? { ...EMPTY_FILTERS, query: filters.query }
+                : { ...EMPTY_FILTERS, favoritesOnly: true, query: filters.query },
+            )
+          }
+        />
+        <button
+          type="button"
+          onClick={() => setEditing({ item: null })}
+          className="-mt-6 flex w-[72px] flex-col items-center gap-1 text-[11px] text-ink"
+        >
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-white shadow-lg shadow-accent/40">
+            <Icon name="plus" size={26} />
+          </span>
+          Novo
+        </button>
+        <BarAction icon="settings" label="Ajustes" onClick={() => setSettingsOpen(true)} />
+        <BarAction icon="lock" label="Bloquear" onClick={actions.lock} />
+      </nav>
 
       {editing ? (
         <ItemEditor
