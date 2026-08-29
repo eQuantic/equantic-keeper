@@ -23,6 +23,8 @@ import type { AttachmentRef, Person, VaultItem } from '../lib/model';
 import {
   cacheAttachment,
   encryptAttachment,
+  fetchCiphertext,
+  findOrphans,
   forgetAttachment,
   openAttachment,
   uploadAttachment,
@@ -40,7 +42,7 @@ import {
 } from '../lib/vault';
 import * as storage from '../lib/storage';
 import { pullVault, syncVault, VaultPasswordMismatchError } from '../lib/sync';
-import { readBackup } from '../lib/backup';
+import { parseBundle, readBackup, referencedAttachments } from '../lib/backup';
 import { clearClipboard } from '../lib/clipboard';
 
 export type Phase = 'boot' | 'config' | 'signin' | 'create' | 'locked' | 'unlocked';
@@ -80,6 +82,9 @@ export interface KeeperActions {
   syncNow(force?: boolean): Promise<void>;
   changeMasterPassword(current: string, next: string): Promise<void>;
   importBackup(text: string, password: string): Promise<number>;
+  importBundle(bytes: Uint8Array, password: string): Promise<{ items: number; attachments: number }>;
+  collectAttachments(): Promise<{ bytes: Map<string, Uint8Array>; missing: string[] }>;
+  sweepDriveOrphans(): Promise<number>;
   currentVaultFile(): VaultFile | null;
   signOut(): Promise<void>;
   wipeDevice(): void;
@@ -634,6 +639,84 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [mutate],
   );
 
+  /**
+   * Gathers the ciphertext of every attachment the vault references, so the
+   * export can carry them. Names what could not be read instead of quietly
+   * shipping half a backup — a backup you find out is incomplete years later
+   * is worse than one you knew was incomplete when you made it.
+   */
+  const collectAttachments = useCallback(async () => {
+    const payload = payloadRef.current;
+    const bytes = new Map<string, Uint8Array>();
+    const missing: string[] = [];
+    if (!payload) return { bytes, missing };
+
+    for (const ref of referencedAttachments(payload)) {
+      try {
+        bytes.set(ref.id, await fetchCiphertext(driveRef.current, ref));
+      } catch {
+        missing.push(ref.name);
+      }
+    }
+    return { bytes, missing };
+  }, []);
+
+  const importBundle = useCallback(
+    async (bytes: Uint8Array, password: string) => {
+      const bundle = parseBundle(bytes);
+      const { payload: imported } = await unlockVault(bundle.file, password);
+
+      // Restore the bytes to this device first: an item that arrives pointing
+      // at an attachment nobody has is a broken document.
+      let restored = 0;
+      for (const ref of referencedAttachments(imported)) {
+        const ciphertext = bundle.attachments.get(ref.id);
+        if (!ciphertext) continue;
+        await cacheAttachment(ref, ciphertext);
+        restored += 1;
+      }
+
+      // The Drive ids in the backup belong to whichever account produced it.
+      // Clearing them makes this account upload its own copy on the next sync,
+      // which is the only way the attachment survives on a second device.
+      const withLocalIds = {
+        ...imported,
+        items: imported.items.map((item) => ({
+          ...item,
+          attachments: item.attachments.map((ref) =>
+            bundle.attachments.has(ref.id) ? { ...ref, driveFileId: '' } : ref,
+          ),
+        })),
+      };
+
+      let items = 0;
+      await mutate((payload) => {
+        const before = new Set(payload.items.map((item) => item.id));
+        const merged = mergePayloads(payload, withLocalIds);
+        items = merged.items.filter((item) => !before.has(item.id)).length;
+        return { ...merged, preferences: payload.preferences };
+      });
+      return { items, attachments: restored };
+    },
+    [mutate],
+  );
+
+  /**
+   * Deletes attachment files in Drive that no item points at any more. Only
+   * files older than the grace window are touched, so a scan another device
+   * uploaded moments ago — before its vault change reached us — is never the
+   * one that gets deleted.
+   */
+  const sweepDriveOrphans = useCallback(async () => {
+    const drive = driveRef.current;
+    const payload = payloadRef.current;
+    if (!drive || !payload) throw new Error('Conecte a conta Google para liberar espaço.');
+
+    const orphans = await findOrphans(drive, referencedAttachments(payload));
+    for (const id of orphans) await drive.delete(id).catch(() => undefined);
+    return orphans.length;
+  }, []);
+
   const signOut = useCallback(async () => {
     await authRef.current?.signOut();
     storage.saveAccount(null);
@@ -758,6 +841,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       syncNow,
       changeMasterPassword,
       importBackup,
+      importBundle,
+      collectAttachments,
+      sweepDriveOrphans,
       currentVaultFile,
       signOut,
       wipeDevice,
@@ -768,6 +854,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     }),
     [
       changeMasterPassword,
+      collectAttachments,
       connectGoogle,
       continueOffline,
       createVault,
@@ -775,6 +862,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       discardAttachment,
       emptyTrash,
       importBackup,
+      importBundle,
       lock,
       patch,
       prepareAttachment,
@@ -786,6 +874,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       saveItem,
       setClientId,
       signOut,
+      sweepDriveOrphans,
       syncNow,
       toggleFavorite,
       trashItem,

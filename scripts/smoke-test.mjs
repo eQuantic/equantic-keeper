@@ -15,7 +15,7 @@
  */
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -508,6 +508,41 @@ const run = async () => {
     const detail = await page.locator('aside:has(h2)').innerText();
     return detail.includes('EMITIDO EM') ? !/EMITIDO EM[\s\S]{0,40}expir/i.test(detail) : true;
   });
+
+  // 8h. Backup bundle: export vault + attachments, then restore from it.
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
+
+  // Arm the listener before the click: the download can start immediately.
+  const downloading = page.waitForEvent('download', { timeout: 30000 });
+  await page.click('[role="dialog"] button:has-text("Exportar cofre + anexos")');
+  const download = await downloading;
+
+  const bundlePath = `${OUT}/backup.keeper.zip`;
+  await download.saveAs(bundlePath);
+  const archive = readFileSync(bundlePath);
+
+  await check('pacote exportado é um ZIP de verdade', async () => archive.subarray(0, 4).toString('hex') === '504b0304');
+  await check('pacote contém o cofre e o anexo', async () => {
+    const names = archive.toString('latin1');
+    return names.includes('vault.keeper.json') && names.includes('attachments/attachment-');
+  });
+  await check('pacote não contém o conteúdo do PDF em claro', async () =>
+    !archive.toString('latin1').includes(PDF_MARKER));
+
+  // Restore it back into the same vault: no new items, but the attachment
+  // ciphertext is put back on the device.
+  await page.setInputFiles('[role="dialog"] input[type="file"]', bundlePath);
+  await page.waitForSelector('[role="dialog"] >> text=Senha mestra do backup', { timeout: 5000 });
+  await page.fill('[role="dialog"] label:has-text("Senha mestra do backup") input', PASSWORD);
+  // Exact match: "Importar backup" (the file picker) comes first in the DOM.
+  await page.getByRole('button', { name: 'Importar', exact: true }).click();
+  await check('importar o pacote restaura o anexo', async () => {
+    await page.getByText(/anexo\(s\) restaurado/).waitFor({ timeout: 30000 });
+    return true;
+  });
+  await page.screenshot({ path: `${OUT}/12-backup-pacote.png` });
+  await page.keyboard.press('Escape');
 
   // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');

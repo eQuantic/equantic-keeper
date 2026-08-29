@@ -28,7 +28,7 @@ const {
   openAttachment,
   uploadAttachment,
 } = await import('./attachments');
-const { driveName } = await import('./attachments');
+const { driveName, findOrphans, ORPHAN_GRACE_DAYS } = await import('./attachments');
 
 import type { DriveBlobApi, DriveFileMeta } from './drive';
 import type { AttachmentRef } from './model';
@@ -286,5 +286,60 @@ describe('ajudantes de exibição', () => {
     expect(isAccepted('application/pdf')).toBe(true);
     expect(isAccepted('image/png')).toBe(true);
     expect(isAccepted('text/html')).toBe(false);
+  });
+});
+
+describe('findOrphans', () => {
+  const NOW = Date.parse('2026-08-29T12:00:00Z');
+  const daysAgo = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
+
+  /** Só a fatia do Drive que a varredura usa. */
+  const driveWith = (files: { id: string; name: string; modifiedTime: string }[]) => ({
+    delete: async () => undefined,
+    listAppData: async () => files,
+  });
+
+  const ref = (id: string): AttachmentRef => ({
+    id,
+    name: `${id}.pdf`,
+    mimeType: 'application/pdf',
+    size: 1,
+    wrapped: { key: 'a2V5', iv: 'aXY=' },
+    iv: 'aXY=',
+    driveFileId: `drive-${id}`,
+    addedAt: daysAgo(200),
+  });
+
+  it('não toca no que o cofre ainda referencia', async () => {
+    const drive = driveWith([{ id: 'drive-a', name: driveName({ id: 'a' }), modifiedTime: daysAgo(500) }]);
+    expect(await findOrphans(drive, [ref('a')], NOW)).toEqual([]);
+  });
+
+  it('encontra o que ninguém referencia e já passou da carência', async () => {
+    const drive = driveWith([
+      { id: 'drive-a', name: driveName({ id: 'a' }), modifiedTime: daysAgo(500) },
+      { id: 'drive-x', name: driveName({ id: 'x' }), modifiedTime: daysAgo(ORPHAN_GRACE_DAYS + 1) },
+    ]);
+    expect(await findOrphans(drive, [ref('a')], NOW)).toEqual(['drive-x']);
+  });
+
+  /**
+   * A regra que evita o pior caso: outro aparelho subiu o scan agora e a
+   * mudança do cofre ainda não chegou aqui. Dentro da carência, não se apaga.
+   */
+  it('poupa arquivo recente mesmo sem referência', async () => {
+    const drive = driveWith([
+      { id: 'drive-novo', name: driveName({ id: 'novo' }), modifiedTime: daysAgo(1) },
+      { id: 'drive-limite', name: driveName({ id: 'limite' }), modifiedTime: daysAgo(ORPHAN_GRACE_DAYS - 1) },
+    ]);
+    expect(await findOrphans(drive, [], NOW)).toEqual([]);
+  });
+
+  it('ignora o cofre e os backups, que não são anexos', async () => {
+    const drive = driveWith([
+      { id: 'vault', name: 'vault.keeper.json', modifiedTime: daysAgo(900) },
+      { id: 'backup', name: 'backup-2026-01-01.json', modifiedTime: daysAgo(900) },
+    ]);
+    expect(await findOrphans(drive, [], NOW)).toEqual([]);
   });
 });
