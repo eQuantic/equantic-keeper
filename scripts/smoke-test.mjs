@@ -25,10 +25,9 @@ const BASE = `http://localhost:${PORT}/`;
 const OUT = process.env.KEEPER_SMOKE_OUT ?? mkdtempSync(join(tmpdir(), 'keeper-smoke-'));
 const PASSWORD = 'frase-mestra-de-teste-123';
 
-/** Resolves true as soon as something accepts a TCP connection on `port`. */
-const portIsOpen = (port) =>
+const hostIsOpen = (port, host) =>
   new Promise((resolve) => {
-    const socket = connect({ port, host: '127.0.0.1' });
+    const socket = connect({ port, host });
     const done = (open) => {
       socket.destroy();
       resolve(open);
@@ -38,6 +37,13 @@ const portIsOpen = (port) =>
     socket.once('error', () => done(false));
     socket.once('timeout', () => done(false));
   });
+
+/**
+ * Resolves true as soon as something accepts a TCP connection on `port`.
+ * Depending on the platform's name resolution, `vite preview` may bind
+ * "localhost" to ::1 only, so both loopbacks are probed.
+ */
+const portIsOpen = async (port) => (await hostIsOpen(port, '127.0.0.1')) || hostIsOpen(port, '::1');
 
 /** Starts `vite preview` and resolves once it is listening. */
 async function startPreview() {
@@ -583,6 +589,76 @@ const run = async () => {
   await page.keyboard.press('Control+l');
   await page.waitForSelector('text=Desbloquear cofre', { timeout: 5000 });
   await check('bloqueio volta para a tela de senha', async () => true);
+
+  // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
+  // page (fresh context) so the flow is seeded from scratch at 375px.
+  const phone = await browser.newPage({
+    viewport: { width: 375, height: 812 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  currentPage = phone;
+  phone.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  phone.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+
+  await phone.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('text=Configurar acesso ao Google', { timeout: 10000 });
+  await phone.fill('input[placeholder*="apps.googleusercontent.com"]', '1234567890-teste.apps.googleusercontent.com');
+  await phone.click('button:has-text("Salvar e continuar")');
+  await buildVaultInPage(phone, PASSWORD, PAYLOAD);
+  await phone.reload({ waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+
+  // iOS Safari zooms the page when a focused control is under 16px, and the
+  // zoom outlives the focus. The floor only applies to touch-first devices.
+  await check('inputs têm 16px em viewport de toque', async () =>
+    (await phone.locator('input[type="password"]').evaluate((el) => getComputedStyle(el).fontSize)) === '16px');
+
+  await phone.fill('input[type="password"]', PASSWORD);
+  await phone.click('button:has-text("Desbloquear")');
+  await phone.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+
+  // Expiry must not be desktop garnish: the row badge survives 375px…
+  await check('badge de validade aparece na linha também no celular', async () =>
+    (await phone.locator('main li:has-text("expira em 25 dias")').count()) === 1);
+
+  // …and the sidebar's expired/soon filters surface as chips above the list,
+  // because on a phone the sidebar hides behind the menu button.
+  await check('chips de validade aparecem acima da lista', async () =>
+    (await phone.locator('main button:has-text("1 vencido")').count()) === 1 &&
+    (await phone.locator('main button:has-text("1 vence em breve")').count()) === 1);
+  await phone.screenshot({ path: `${OUT}/13-mobile-lista.png` });
+
+  await phone.click('main button:has-text("1 vence em breve")');
+  await phone.waitForTimeout(300);
+  await check('chip filtra a lista', async () => {
+    const rows = await phone.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('Cartão de Cidadão — a renovar');
+  });
+  await phone.click('main button:has-text("1 vence em breve")');
+  await phone.waitForTimeout(300);
+  await check('tocar de novo desfaz o filtro', async () => (await phone.locator('main li').count()) === 7);
+
+  // 32px icon buttons grow an invisible ~44px hit area on coarse pointers.
+  await check('botões de ícone ganham área de toque no celular', async () =>
+    (await phone.locator('button[aria-label="Gerador"]').evaluate((el) => {
+      const after = getComputedStyle(el, '::after');
+      return after.position === 'absolute' && after.top === '-6px';
+    })));
+
+  // Digits-only document fields ask the phone for the numeric keypad.
+  await phone.click('main li:has-text("Cartão de Cidadão — a renovar")');
+  await phone.waitForSelector('aside footer button:has-text("Editar")', { timeout: 5000 });
+  await phone.click('aside footer button:has-text("Editar")');
+  await phone.waitForSelector('[role="dialog"] >> text=Campos de Cartão de Cidadão', { timeout: 5000 });
+  await check('campos numéricos pedem o teclado numérico', async () =>
+    (await phone.locator('[role="dialog"] input[inputmode="numeric"]').count()) >= 3);
+  await phone.screenshot({ path: `${OUT}/14-mobile-editor.png` });
+  await phone.keyboard.press('Escape');
+  await phone.close();
+  currentPage = page;
 
   const ignorable = /gsi\/client|accounts\.google|net::ERR|Failed to load resource|ERR_NAME_NOT_RESOLVED/i;
   const real = errors.filter((message) => !ignorable.test(message));

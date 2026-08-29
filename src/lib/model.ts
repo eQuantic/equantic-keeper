@@ -19,6 +19,8 @@ export interface FieldDef {
   kind: FieldKind;
   placeholder?: string;
   hint?: string;
+  /** Set on digits-only fields so phones open the numeric keypad. */
+  numeric?: boolean;
 }
 
 export type TypeCategory = 'dev' | 'doc';
@@ -175,7 +177,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     accent: '#f472b6',
     fields: [
       { id: 'host', label: 'Host', kind: 'text', placeholder: 'deploy@10.0.0.12' },
-      { id: 'port', label: 'Porta', kind: 'text', placeholder: '22' },
+      { id: 'port', label: 'Porta', kind: 'text', placeholder: '22', numeric: true },
       { id: 'username', label: 'Usuário', kind: 'username', placeholder: 'root' },
       { id: 'privateKey', label: 'Chave privada', kind: 'multilineSecret', placeholder: '-----BEGIN OPENSSH PRIVATE KEY-----' },
       { id: 'passphrase', label: 'Passphrase', kind: 'secret' },
@@ -192,7 +194,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     fields: [
       { id: 'engine', label: 'Engine', kind: 'text', placeholder: 'PostgreSQL' },
       { id: 'host', label: 'Host', kind: 'text' },
-      { id: 'port', label: 'Porta', kind: 'text', placeholder: '5432' },
+      { id: 'port', label: 'Porta', kind: 'text', placeholder: '5432', numeric: true },
       { id: 'database', label: 'Database', kind: 'text' },
       { id: 'username', label: 'Usuário', kind: 'username' },
       { id: 'password', label: 'Senha', kind: 'password' },

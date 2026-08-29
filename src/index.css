@@ -72,6 +72,41 @@ body {
   border-radius: 0.5rem;
 }
 
+/* A placeholder longer than the input reads "Buscar por nom" without this. */
+input::placeholder {
+  text-overflow: ellipsis;
+}
+
+/*
+ * iOS Safari zooms the whole page when a focused control renders text under
+ * 16px — and the zoom stays after blur. Only touch-first devices are affected,
+ * so the floor is scoped to them instead of growing every desktop form.
+ * !important because Tailwind's text-sm/text-xs utilities on the elements win
+ * over any element selector.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /*
+   * 32px icon buttons are comfortable with a mouse and fiddly with a thumb.
+   * An invisible ::after pad brings the hit area to ~44px without moving a
+   * single pixel of layout. Adjacent buttons overlap a few pads' pixels; the
+   * one on top wins, which is how native toolbars behave too.
+   */
+  .tap-target {
+    position: relative;
+  }
+  .tap-target::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+}
+
 ::selection {
   background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }

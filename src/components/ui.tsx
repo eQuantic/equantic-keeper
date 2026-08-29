@@ -65,7 +65,7 @@ export function IconButton({
       type="button"
       title={label}
       aria-label={label}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
+      className={`tap-target inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${
         active ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-raised hover:text-ink'
       } ${className}`}
       {...rest}
@@ -160,7 +160,7 @@ export function PasswordInput({
         aria-label={revealed ? hideLabel : revealLabel}
         aria-pressed={revealed}
         title={revealed ? hideLabel : revealLabel}
-        className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted transition hover:text-ink"
+        className="tap-target absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted transition hover:text-ink"
       >
         <Icon name={revealed ? 'eyeOff' : 'eye'} size={15} />
       </button>
@@ -279,7 +279,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`animate-in card relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none sm:rounded-card ${
+        className={`animate-in card relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}
       >
