@@ -81,7 +81,8 @@ os dados são irrecuperáveis — por construção.
 - **Sincronização multi-dispositivo** com mesclagem item a item (o mais recente vence) e
   *tombstones*, para que exclusões se propaguem em vez de ressuscitar.
 - **Backups**: snapshots diários rotativos no próprio Drive, exportação cifrada `.keeper.json`,
-  importação com mesclagem e exportação em texto puro (sem lock-in).
+  **pacote `.keeper.zip` com o cofre e os anexos**, importação com mesclagem (aceita os dois
+  formatos) e exportação em texto puro (sem lock-in).
 - **PWA offline**: instalável, com o cofre cifrado em cache — dá para consultar segredos sem rede.
 - Busca instantânea, pastas, tags, favoritos, lixeira, tema claro/escuro, `Ctrl+K` para buscar e
   `Ctrl+L` para bloquear.
@@ -195,7 +196,7 @@ conecte o Drive depois.
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
                model (tipos de segredo) · documents (tipos de documento pessoal)
                attachments (envelope de chaves) · blobstore (cache cifrado em IndexedDB)
-               expiry (o que venceu e o que está para vencer)
+               expiry (o que venceu e o que está para vencer) · zip (pacote de backup)
 src/assets/brand/  logotipos eQuantic — fonte única dos ícones e do favicon
 src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
 src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
@@ -249,7 +250,19 @@ a chave mestra:
   declarado (renomear um PDF para imagem dentro do cofre) quebra a decifragem em vez de entregar os
   bytes ao visualizador com outro rótulo.
 - O ciphertext também fica em cache no **IndexedDB** do navegador, para abrir offline.
-- **A exportação cifrada (`.keeper.json`) leva o cofre, não os anexos.** Os arquivos ficam no Drive.
+- A exportação **`.keeper.json`** leva só o cofre. Para levar os arquivos junto, use *Exportar cofre
+  + anexos*, que gera um **`.keeper.zip`**:
+
+```
+vault.keeper.json                    o mesmo envelope cifrado de sempre
+attachments/attachment-<id>.bin      um ciphertext por anexo, sem alteração
+```
+
+  Nada ali é legível sem a senha mestra — é o mesmo ciphertext que o Drive recebe. As entradas não
+  são comprimidas: ciphertext não comprime, e gastar CPU (e uma dependência) para não economizar
+  nada não se justifica. Ao restaurar, os anexos voltam para o dispositivo e perdem o id do Drive
+  de origem, para que **esta** conta suba a própria cópia — sem isso, um segundo dispositivo
+  herdaria uma referência que não consegue ler.
 
 O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
 cofre sem este app. O teste de integração do repositório faz exatamente isso.
@@ -258,8 +271,13 @@ cofre sem este app. O teste de integração do repositório faz exatamente isso.
 
 ## Limitações conhecidas
 
-- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar. O backup
-  cifrado contém o cofre, mas não os anexos — os arquivos permanecem no Drive.
+- **Sem recuperação de senha.** Exporte um backup e guarde-o em outro lugar — o pacote
+  `.keeper.zip` inclui os anexos; o `.keeper.json`, só o cofre.
+- **Anexos órfãos.** Quando um item é apagado de vez, os bytes dele somem junto. Mas se o item sair
+  pela retenção de 90 dias, o arquivo fica no Drive — ilegível sem a chave envelopada, e ainda
+  ocupando espaço. *Configurações → Liberar espaço no Drive* remove o que nenhum item referencia e
+  já passou de 90 dias. A carência existe porque um aparelho que ficou offline pode ter a única
+  cópia do cofre que ainda aponta para aquele arquivo.
 - O `appDataFolder` é invisível no Drive: para levar os dados embora, use *Exportar cofre cifrado*.
 - A gravação no Drive não é atômica. O app mescla antes de escrever e detecta divergência de
   revisão, mas duas edições no mesmo segundo em dispositivos diferentes podem exigir uma

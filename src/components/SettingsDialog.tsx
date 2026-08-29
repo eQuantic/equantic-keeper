@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Button, Field, IconButton, Modal, PasswordInput, Switch, TextInput } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
-import { exportEncrypted, exportPlaintext } from '../lib/backup';
+import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
 import { createPerson, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
@@ -156,7 +156,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [next, setNext] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [importState, setImportState] = useState<{ text: string; name: string } | null>(null);
+  const [importState, setImportState] = useState<{ text: string; bytes?: Uint8Array; name: string } | null>(
+    null,
+  );
+  const [bundling, setBundling] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
   const [importPassword, setImportPassword] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -191,10 +195,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     setImporting(true);
     setImportError(null);
     try {
-      const added = await actions.importBackup(importState.text, importPassword);
-      setImportState(null);
-      setImportPassword('');
-      actions.notify(`Importação concluída: ${added} item(ns) novo(s) adicionados ao cofre.`);
+      if (importState.bytes) {
+        const { items, attachments } = await actions.importBundle(importState.bytes, importPassword);
+        setImportState(null);
+        setImportPassword('');
+        actions.notify(
+          `Importação concluída: ${items} item(ns) novo(s) e ${attachments} anexo(s) restaurado(s).`,
+        );
+      } else {
+        const added = await actions.importBackup(importState.text, importPassword);
+        setImportState(null);
+        setImportPassword('');
+        actions.notify(`Importação concluída: ${added} item(ns) novo(s) adicionados ao cofre.`);
+      }
     } catch (error) {
       setImportError(error instanceof Error ? error.message : 'Falha ao importar.');
     } finally {
@@ -382,7 +395,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
       <Section
         title="Backup e portabilidade"
-        description={`Itens na lixeira são apagados definitivamente após ${TOMBSTONE_TTL_DAYS} dias.`}
+        description={`O cofre cifrado leva os dados; o pacote leva também os arquivos anexados. Itens na lixeira são apagados definitivamente após ${TOMBSTONE_TTL_DAYS} dias.`}
       >
         <div className="flex flex-wrap gap-2">
           <Button
@@ -394,6 +407,29 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             }}
           >
             Exportar cofre cifrado
+          </Button>
+          <Button
+            size="sm"
+            icon="paperclip"
+            loading={bundling}
+            onClick={async () => {
+              setBundling(true);
+              try {
+                const file = actions.currentVaultFile();
+                if (!file) return;
+                const { bytes, missing } = await actions.collectAttachments();
+                exportBundle(file, bytes);
+                if (missing.length) {
+                  actions.notify(
+                    `Backup gerado sem ${missing.length} anexo(s) que não pôde(ram) ser lido(s): ${missing.join(', ')}.`,
+                  );
+                }
+              } finally {
+                setBundling(false);
+              }
+            }}
+          >
+            Exportar cofre + anexos
           </Button>
           <Button size="sm" icon="upload" onClick={() => fileRef.current?.click()}>
             Importar backup
@@ -418,13 +454,18 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         <input
           ref={fileRef}
           type="file"
-          accept=".json,application/json"
+          accept=".json,.zip,application/json,application/zip"
           className="hidden"
           onChange={async (event) => {
             const file = event.target.files?.[0];
             event.target.value = '';
             if (!file) return;
-            setImportState({ text: await file.text(), name: file.name });
+            const isBundle = file.name.endsWith('.zip') || file.type === 'application/zip';
+            setImportState({
+              name: file.name,
+              text: isBundle ? '' : await file.text(),
+              ...(isBundle ? { bytes: new Uint8Array(await file.arrayBuffer()) } : {}),
+            });
             setImportError(null);
           }}
         />
@@ -467,6 +508,29 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             }}
           >
             Trocar Client ID
+          </Button>
+          <Button
+            size="sm"
+            icon="cloud"
+            loading={sweeping}
+            disabled={!connected}
+            onClick={async () => {
+              setSweeping(true);
+              try {
+                const removed = await actions.sweepDriveOrphans();
+                actions.notify(
+                  removed === 0
+                    ? 'Nenhum anexo órfão para remover.'
+                    : `${removed} anexo(s) órfão(s) removido(s) do Drive.`,
+                );
+              } catch (error) {
+                actions.notify(error instanceof Error ? error.message : 'Falha ao limpar o Drive.');
+              } finally {
+                setSweeping(false);
+              }
+            }}
+          >
+            Liberar espaço no Drive
           </Button>
           <Button
             size="sm"

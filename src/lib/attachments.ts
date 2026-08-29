@@ -21,7 +21,7 @@ import {
   unwrapContentKey,
   wrapContentKey,
 } from './crypto';
-import type { DriveBlobApi } from './drive';
+import type { DriveBlobApi, DriveFileMeta } from './drive';
 import type { AttachmentRef } from './model';
 import { getCiphertext, putCiphertext, removeCiphertext } from './blobstore';
 
@@ -126,7 +126,35 @@ export async function decryptAttachment(
 /** The file name used in the Drive app folder. It leaks nothing: Drive already
  * knows the folder belongs to Keeper, and the real name is inside the vault. */
 export function driveName(ref: Pick<AttachmentRef, 'id'>): string {
-  return `attachment-${ref.id}.bin`;
+  return `${DRIVE_PREFIX}${ref.id}.bin`;
+}
+
+const DRIVE_PREFIX = 'attachment-';
+
+/**
+ * How long an unreferenced file is left alone before it counts as an orphan.
+ * The same window the vault gives its tombstones, and for the same reason: a
+ * device that has been offline may hold the only vault copy that still points
+ * at the file, and its change has not reached us yet. Deleting a scan uploaded
+ * minutes ago because our vault has not caught up would be unforgivable.
+ */
+export const ORPHAN_GRACE_DAYS = 90;
+
+/** Reads the app folder and returns the ids of files nothing references. */
+export async function findOrphans(
+  drive: Pick<DriveBlobApi, 'delete'> & { listAppData(query?: string): Promise<DriveFileMeta[]> },
+  referenced: AttachmentRef[],
+  now = Date.now(),
+): Promise<string[]> {
+  const keep = new Set(referenced.map((ref) => driveName(ref)));
+  const cutoff = now - ORPHAN_GRACE_DAYS * 86_400_000;
+
+  const files = await drive.listAppData(`name contains '${DRIVE_PREFIX}' and trashed = false`);
+  return files
+    .filter((file) => file.name.startsWith(DRIVE_PREFIX))
+    .filter((file) => !keep.has(file.name))
+    .filter((file) => Date.parse(file.modifiedTime) < cutoff)
+    .map((file) => file.id);
 }
 
 function guessType(name: string): string {
