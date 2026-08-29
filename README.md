@@ -92,7 +92,8 @@ password, the data is unrecoverable — by construction.
 - **Offline PWA**: installable, with the encrypted vault cached — you can look up secrets
   with no network.
 - Instant search, folders, tags, favorites, trash, light/dark theme, `Ctrl+K` to search and
-  `Ctrl+L` to lock.
+  `Ctrl+L` to lock. On touch devices the system back gesture closes the open panel, sheet
+  or drawer instead of leaving the app.
 
 ---
 
