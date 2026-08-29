@@ -297,6 +297,27 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <option value={0}>Não limpar</option>
             </select>
           </label>
+          <label className="flex items-center justify-between gap-4 py-2 text-sm text-ink">
+            <span>
+              Avisar sobre validade
+              <span className="mt-0.5 block text-xs text-muted">
+                Com quanta antecedência um documento aparece como “vence em breve”.
+              </span>
+            </span>
+            <select
+              className={selectClass}
+              aria-label="Avisar sobre validade"
+              value={prefs.expiryWarningDays}
+              onChange={(event) =>
+                void actions.updatePreferences({ expiryWarningDays: Number(event.target.value) })
+              }
+            >
+              <option value={30}>30 dias</option>
+              <option value={60}>60 dias</option>
+              <option value={90}>90 dias</option>
+              <option value={180}>6 meses</option>
+            </select>
+          </label>
           <Switch
             label="Ocultar segredos por padrão"
             description="Exige um clique em “revelar” para exibir cada valor."

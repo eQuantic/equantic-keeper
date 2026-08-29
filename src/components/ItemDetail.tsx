@@ -1,7 +1,9 @@
 /** Read-only view of a single secret. */
+import { DEFAULT_WARNING_DAYS, describeExpiry, isExpiryField, statusOf } from '../lib/expiry';
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
 import { Badge, Button, IconButton } from './ui';
 import { Icon } from './icons';
+import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
 import { useKeeper } from '../state/keeper';
 
@@ -17,11 +19,33 @@ function formatDay(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR', { dateStyle: 'long' });
 }
 
-function expiryTone(value: string): 'ok' | 'warn' | 'danger' {
-  const days = (Date.parse(`${value}T23:59:59`) - Date.now()) / 86_400_000;
-  if (Number.isNaN(days)) return 'ok';
-  if (days < 0) return 'danger';
-  return days < 30 ? 'warn' : 'ok';
+/**
+ * Only a validity date gets the colour treatment. Flagging every date meant an
+ * *issue* date — which is in the past by definition — showed up in red as
+ * expired, teaching the user to ignore the one signal that matters.
+ */
+function DateValue({
+  fieldId,
+  value,
+  warningDays,
+}: {
+  fieldId: string;
+  value: string;
+  warningDays: number;
+}) {
+  if (!isExpiryField(fieldId)) return <span className="text-sm text-ink">{formatDay(value)}</span>;
+
+  const days = Math.ceil((Date.parse(`${value}T23:59:59`) - Date.now()) / 86_400_000) - 1;
+  if (Number.isNaN(days)) return <span className="text-sm text-ink">{formatDay(value)}</span>;
+
+  const status = statusOf(days, warningDays);
+  const tone = status === 'expired' ? 'text-danger' : status === 'soon' ? 'text-warn' : 'text-ink';
+  return (
+    <span className={`text-sm ${tone}`}>
+      {formatDay(value)}
+      {status === 'ok' ? '' : ` · ${describeExpiry({ days })}`}
+    </span>
+  );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,6 +69,7 @@ export function ItemDetail({
   const { actions, payload } = useKeeper();
   const type = getType(item.type);
   const conceal = payload?.preferences.concealSecrets ?? true;
+  const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
   const holder = payload?.people.find((person) => person.id === item.holderId && !person.deletedAt);
   const filled = type.fields.filter((field) => (item.fields[field.id] ?? '').trim().length > 0);
   const extras = Object.entries(item.fields).filter(
@@ -109,15 +134,9 @@ export function ItemDetail({
             );
           }
           if (field.kind === 'date') {
-            const tone = expiryTone(value);
             return (
               <Row key={field.id} label={field.label}>
-                <span
-                  className={`text-sm ${tone === 'danger' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-ink'}`}
-                >
-                  {formatDay(value)}
-                  {tone === 'danger' ? ' · expirado' : tone === 'warn' ? ' · expira em breve' : ''}
-                </span>
+                <DateValue fieldId={field.id} value={value} warningDays={warningDays} />
               </Row>
             );
           }
@@ -171,6 +190,8 @@ export function ItemDetail({
             <SecretValue value={value} fieldKey={`${item.id}:${key}`} secret defaultRevealed={!conceal} />
           </Row>
         ))}
+
+        <AttachmentList refs={item.attachments} />
 
         <div className="flex flex-wrap gap-x-6 gap-y-1 py-4 text-xs text-faint">
           <span>Criado em {formatDate(item.createdAt)}</span>

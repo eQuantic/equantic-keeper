@@ -129,6 +129,8 @@ const buildVaultInPage = async (page, password, payload) =>
   );
 
 const now = new Date().toISOString();
+/** Dates as the app stores them, relative to today, so the fixture never rots. */
+const relativeDay = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 const item = (over) => ({
   id: crypto.randomUUID(),
   type: 'api-token',
@@ -200,6 +202,18 @@ const PAYLOAD = {
       },
     }),
     item({
+      name: 'Passaporte — vencido',
+      type: 'passaporte',
+      folder: 'Documentos',
+      fields: { documentNumber: 'CX123456', expiresAt: relativeDay(-40) },
+    }),
+    item({
+      name: 'Cartão de Cidadão — a renovar',
+      type: 'pt-cartao-cidadao',
+      folder: 'Documentos',
+      fields: { documentNumber: '12345678 9 ZZ1', expiresAt: relativeDay(25) },
+    }),
+    item({
       name: 'API do checkout (.env produção)',
       type: 'env',
       folder: 'Produtos',
@@ -212,6 +226,38 @@ const PAYLOAD = {
     }),
   ],
 };
+
+/**
+ * A minimal but structurally valid one-page PDF, built with real cross-reference
+ * offsets. Feeding pdf.js a fake would prove nothing about the viewer.
+ */
+function tinyPdf(text) {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 200] /Contents 4 0 R ' +
+      '/Resources << /Font << /F1 5 0 R >> >> >>',
+    null, // the content stream, built below
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  const stream = `BT /F1 16 Tf 24 120 Td (${text}) Tj ET`;
+  objects[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((body, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+const PDF_MARKER = 'TITULO DE RESIDENCIA 2024';
 
 const errors = [];
 
@@ -279,7 +325,7 @@ const run = async () => {
   await page.fill('input[type="password"]', PASSWORD);
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
-  await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 5);
+  await check('cofre abre e lista os itens', async () => (await page.locator('main li').count()) === 7);
   await page.screenshot({ path: `${OUT}/02-vault.png` });
 
   // 6. Search filters the list.
@@ -307,7 +353,7 @@ const run = async () => {
   await page.locator('label:has-text("Host") input').first().fill('db.staging.internal');
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("Postgres — staging")', { timeout: 5000 });
-  await check('novo item criado pela UI', async () => (await page.locator('main li').count()) === 6);
+  await check('novo item criado pela UI', async () => (await page.locator('main li').count()) === 8);
 
   const cached = await page.evaluate(() => localStorage.getItem('keeper.vault.cache.v1') ?? '');
   await check('cache local não contém texto puro', async () => !cached.includes('db.staging.internal'));
@@ -358,7 +404,7 @@ const run = async () => {
     (await page.locator('main li').count()) === 1);
   await page.click('nav button:has-text("Tudo")');
   await page.waitForTimeout(300);
-  await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 7);
+  await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 9);
 
   // 8d. Searching by the holder's name finds a document that never stores it.
   await page.fill('input[type="search"]', 'maria teste');
@@ -366,6 +412,102 @@ const run = async () => {
   await check('busca pelo nome do titular encontra o documento', async () =>
     (await page.locator('main li').count()) === 1);
   await page.fill('input[type="search"]', '');
+
+  // 8e. Attachments: encrypt, store, and read the file back in the app.
+  await page.click('aside:has(h2) button:has-text("Editar")');
+  await page.waitForSelector('[role="dialog"] >> text=Anexos', { timeout: 5000 });
+  await page
+    .locator('input[aria-label="Escolher arquivos para anexar"]')
+    .setInputFiles({ name: 'residencia-2024.pdf', mimeType: 'application/pdf', buffer: tinyPdf(PDF_MARKER) });
+  await page.waitForSelector('[role="dialog"] >> text=residencia-2024.pdf', { timeout: 10000 });
+  await check('anexo aparece na lista do editor', async () => true);
+  await page.click('footer button:has-text("Salvar")');
+
+  await page.waitForSelector('aside:has(h2) >> text=residencia-2024.pdf', { timeout: 5000 });
+  await check('anexo fica no item depois de salvar', async () => true);
+  await page.screenshot({ path: `${OUT}/09-anexo-no-item.png` });
+
+  // The ciphertext is what leaves the app; the plaintext must not be findable.
+  await check('nada do conteúdo do PDF aparece no armazenamento local', async () => {
+    const found = await page.evaluate(async (marker) => {
+      const local = JSON.stringify(localStorage);
+      if (local.includes(marker)) return 'localStorage';
+      const db = await new Promise((resolve) => {
+        const request = indexedDB.open('keeper-attachments');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+      });
+      if (!db) return 'sem indexeddb';
+      const blobs = await new Promise((resolve) => {
+        const request = db.transaction('ciphertext').objectStore('ciphertext').getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve([]);
+      });
+      if (blobs.length === 0) return 'cache vazio';
+      const decoder = new TextDecoder();
+      for (const buffer of blobs) if (decoder.decode(buffer).includes(marker)) return 'indexeddb';
+      return 'ok';
+    }, PDF_MARKER);
+    if (found !== 'ok') console.log(`      (achado inesperado: ${found})`);
+    return found === 'ok';
+  });
+
+  // 8f. The viewer renders the PDF in the app, with selectable text.
+  await page.click('aside:has(h2) button:has-text("residencia-2024.pdf")');
+  await page.waitForSelector('[role="dialog"] canvas', { timeout: 30000 });
+  await check('visualizador desenha a página do PDF', async () => {
+    const box = await page.locator('[role="dialog"] canvas').first().boundingBox();
+    return !!box && box.width > 50 && box.height > 50;
+  });
+  await check('camada de texto permite seleção e cópia', async () => {
+    const text = await page.locator('[role="dialog"] .keeper-text-layer').first().innerText();
+    return text.includes('TITULO DE RESIDENCIA');
+  });
+  await page.screenshot({ path: `${OUT}/10-visualizador.png` });
+
+  await page.click('[role="dialog"] button[aria-label="Aumentar zoom"]');
+  await page.waitForTimeout(600);
+  await check('zoom altera a escala da página', async () =>
+    (await page.locator('[role="dialog"] button[title="Zoom original"]').innerText()).trim() === '125%');
+
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"] canvas', { state: 'detached', timeout: 5000 });
+  await check('Esc fecha o visualizador', async () => true);
+
+  await check('nenhum blob: sobrou registrado após fechar', async () =>
+    (await page.evaluate(() => performance.getEntriesByType('resource').filter((e) => e.name.startsWith('blob:')).length)) === 0);
+
+  // 8g. Validity: what is expired, what is about to be, and what is neither.
+  await check('barra lateral separa vencidos de quem vence em breve', async () =>
+    (await page.locator('nav button:has-text("Vencidos")').count()) === 1 &&
+    (await page.locator('nav button:has-text("Vencem em breve")').count()) === 1);
+
+  await page.click('nav button:has-text("Vencidos")');
+  await page.waitForTimeout(300);
+  await check('vencidos traz só o passaporte fora do prazo', async () => {
+    const rows = await page.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('Passaporte — vencido');
+  });
+  await check('a linha diz há quanto tempo venceu', async () =>
+    (await page.locator('main li').first().innerText()).includes('expirou há 40 dias'));
+
+  await page.click('nav button:has-text("Vencem em breve")');
+  await page.waitForTimeout(300);
+  await check('vence em breve traz só o cartão a renovar', async () => {
+    const rows = await page.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('expira em 25 dias');
+  });
+  await page.screenshot({ path: `${OUT}/11-validade.png` });
+
+  // A date that is merely an issue date must never be dressed up as an expiry.
+  await page.click('nav button:has-text("Tudo")');
+  await page.waitForTimeout(300);
+  await page.click('text=Título de residência — Maria');
+  await page.waitForSelector('aside:has(h2) >> text=RP-2024-99887', { timeout: 5000 });
+  await check('data de emissão não é tratada como validade', async () => {
+    const detail = await page.locator('aside:has(h2)').innerText();
+    return detail.includes('EMITIDO EM') ? !/EMITIDO EM[\s\S]{0,40}expir/i.test(detail) : true;
+  });
 
   // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');

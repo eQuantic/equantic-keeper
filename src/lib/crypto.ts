@@ -201,3 +201,97 @@ export async function open<T>(key: CryptoKey, box: SealedBox, aad: string): Prom
 export function randomId(bytes = 12): string {
   return Array.from(randomBytes(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+/* ------------------------------------------------------------------------- *
+ * Envelope encryption for attachments
+ *
+ * Each file gets its own random AES-GCM key, and only that key is encrypted
+ * with the master key. Changing the master password then rewrites the vault
+ * alone — a few kilobytes — instead of re-encrypting every PDF the user ever
+ * uploaded. It also keeps a file's plaintext reachable from exactly one
+ * wrapped key, so deleting the record makes the bytes in Drive unreadable.
+ *
+ * `wrapKey`/`unwrapKey` are deliberately not used: they would require adding
+ * those usages to the derived master key, and exporting the content key and
+ * encrypting the 32 raw bytes achieves the same with the usages we already
+ * have.
+ * ------------------------------------------------------------------------- */
+
+export interface WrappedKey {
+  /** base64: AES-GCM ciphertext of the raw content key */
+  key: string;
+  /** base64 */
+  iv: string;
+}
+
+export async function generateContentKey(): Promise<CryptoKey> {
+  // Extractable so it can be wrapped once; it never leaves this module unwrapped.
+  return subtle().generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+}
+
+export async function wrapContentKey(
+  master: CryptoKey,
+  contentKey: CryptoKey,
+  aad: string,
+): Promise<WrappedKey> {
+  const raw = await subtle().exportKey('raw', contentKey);
+  const iv = randomBytes(IV_BYTES);
+  const wrapped = await subtle().encrypt(
+    { name: 'AES-GCM', iv, additionalData: utf8(aad), tagLength: 128 },
+    master,
+    raw,
+  );
+  return { key: toBase64(new Uint8Array(wrapped)), iv: toBase64(iv) };
+}
+
+export async function unwrapContentKey(
+  master: CryptoKey,
+  wrapped: WrappedKey,
+  aad: string,
+): Promise<CryptoKey> {
+  let raw: ArrayBuffer;
+  try {
+    raw = await subtle().decrypt(
+      { name: 'AES-GCM', iv: fromBase64(wrapped.iv), additionalData: utf8(aad), tagLength: 128 },
+      master,
+      fromBase64(wrapped.key),
+    );
+  } catch {
+    throw new DecryptionError('Não foi possível abrir a chave deste anexo.');
+  }
+  return subtle().importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+/** Encrypts raw bytes. Unlike `seal`, the output stays binary — base64 would
+ * inflate every attachment by a third for no benefit. */
+export async function sealBytes(
+  key: CryptoKey,
+  bytes: Uint8Array,
+  aad: string,
+): Promise<{ iv: string; data: Uint8Array<ArrayBuffer> }> {
+  const iv = randomBytes(IV_BYTES);
+  const data = await subtle().encrypt(
+    { name: 'AES-GCM', iv, additionalData: utf8(aad), tagLength: 128 },
+    key,
+    bytes as Uint8Array<ArrayBuffer>,
+  );
+  return { iv: toBase64(iv), data: new Uint8Array(data) };
+}
+
+export async function openBytes(
+  key: CryptoKey,
+  iv: string,
+  data: Uint8Array,
+  aad: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  try {
+    const plaintext = await subtle().decrypt(
+      { name: 'AES-GCM', iv: fromBase64(iv), additionalData: utf8(aad), tagLength: 128 },
+      key,
+      data as Uint8Array<ArrayBuffer>,
+    );
+    return new Uint8Array(plaintext);
+  } catch {
+    throw new DecryptionError('Anexo corrompido ou fora do cofre a que pertence.');
+  }
+}

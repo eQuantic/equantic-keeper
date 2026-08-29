@@ -1,7 +1,7 @@
 /** Pre-vault screens: OAuth setup, Google sign-in, vault creation and unlock. */
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button, Field, PasswordInput, TextInput } from '../components/ui';
-import { Icon, Logo } from '../components/icons';
+import { Icon, Wordmark } from '../components/icons';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
 import { isClientIdOverridden } from '../lib/storage';
@@ -20,12 +20,10 @@ function AuthShell({
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-10">
       <div className="animate-in w-full max-w-md">
-        <div className="mb-6 flex items-center gap-3">
-          <Logo size={34} />
-          <div>
-            <p className="text-sm font-semibold tracking-tight text-ink">eQuantic Keeper</p>
-            <p className="text-xs text-muted">Cofre de segredos com criptografia ponta a ponta</p>
-          </div>
+        <div className="mb-6">
+          <Wordmark height={36} />
+          <p className="mt-2 text-sm font-semibold tracking-tight text-ink">Keeper</p>
+          <p className="text-xs text-muted">Cofre de segredos e documentos, cifrado ponta a ponta</p>
         </div>
         <div className="card p-6">
           <h1 className="text-lg font-semibold text-ink">{title}</h1>

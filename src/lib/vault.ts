@@ -17,15 +17,18 @@ import {
   seal,
   timingSafeEqual,
 } from './crypto';
-import type { Person, VaultItem } from './model';
+import { DEFAULT_WARNING_DAYS } from './expiry';
+import type { AttachmentRef, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
 /**
- * v2 adds `people` and `holderId`. The bump matters: a client that predates it
- * would silently drop the family list on its next save, so refusing to open a
- * newer vault (which `unlockVault` already does) is the safe failure.
+ * v2 added `people` and `holderId`; v3 adds `item.attachments`. Each bump
+ * matters: a client that predates one would silently drop what it does not
+ * understand on its next save, so refusing to open a newer vault (which
+ * `unlockVault` already does) is the safe failure. Older vaults still open —
+ * `normalizePayload` fills in what is missing.
  */
-export const VAULT_VERSION = 2;
+export const VAULT_VERSION = 3;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -55,6 +58,8 @@ export interface VaultPreferences {
   clipboardClearSeconds: number;
   theme: 'dark' | 'light';
   concealSecrets: boolean;
+  /** How far ahead a validity date starts being flagged. */
+  expiryWarningDays: number;
 }
 
 export const DEFAULT_PREFERENCES: VaultPreferences = {
@@ -62,6 +67,7 @@ export const DEFAULT_PREFERENCES: VaultPreferences = {
   clipboardClearSeconds: 30,
   theme: 'dark',
   concealSecrets: true,
+  expiryWarningDays: DEFAULT_WARNING_DAYS,
 };
 
 export function emptyPayload(): VaultPayload {
@@ -173,6 +179,16 @@ function normalizePerson(person: Person): Person {
   };
 }
 
+/**
+ * An attachment with no wrapped key is undecryptable — keeping it would only
+ * put a broken thumbnail in front of the user.
+ */
+function isAttachmentLike(value: unknown): value is AttachmentRef {
+  if (!value || typeof value !== 'object') return false;
+  const ref = value as Partial<AttachmentRef>;
+  return typeof ref.id === 'string' && typeof ref.iv === 'string' && typeof ref.wrapped?.key === 'string';
+}
+
 function isItemLike(value: unknown): value is VaultItem {
   return !!value && typeof value === 'object' && typeof (value as VaultItem).id === 'string';
 }
@@ -189,6 +205,7 @@ function normalizeItem(item: VaultItem): VaultItem {
     tags: Array.isArray(item.tags) ? item.tags.filter((t) => typeof t === 'string') : [],
     fields: item.fields && typeof item.fields === 'object' ? item.fields : {},
     customFields: Array.isArray(item.customFields) ? item.customFields : [],
+    attachments: Array.isArray(item.attachments) ? item.attachments.filter(isAttachmentLike) : [],
     favorite: Boolean(item.favorite),
     createdAt: item.createdAt ?? now,
     updatedAt: item.updatedAt ?? item.createdAt ?? now,

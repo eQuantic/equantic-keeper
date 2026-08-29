@@ -19,7 +19,14 @@ import type { DerivedKey } from '../lib/crypto';
 import { deriveKey, timingSafeEqual } from '../lib/crypto';
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
-import type { Person, VaultItem } from '../lib/model';
+import type { AttachmentRef, Person, VaultItem } from '../lib/model';
+import {
+  cacheAttachment,
+  encryptAttachment,
+  forgetAttachment,
+  openAttachment,
+  uploadAttachment,
+} from '../lib/attachments';
 import {
   DEFAULT_PREFERENCES,
   createVault as buildVault,
@@ -66,6 +73,9 @@ export interface KeeperActions {
   toggleFavorite(id: string): Promise<void>;
   savePerson(person: Person): Promise<void>;
   removePerson(id: string): Promise<void>;
+  prepareAttachment(file: File): Promise<AttachmentRef>;
+  readAttachment(ref: AttachmentRef): Promise<Blob>;
+  discardAttachment(ref: AttachmentRef): Promise<void>;
   updatePreferences(patch: Partial<VaultPreferences>): Promise<void>;
   syncNow(force?: boolean): Promise<void>;
   changeMasterPassword(current: string, next: string): Promise<void>;
@@ -155,6 +165,46 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     return file;
   }, [patch]);
 
+  /**
+   * Uploads every attachment still missing from Drive and returns the payload
+   * with the new file ids. Returns the original object when there was nothing
+   * to do, so the caller can skip a re-render.
+   *
+   * One failure does not abort the rest: a file that cannot go up now keeps
+   * its empty id and is retried on the next sync.
+   */
+  const pushPendingAttachments = useCallback(
+    async (drive: DriveClient, payload: VaultPayload): Promise<VaultPayload> => {
+      const pending = payload.items.filter((item) =>
+        item.attachments.some((ref) => !ref.driveFileId),
+      );
+      if (pending.length === 0) return payload;
+
+      const uploaded = new Map<string, AttachmentRef>();
+      for (const item of pending) {
+        for (const ref of item.attachments) {
+          if (ref.driveFileId) continue;
+          try {
+            uploaded.set(ref.id, await uploadAttachment(drive, ref));
+          } catch {
+            /* stays pending; the next sync tries again */
+          }
+        }
+      }
+      if (uploaded.size === 0) return payload;
+
+      return {
+        ...payload,
+        items: payload.items.map((item) =>
+          item.attachments.some((ref) => uploaded.has(ref.id))
+            ? { ...item, attachments: item.attachments.map((ref) => uploaded.get(ref.id) ?? ref) }
+            : item,
+        ),
+      };
+    },
+    [],
+  );
+
   const runSync = useCallback(
     async (options: { force?: boolean; silent?: boolean } = {}) => {
       const derived = derivedRef.current;
@@ -169,6 +219,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
       patch({ sync: { status: 'syncing' } });
       try {
+        // Attachments added offline carry no Drive id yet. Push the bytes
+        // first, so the vault we write already points at them — the reverse
+        // order would publish a reference to a file that does not exist.
+        const pushed = await pushPendingAttachments(drive, payload);
+        if (pushed !== payload) setPayload(pushed);
+
         const result = await syncVault(
           {
             drive,
@@ -176,7 +232,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
             driveFileId: driveIdRef.current,
             knownRevision: revisionRef.current,
           },
-          payload,
+          pushed,
           { ...(options.force ? { force: true } : {}) },
         );
         driveIdRef.current = result.driveFileId;
@@ -206,7 +262,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         if (!options.silent) patch({ error: message });
       }
     },
-    [patch, setPayload],
+    [patch, pushPendingAttachments, setPayload],
   );
 
   const scheduleSync = useCallback(() => {
@@ -416,15 +472,37 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * holds the item could resurrect it on its next sync — acceptable for an
    * explicit "delete forever" on a single trusted device.
    */
-  const purgeItem = useCallback(
-    (id: string) => mutate((payload) => ({ ...payload, items: payload.items.filter((item) => item.id !== id) })),
-    [mutate],
+  /**
+   * Deleting for good also deletes the attachment bytes. Best-effort on
+   * purpose: the reference is what makes a file readable, so a Drive failure
+   * leaves ciphertext nobody can open rather than a document the user still
+   * sees. The vault change goes ahead either way.
+   */
+  const dropAttachmentsOf = useCallback(
+    async (items: VaultItem[]) => {
+      for (const item of items) {
+        for (const ref of item.attachments) {
+          await forgetAttachment(driveRef.current, ref).catch(() => undefined);
+        }
+      }
+    },
+    [],
   );
 
-  const emptyTrash = useCallback(
-    () => mutate((payload) => ({ ...payload, items: payload.items.filter((item) => !item.deletedAt) })),
-    [mutate],
+  const purgeItem = useCallback(
+    async (id: string) => {
+      const doomed = payloadRef.current?.items.filter((item) => item.id === id) ?? [];
+      await mutate((payload) => ({ ...payload, items: payload.items.filter((item) => item.id !== id) }));
+      await dropAttachmentsOf(doomed);
+    },
+    [dropAttachmentsOf, mutate],
   );
+
+  const emptyTrash = useCallback(async () => {
+    const doomed = payloadRef.current?.items.filter((item) => item.deletedAt) ?? [];
+    await mutate((payload) => ({ ...payload, items: payload.items.filter((item) => !item.deletedAt) }));
+    await dropAttachmentsOf(doomed);
+  }, [dropAttachmentsOf, mutate]);
 
   const toggleFavorite = useCallback(
     (id: string) =>
@@ -468,6 +546,31 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         };
       }),
     [mutate],
+  );
+
+  /**
+   * Encrypts a file and keeps it on the device, without touching the vault:
+   * the editor decides whether the reference is kept (item saved) or dropped
+   * (edit cancelled). Uploading is left to the sync, so a scan can be added
+   * with no connection.
+   */
+  const prepareAttachment = useCallback(async (file: File) => {
+    const derived = derivedRef.current;
+    if (!derived) throw new Error('O cofre está bloqueado.');
+    const { ref, ciphertext } = await encryptAttachment(derived.key, file);
+    await cacheAttachment(ref, ciphertext);
+    return ref;
+  }, []);
+
+  const readAttachment = useCallback(async (ref: AttachmentRef) => {
+    const derived = derivedRef.current;
+    if (!derived) throw new Error('O cofre está bloqueado.');
+    return openAttachment(driveRef.current, derived.key, ref);
+  }, []);
+
+  const discardAttachment = useCallback(
+    (ref: AttachmentRef) => forgetAttachment(driveRef.current, ref),
+    [],
   );
 
   const updatePreferences = useCallback(
@@ -648,6 +751,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       savePerson,
       removePerson,
+      prepareAttachment,
+      readAttachment,
+      discardAttachment,
       updatePreferences,
       syncNow,
       changeMasterPassword,
@@ -666,11 +772,14 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       continueOffline,
       createVault,
       currentVaultFile,
+      discardAttachment,
       emptyTrash,
       importBackup,
       lock,
       patch,
+      prepareAttachment,
       purgeItem,
+      readAttachment,
       removePerson,
       restoreItem,
       savePerson,

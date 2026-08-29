@@ -66,6 +66,15 @@ os dados são irrecuperáveis — por construção.
 - **Titulares**: cada item pode pertencer a uma pessoa (você, cônjuge, filhos). A barra lateral
   filtra por pessoa e a busca encontra o documento pelo nome dela, que não fica guardado no item.
   Remover uma pessoa nunca apaga os documentos dela — eles apenas ficam sem titular.
+- **Alerta de validade**: o cofre sabe a diferença entre a data em que um documento foi *emitido*
+  e aquela em que ele *vence*. A barra lateral separa o que já venceu do que vence em breve, a
+  lista mostra “expira em 25 dias” na linha, e a antecedência do aviso é configurável (padrão: 60
+  dias — renovar um título de residência leva meses).
+- **Anexos cifrados** (PDF, JPG, PNG, WebP, até 25 MB cada) com **visualizador embutido**: pdf.js
+  renderiza o documento dentro do app, com zoom e seleção de texto, em vez de abrir uma aba com os
+  bytes decifrados. Cada arquivo tem chave própria, cifrada com a chave mestra, e vive como um
+  objeto separado na pasta do app — trocar a senha mestra recifra o cofre, não o acervo. Um anexo
+  adicionado sem rede fica no dispositivo e sobe na próxima sincronização.
 - **Códigos 2FA (TOTP)** gerados no próprio cofre, a partir de um segredo base32 ou de uma URI
   `otpauth://` (RFC 6238, SHA-1/256/512).
 - **Gerador** de senhas e frases-senha com `crypto.getRandomValues` e amostragem sem viés.
@@ -134,9 +143,20 @@ na primeira execução e o guarda no `localStorage` daquele navegador.
 
 ### 3. Faça o deploy
 
-Um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes, constrói e
-publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em página de
-projeto, `/` em domínio próprio).
+Em *Settings → Pages → Build and deployment*, escolha **Source: GitHub Actions**. Isto não é
+detalhe: com a opção *Deploy from a branch*, o GitHub roda o próprio build Jekyll da raiz do
+repositório **em paralelo** com o workflow deste projeto, e os dois publicam no mesmo site. Quem
+terminar por último vence — e quando é o Jekyll, o que vai ao ar é o código-fonte, com um
+`index.html` que aponta para `/src/main.tsx` e não executa no navegador.
+
+> Sintoma de que a origem está errada: `curl https://SEU-DOMINIO/README.md` responde 200, e
+> `/manifest.webmanifest` responde 404. Num deploy correto é o contrário. Um *service worker* já
+> instalado continua servindo a versão anterior do app, então o problema costuma aparecer primeiro
+> para quem abre o site pela primeira vez.
+
+Feito isso, um push em `main` dispara `.github/workflows/deploy.yml`, que roda typecheck + testes,
+constrói e publica no Pages. O `base` do Vite é resolvido automaticamente (`/equantic-keeper/` em
+página de projeto, `/` em domínio próprio).
 
 **Domínio próprio:** configure em *Settings → Pages → Custom domain*. O GitHub grava o valor num
 arquivo `CNAME` na raiz do repositório, e o build copia esse arquivo para dentro de `dist/` — assim
@@ -160,7 +180,8 @@ npm run smoke      # teste de integração no navegador (após npm run build)
 O `npm run smoke` sobe o `vite preview`, semeia um cofre cifrado por uma implementação
 independente do formato e percorre o app com o Playwright: configuração inicial, senha errada,
 desbloqueio, busca, revelar segredo, TOTP, criação de item, cadastro de um documento com titular,
-filtro por pessoa, tema e bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
+filtro por pessoa, anexo cifrado aberto no visualizador de PDF, alertas de validade, tema e
+bloqueio. O cofre semeado é um arquivo **v1**, então a migração para v2
 também é exercitada em navegador de verdade. Ele precisa do navegador instalado uma vez:
 `npx playwright install chromium`.
 
@@ -173,6 +194,9 @@ conecte o Drive depois.
 ```
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
                model (tipos de segredo) · documents (tipos de documento pessoal)
+               attachments (envelope de chaves) · blobstore (cache cifrado em IndexedDB)
+               expiry (o que venceu e o que está para vencer)
+src/assets/brand/  logotipos eQuantic — fonte única dos ícones e do favicon
 src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
 src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
 src/components/ ItemDetail · ItemEditor · SecretValue/TOTP · Generator · SettingsDialog · ui · icons
@@ -200,8 +224,32 @@ O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mes
 - **AAD** = `format|version|cipher|kdf.algo|kdf.iterations|kdf.salt`
 - **Chave** = `HKDF-SHA256(PBKDF2(senha, salt, iterations), salt, "equantic-keeper:enc:v1")`
 - **Payload** (cifrado) = `{ "items": [...], "people": [...], "preferences": {...} }`
-- **Versão 2** acrescentou `people` (titulares) e `item.holderId`. Cofres v1 abrem normalmente;
-  um cliente antigo se recusa a abrir um cofre mais novo em vez de descartar o que não entende.
+- **Versão 2** acrescentou `people` (titulares) e `item.holderId`; a **3** acrescentou
+  `item.attachments`. Cofres antigos abrem normalmente; um cliente antigo é que se recusa a abrir um
+  cofre mais novo, em vez de descartar o que não entende.
+
+### Anexos
+
+Os bytes **não** ficam no cofre. Cada anexo é cifrado com uma chave AES-GCM própria e gravado como
+um arquivo separado na mesma pasta oculta; o cofre guarda só os metadados e essa chave, cifrada com
+a chave mestra:
+
+```jsonc
+{
+  "id": "…", "name": "residencia-2024.pdf", "mimeType": "application/pdf", "size": 184320,
+  "wrapped": { "key": "<base64>", "iv": "<base64>" },  // chave do arquivo, cifrada pela mestra
+  "iv": "<base64>",                                     // IV do conteúdo
+  "driveFileId": "…"                                    // vazio até subir ao Drive
+}
+```
+
+- **AAD da chave** = `equantic-keeper:attachment-key:v1|<id>` — impede mover a chave de um registro
+  para outro.
+- **AAD do conteúdo** = `equantic-keeper:attachment:v1|<id>|<mimeType>|<size>` — adulterar o tipo
+  declarado (renomear um PDF para imagem dentro do cofre) quebra a decifragem em vez de entregar os
+  bytes ao visualizador com outro rótulo.
+- O ciphertext também fica em cache no **IndexedDB** do navegador, para abrir offline.
+- **A exportação cifrada (`.keeper.json`) leva o cofre, não os anexos.** Os arquivos ficam no Drive.
 
 O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
 cofre sem este app. O teste de integração do repositório faz exatamente isso.
@@ -210,7 +258,8 @@ cofre sem este app. O teste de integração do repositório faz exatamente isso.
 
 ## Limitações conhecidas
 
-- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar.
+- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar. O backup
+  cifrado contém o cofre, mas não os anexos — os arquivos permanecem no Drive.
 - O `appDataFolder` é invisível no Drive: para levar os dados embora, use *Exportar cofre cifrado*.
 - A gravação no Drive não é atômica. O app mescla antes de escrever e detecta divergência de
   revisão, mas duas edições no mesmo segundo em dispositivos diferentes podem exigir uma

@@ -29,6 +29,7 @@ function item(id: string, updatedAt: string, extra: Partial<VaultItem> = {}): Va
     tags: [],
     fields: {},
     customFields: [],
+    attachments: [],
     favorite: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt,
@@ -117,6 +118,33 @@ describe('normalizePayload', () => {
     expect(payload.preferences.theme).toBe('light');
   });
 
+  /** Um cofre v2 tem pessoas mas nenhum anexo; a lista precisa nascer vazia. */
+  it('abre um cofre v2, sem anexos nos itens', () => {
+    const payload = normalizePayload({
+      items: [{ id: 'doc', type: 'pt-residencia', name: 'Título', holderId: 'p1' }],
+      people: [{ id: 'p1', name: 'Maria' }],
+    });
+    expect(payload.items[0]?.attachments).toEqual([]);
+    expect(payload.people[0]?.name).toBe('Maria');
+  });
+
+  it('descarta anexo sem chave, que seria indecifrável', () => {
+    const bom = {
+      id: 'a1',
+      name: 'scan.pdf',
+      mimeType: 'application/pdf',
+      size: 10,
+      iv: 'aXY=',
+      wrapped: { key: 'aw==', iv: 'aXY=' },
+      driveFileId: '',
+      addedAt: '2026-08-01T00:00:00.000Z',
+    };
+    const payload = normalizePayload({
+      items: [{ id: 'doc', attachments: [bom, { id: 'a2', iv: 'aXY=' }, null, 'nada'] }],
+    });
+    expect(payload.items[0]?.attachments.map((entry) => entry.id)).toEqual(['a1']);
+  });
+
   it('descarta pessoas malformadas e completa as que faltam campos', () => {
     const payload = normalizePayload({ people: [{ id: 'p1' }, null, { name: 'sem id' }] });
     expect(payload.people).toHaveLength(1);
@@ -132,10 +160,12 @@ describe('normalizePayload', () => {
 });
 
 describe('versão do formato', () => {
-  it('grava a versão 2, que é a que tem pessoas', async () => {
+  it('grava a versão corrente e recusa uma mais nova', async () => {
     const { file } = await createVault('senha', emptyPayload(), iterations);
     expect(file.version).toBe(VAULT_VERSION);
-    expect(VAULT_VERSION).toBe(2);
+    await expect(unlockVault({ ...file, version: VAULT_VERSION + 1 }, 'senha')).rejects.toThrow(
+      /versão mais recente/i,
+    );
   });
 
   it('leva as pessoas junto no ciclo cifra/decifra', async () => {

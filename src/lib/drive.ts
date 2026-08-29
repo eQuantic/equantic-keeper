@@ -37,6 +37,13 @@ export class DriveError extends Error {
   }
 }
 
+/** The slice attachments depend on — binary in, binary out. */
+export interface DriveBlobApi {
+  createBlob(name: string, bytes: Uint8Array, mimeType?: string): Promise<DriveFileMeta>;
+  downloadBlob(fileId: string): Promise<Uint8Array>;
+  delete(fileId: string): Promise<void>;
+}
+
 /**
  * The slice of Drive the sync engine depends on. Depending on the interface
  * rather than the concrete client keeps `sync.ts` testable against an in-memory
@@ -52,7 +59,7 @@ export interface DriveApi {
   rotateBackups(file: VaultFile): Promise<void>;
 }
 
-export class DriveClient implements DriveApi {
+export class DriveClient implements DriveApi, DriveBlobApi {
   constructor(private readonly auth: GoogleAuth) {}
 
   /** Adds auth, retries once with a fresh token when the current one is stale. */
@@ -143,6 +150,39 @@ export class DriveClient implements DriveApi {
 
   async delete(fileId: string): Promise<void> {
     await this.request(`${FILES_API}/${fileId}`, { method: 'DELETE' });
+  }
+
+  /**
+   * Uploads raw bytes as a new file in the app folder.
+   *
+   * Two requests instead of a multipart one: `uploadType=media` cannot carry
+   * metadata, and hand-assembling a multipart body around binary content means
+   * turning the bytes into a string first — which is exactly how a scan gets
+   * corrupted. Creating the (empty) file first and PATCHing the content keeps
+   * the bytes untouched.
+   */
+  async createBlob(name: string, bytes: Uint8Array, mimeType = 'application/octet-stream'): Promise<DriveFileMeta> {
+    const created = await this.request(`${FILES_API}?fields=${FILE_FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: ['appDataFolder'], mimeType }),
+    });
+    const meta = (await created.json()) as DriveFileMeta;
+    return this.updateBlob(meta.id, bytes, mimeType);
+  }
+
+  async updateBlob(fileId: string, bytes: Uint8Array, mimeType = 'application/octet-stream'): Promise<DriveFileMeta> {
+    const response = await this.request(`${UPLOAD_API}/${fileId}?uploadType=media&fields=${FILE_FIELDS}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': mimeType },
+      body: bytes.slice().buffer as ArrayBuffer,
+    });
+    return (await response.json()) as DriveFileMeta;
+  }
+
+  async downloadBlob(fileId: string): Promise<Uint8Array> {
+    const response = await this.request(`${FILES_API}/${fileId}?alt=media`);
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   /**

@@ -16,6 +16,7 @@ import { activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
 import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
+import { AttachmentPicker } from './Attachments';
 import { GeneratorDialog } from './Generator';
 
 function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
@@ -376,6 +377,14 @@ export function ItemEditor({
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="space-y-3 border-t border-line-soft pt-4">
+          <p className="text-xs font-medium tracking-wide text-muted uppercase">Anexos</p>
+          <AttachmentPicker
+            refs={draft.attachments}
+            onChange={(attachments) => patch({ attachments })}
+          />
         </div>
 
         {draft.customFields.length > 0 ? (
