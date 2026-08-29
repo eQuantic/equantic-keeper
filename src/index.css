@@ -92,8 +92,8 @@ input::placeholder {
   }
 
   /*
-   * 32px icon buttons are comfortable with a mouse and fiddly with a thumb.
-   * An invisible ::after pad brings the hit area to ~44px without moving a
+   * Icon buttons grow to 40px visually on touch (see IconButton); the
+   * invisible ::after pad tops the hit area up to ~48px without moving a
    * single pixel of layout. Adjacent buttons overlap a few pads' pixels; the
    * one on top wins, which is how native toolbars behave too.
    */
@@ -103,7 +103,7 @@ input::placeholder {
   .tap-target::after {
     content: '';
     position: absolute;
-    inset: -6px;
+    inset: -4px;
   }
 }
 
@@ -139,6 +139,11 @@ input::placeholder {
   font-size: 0.8125rem;
   letter-spacing: 0.01em;
   word-break: break-all;
+
+  /* Reading a token on a phone at arm's length needs more than 13px. */
+  @media (pointer: coarse) {
+    font-size: 0.9375rem;
+  }
 }
 
 @keyframes keeper-fade-in {

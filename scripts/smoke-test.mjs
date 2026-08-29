@@ -624,6 +624,10 @@ const run = async () => {
   // zoom outlives the focus. The floor only applies to touch-first devices.
   await check('inputs têm 16px em viewport de toque', async () =>
     (await phone.locator('input[type="password"]').evaluate((el) => getComputedStyle(el).fontSize)) === '16px');
+  await check('inputs têm ~48px de altura no celular', async () => {
+    const height = await phone.locator('input[type="password"]').evaluate((el) => el.getBoundingClientRect().height);
+    return height >= 46 && height <= 52;
+  });
 
   await phone.fill('input[type="password"]', PASSWORD);
   await phone.click('button:has-text("Desbloquear")');
@@ -632,6 +636,11 @@ const run = async () => {
   // Expiry must not be desktop garnish: the row badge survives 375px…
   await check('badge de validade aparece na linha também no celular', async () =>
     (await phone.locator('main li:has-text("expira em 25 dias")').count()) === 1);
+
+  await check('linhas da lista têm ~64px no celular', async () => {
+    const height = await phone.locator('main li > div').first().evaluate((el) => el.getBoundingClientRect().height);
+    return height >= 62 && height <= 72;
+  });
 
   // …and the sidebar's expired/soon filters surface as chips above the list,
   // because on a phone the sidebar hides behind the menu button.
@@ -650,11 +659,12 @@ const run = async () => {
   await phone.waitForTimeout(300);
   await check('tocar de novo desfaz o filtro', async () => (await phone.locator('main li').count()) === 7);
 
-  // 32px icon buttons grow an invisible ~44px hit area on coarse pointers.
+  // Icon buttons: 40px visual on touch, topped up to ~48px by the ::after pad.
   await check('botões de ícone ganham área de toque no celular', async () =>
     (await phone.locator('button[aria-label="Gerador"]').evaluate((el) => {
       const after = getComputedStyle(el, '::after');
-      return after.position === 'absolute' && after.top === '-6px';
+      const box = el.getBoundingClientRect();
+      return after.position === 'absolute' && after.top === '-4px' && box.height >= 40;
     })));
 
   // Digits-only document fields ask the phone for the numeric keypad.
