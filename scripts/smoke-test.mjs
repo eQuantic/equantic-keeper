@@ -659,6 +659,88 @@ const run = async () => {
   await phone.keyboard.press('Escape');
   await phone.waitForSelector('text=Escolha o tipo', { state: 'detached', timeout: 5000 });
 
+  // 12b. Row swipes. Synthetic pointer events walk the same handlers a finger
+  // would; the clipboard permission lets the Copiar action actually copy.
+  await phone.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  // Rows are addressed by text: committing an action touches updatedAt and
+  // the "Recentes" sort reorders the list under an index.
+  const swipeRow = (name, fromX, toX) =>
+    phone.evaluate(([needle, x0, x1]) => {
+      const item = [...document.querySelectorAll('main li')].find((li) => li.textContent.includes(needle));
+      const el = item.querySelector('[data-swipe-row]');
+      const fire = (type, x) =>
+        el.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId: 9,
+            pointerType: 'touch',
+            isPrimary: true,
+            clientX: x,
+            clientY: 300,
+          }),
+        );
+      fire('pointerdown', x0);
+      for (let step = 1; step <= 6; step += 1) fire('pointermove', x0 + ((x1 - x0) * step) / 6);
+      fire('pointerup', x1);
+    }, [name, fromX, toX]);
+
+  await swipeRow('GitHub PAT', 300, 200);
+  await phone.waitForTimeout(300);
+  await check('swipe à esquerda revela Copiar e Lixeira', async () =>
+    (await phone.locator('main li button:has-text("Copiar")').filter({ visible: true }).count()) === 1 &&
+    (await phone.locator('main li button:has-text("Lixeira")').filter({ visible: true }).count()) === 1);
+  await phone.screenshot({ path: `${OUT}/16-mobile-swipe.png` });
+
+  await phone.locator('main li button:has-text("Copiar")').click();
+  await check('tocar em Copiar copia e avisa', async () => {
+    await phone.getByText('Copiado para a área de transferência.').waitFor({ timeout: 5000 });
+    return true;
+  });
+
+  await swipeRow('Azure', 60, 290); // full swipe right commits Favoritar
+  await phone.waitForTimeout(350);
+  await check('swipe completo à direita favorita a linha', async () =>
+    (await phone.locator('main li:has-text("Azure") .text-warn').count()) === 1);
+  await swipeRow('Azure', 60, 290);
+  await phone.waitForTimeout(350);
+  await check('repetir o gesto desfaz o favorito', async () =>
+    (await phone.locator('main li:has-text("Azure") .text-warn').count()) === 0);
+
+  // 12c. Pull to sync. This context has no Google account, so releasing the
+  // pull must land on the local-only notice instead of a popup.
+  await phone.evaluate(() => {
+    const el = document.querySelector('[data-pull]');
+    const mk = (y) => new Touch({ identifier: 3, target: el, clientX: 200, clientY: y });
+    const fire = (type, y) =>
+      el.dispatchEvent(
+        new TouchEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          touches: [mk(y)],
+          targetTouches: [mk(y)],
+          changedTouches: [mk(y)],
+        }),
+      );
+    fire('touchstart', 200);
+    fire('touchmove', 260);
+    fire('touchmove', 380);
+  });
+  await check('puxar arma o indicador de sincronização', async () =>
+    (await phone.getByText('Solte para sincronizar com o Drive').count()) === 1);
+  await phone.evaluate(() => {
+    const el = document.querySelector('[data-pull]');
+    const touch = new Touch({ identifier: 3, target: el, clientX: 200, clientY: 380 });
+    el.dispatchEvent(
+      new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: [touch] }),
+    );
+  });
+  await check('soltar sem conta Google mostra o aviso local', async () => {
+    await phone.getByText(/Sem conexão com o Drive — conecte/).waitFor({ timeout: 5000 });
+    return true;
+  });
+
   // …and the sidebar's expired/soon filters surface as chips above the list,
   // because on a phone the sidebar hides behind the menu button.
   await check('chips de validade aparecem acima da lista', async () =>
