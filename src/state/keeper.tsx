@@ -16,7 +16,21 @@ import {
   type ReactNode,
 } from 'react';
 import type { DerivedKey } from '../lib/crypto';
-import { deriveKey, timingSafeEqual } from '../lib/crypto';
+import {
+  deriveKey,
+  deriveKeyFromMasterBits,
+  deriveMasterBits,
+  fromBase64,
+  timingSafeEqual,
+} from '../lib/crypto';
+import {
+  matchesVault,
+  newPrfInput,
+  platformAuthenticatorAvailable,
+  unwrapMasterBits,
+  webAuthnPrf,
+  wrapMasterBits,
+} from '../lib/biometric';
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import type { AttachmentRef, Person, VaultItem } from '../lib/model';
@@ -36,6 +50,7 @@ import {
   mergePayloads,
   sealVault,
   unlockVault,
+  unlockVaultWithDerived,
   type VaultFile,
   type VaultPayload,
   type VaultPreferences,
@@ -59,6 +74,12 @@ export interface KeeperState {
   payload: VaultPayload | null;
   hasLocalVault: boolean;
   sync: { status: SyncStatus; message?: string; at?: string };
+  /** This device has a user-verifying platform authenticator (Face ID, digital…). */
+  biometricAvailable: boolean;
+  /** A biometric record exists on this device. */
+  biometricEnrolled: boolean;
+  /** The record opens the vault currently loaded — show the unlock button. */
+  biometricReady: boolean;
 }
 
 export interface KeeperActions {
@@ -66,6 +87,9 @@ export interface KeeperActions {
   continueOffline(): void;
   createVault(password: string): Promise<void>;
   unlock(password: string): Promise<void>;
+  unlockWithBiometrics(): Promise<void>;
+  enableBiometrics(password: string): Promise<void>;
+  disableBiometrics(): void;
   lock(): void;
   saveItem(item: VaultItem): Promise<void>;
   trashItem(id: string): Promise<void>;
@@ -110,6 +134,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     payload: null,
     hasLocalVault: !!storage.loadCachedVault(),
     sync: { status: 'idle' },
+    biometricAvailable: false,
+    biometricEnrolled: !!storage.loadBiometricRecord(),
+    biometricReady: false,
   }));
 
   const authRef = useRef<GoogleAuth | null>(null);
@@ -141,6 +168,19 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     },
     [patch],
   );
+
+  const biometricAvailableRef = useRef(false);
+  /** Recomputes the biometric flags from storage and the vault currently loaded. */
+  const refreshBiometric = useCallback(() => {
+    const record = storage.loadBiometricRecord();
+    const file = fileRef.current;
+    patch({
+      biometricAvailable: biometricAvailableRef.current,
+      biometricEnrolled: !!record,
+      biometricReady:
+        biometricAvailableRef.current && !!record && !!file && matchesVault(record, file.kdf),
+    });
+  }, [patch]);
 
   const services = useCallback(() => {
     const clientId = storage.getClientId();
@@ -297,8 +337,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       driveIdRef.current = driveFileId ?? driveIdRef.current;
       revisionRef.current = revision ?? revisionRef.current;
       patch({ hasLocalVault: true });
+      refreshBiometric();
     },
-    [patch],
+    [patch, refreshBiometric],
   );
 
   const connectGoogle = useCallback(
@@ -371,6 +412,35 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [adoptVaultFile, fail, patch, runSync, setPayload],
   );
 
+  /** Pull anything newer that landed on Drive while this device was away. */
+  const pullAfterUnlock = useCallback(
+    async (derived: DerivedKey, payload: VaultPayload) => {
+      if (!authRef.current?.isSignedIn || !navigator.onLine) return;
+      try {
+        const remote = await pullVault({
+          drive: driveRef.current!,
+          derived,
+          driveFileId: driveIdRef.current,
+          knownRevision: revisionRef.current,
+        });
+        if (remote) {
+          driveIdRef.current = remote.driveFileId;
+          revisionRef.current = remote.revision;
+          const merged = mergePayloads(payload, remote.payload);
+          setPayload(merged);
+          await persistLocal(merged);
+          patch({ sync: { status: 'saved', at: new Date().toISOString() } });
+          // Local edits made offline still have to reach Drive.
+          scheduleSync();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Falha ao baixar o cofre.';
+        patch({ sync: { status: 'error', message } });
+      }
+    },
+    [patch, persistLocal, scheduleSync, setPayload],
+  );
+
   const unlock = useCallback(
     async (password: string) => {
       const file = fileRef.current;
@@ -384,37 +454,96 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         derivedRef.current = derived;
         setPayload(payload);
         patch({ phase: 'unlocked', busy: false });
-
-        // Pull anything newer that landed while this device was away.
-        if (authRef.current?.isSignedIn && navigator.onLine) {
-          try {
-            const remote = await pullVault({
-              drive: driveRef.current!,
-              derived,
-              driveFileId: driveIdRef.current,
-              knownRevision: revisionRef.current,
-            });
-            if (remote) {
-              driveIdRef.current = remote.driveFileId;
-              revisionRef.current = remote.revision;
-              const merged = mergePayloads(payload, remote.payload);
-              setPayload(merged);
-              await persistLocal(merged);
-              patch({ sync: { status: 'saved', at: new Date().toISOString() } });
-              // Local edits made offline still have to reach Drive.
-              scheduleSync();
-            }
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Falha ao baixar o cofre.';
-            patch({ sync: { status: 'error', message } });
-          }
-        }
+        await pullAfterUnlock(derived, payload);
       } catch (error) {
         fail(error, 'Não foi possível desbloquear o cofre.');
       }
     },
-    [fail, patch, persistLocal, scheduleSync, setPayload],
+    [fail, patch, pullAfterUnlock, setPayload],
   );
+
+  const unlockWithBiometrics = useCallback(async () => {
+    const file = fileRef.current;
+    const record = storage.loadBiometricRecord();
+    if (!file || !record) {
+      patch({ error: 'Nenhum cofre carregado.' });
+      return;
+    }
+    if (!matchesVault(record, file.kdf)) {
+      // The master password changed since enrollment; the wrapped bits open
+      // nothing any more, so keeping the record would only mislead.
+      storage.clearBiometricRecord();
+      refreshBiometric();
+      patch({
+        error:
+          'A senha mestra mudou desde que a biometria foi ativada. Desbloqueie com a senha e reative a biometria nas Configurações.',
+      });
+      return;
+    }
+    patch({ busy: true, error: null });
+    try {
+      const prfOutput = await webAuthnPrf.evalPrf(record.credentialId, fromBase64(record.prfInput));
+      const masterBits = await unwrapMasterBits(prfOutput, record);
+      let derived: DerivedKey;
+      try {
+        derived = await deriveKeyFromMasterBits(masterBits, file.kdf);
+      } finally {
+        masterBits.fill(0);
+      }
+      const { payload } = await unlockVaultWithDerived(file, derived);
+      derivedRef.current = derived;
+      setPayload(payload);
+      patch({ phase: 'unlocked', busy: false });
+      await pullAfterUnlock(derived, payload);
+    } catch (error) {
+      // Dismissing the Face ID / fingerprint sheet is not a failure to report.
+      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+        patch({ busy: false });
+        return;
+      }
+      fail(error, 'Não foi possível desbloquear com biometria.');
+    }
+  }, [fail, patch, pullAfterUnlock, refreshBiometric, setPayload]);
+
+  const enableBiometrics = useCallback(
+    async (password: string) => {
+      const file = fileRef.current;
+      if (!file) throw new Error('O cofre precisa estar aberto.');
+      patch({ busy: true, error: null });
+      const masterBits = await deriveMasterBits(password, file.kdf);
+      try {
+        const derived = await deriveKeyFromMasterBits(masterBits, file.kdf);
+        if (!timingSafeEqual(derived.verifier, file.verifier)) {
+          throw new Error('Senha mestra incorreta.');
+        }
+        const label = storage.loadAccount()?.email ?? 'eQuantic Keeper';
+        const { credentialId } = await webAuthnPrf.create(label);
+        const prfInput = newPrfInput();
+        const prfOutput = await webAuthnPrf.evalPrf(credentialId, prfInput);
+        const record = await wrapMasterBits(prfOutput, masterBits, credentialId, prfInput, file.kdf);
+        if (!storage.saveBiometricRecord(record)) {
+          throw new Error('Não foi possível gravar o registro biométrico neste navegador.');
+        }
+        refreshBiometric();
+        patch({ busy: false, notice: 'Desbloqueio por biometria ativado neste dispositivo.' });
+      } catch (error) {
+        fail(error, 'Não foi possível ativar o desbloqueio por biometria.');
+        throw error;
+      } finally {
+        masterBits.fill(0);
+      }
+    },
+    [fail, patch, refreshBiometric],
+  );
+
+  const disableBiometrics = useCallback(() => {
+    storage.clearBiometricRecord();
+    refreshBiometric();
+    patch({
+      notice:
+        'Desbloqueio por biometria desativado. A chave de acesso criada continua no dispositivo e pode ser removida no gerenciador de senhas dele.',
+    });
+  }, [patch, refreshBiometric]);
 
   const lock = useCallback(() => {
     window.clearTimeout(syncTimerRef.current);
@@ -613,7 +742,16 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           ...(driveIdRef.current ? { driveFileId: driveIdRef.current } : {}),
           cachedAt: new Date().toISOString(),
         });
-        patch({ busy: false, notice: 'Senha mestra alterada. Sincronizando com o Drive…' });
+        // The biometric record wraps the *old* key material; it opens nothing now.
+        const hadBiometrics = !!storage.loadBiometricRecord();
+        if (hadBiometrics) storage.clearBiometricRecord();
+        refreshBiometric();
+        patch({
+          busy: false,
+          notice: `Senha mestra alterada. Sincronizando com o Drive…${
+            hadBiometrics ? ' O desbloqueio por biometria foi desativado; reative-o nas Configurações.' : ''
+          }`,
+        });
         // The remote copy cannot be merged under the new key: overwrite it.
         await runSync({ force: true });
       } catch (error) {
@@ -621,7 +759,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [fail, patch, runSync],
+    [fail, patch, refreshBiometric, runSync],
   );
 
   const importBackup = useCallback(
@@ -737,6 +875,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       account: null,
       connected: false,
       hasLocalVault: false,
+      biometricEnrolled: false,
+      biometricReady: false,
       notice: 'Dados locais apagados. O cofre no Google Drive permanece intacto.',
     }));
   }, []);
@@ -762,6 +902,11 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     if (bootedRef.current) return;
     bootedRef.current = true;
 
+    void platformAuthenticatorAvailable().then((available) => {
+      biometricAvailableRef.current = available;
+      refreshBiometric();
+    });
+
     if (!storage.getClientId()) {
       patch({ phase: 'config' });
       return;
@@ -777,7 +922,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // A silent connect that found a vault already moved us to 'locked'.
       });
     }
-  }, [adoptVaultFile, connectGoogle, patch]);
+  }, [adoptVaultFile, connectGoogle, patch, refreshBiometric]);
 
   // ---- connectivity -------------------------------------------------------
   useEffect(() => {
@@ -825,6 +970,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       continueOffline,
       createVault,
       unlock,
+      unlockWithBiometrics,
+      enableBiometrics,
+      disableBiometrics,
       lock,
       saveItem,
       trashItem,
@@ -859,8 +1007,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       continueOffline,
       createVault,
       currentVaultFile,
+      disableBiometrics,
       discardAttachment,
       emptyTrash,
+      enableBiometrics,
       importBackup,
       importBundle,
       lock,
@@ -879,6 +1029,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       trashItem,
       unlock,
+      unlockWithBiometrics,
       updatePreferences,
       wipeDevice,
     ],

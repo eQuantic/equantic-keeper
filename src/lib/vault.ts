@@ -125,15 +125,25 @@ export class WrongPasswordError extends Error {
 
 /** Derive from `password` and decrypt `file` in one step. */
 export async function unlockVault(file: VaultFile, password: string) {
+  assertSupportedVersion(file);
+  const derived = await deriveKey(password, file.kdf);
+  return unlockVaultWithDerived(file, derived);
+}
+
+/** Decrypt `file` with keys derived elsewhere (e.g. biometric unlock). */
+export async function unlockVaultWithDerived(file: VaultFile, derived: DerivedKey) {
+  assertSupportedVersion(file);
+  if (!timingSafeEqual(derived.verifier, file.verifier)) throw new WrongPasswordError();
+  const payload = await openVault(file, derived);
+  return { derived, payload };
+}
+
+function assertSupportedVersion(file: VaultFile): void {
   if (file.version > VAULT_VERSION) {
     throw new Error(
       `Este cofre foi criado por uma versão mais recente do Keeper (v${file.version}). Atualize o app.`,
     );
   }
-  const derived = await deriveKey(password, file.kdf);
-  if (!timingSafeEqual(derived.verifier, file.verifier)) throw new WrongPasswordError();
-  const payload = await openVault(file, derived);
-  return { derived, payload };
 }
 
 export async function openVault(file: VaultFile, derived: DerivedKey): Promise<VaultPayload> {

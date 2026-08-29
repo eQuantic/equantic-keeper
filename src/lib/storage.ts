@@ -4,12 +4,14 @@
  * Only ciphertext and non-sensitive settings are written here. The master key,
  * the decrypted payload and the Google access token stay in memory.
  */
+import { isBiometricRecord, type BiometricRecord } from './biometric';
 import { isVaultFile, type VaultFile } from './vault';
 
 const KEY_CACHE = 'keeper.vault.cache.v1';
 const KEY_CLIENT_ID = 'keeper.google.clientId';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
+const KEY_BIOMETRIC = 'keeper.biometric.v1';
 
 export interface CachedVault {
   file: VaultFile;
@@ -104,6 +106,29 @@ export function saveAccount(account: RememberedAccount | null): void {
   else safeRemove(KEY_ACCOUNT);
 }
 
+/**
+ * The biometric record is ciphertext plus public parameters — opening it
+ * still requires the platform authenticator (see `lib/biometric.ts`).
+ */
+export function loadBiometricRecord(): BiometricRecord | null {
+  const raw = safeGet(KEY_BIOMETRIC);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isBiometricRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBiometricRecord(record: BiometricRecord): boolean {
+  return safeSet(KEY_BIOMETRIC, JSON.stringify(record));
+}
+
+export function clearBiometricRecord(): void {
+  safeRemove(KEY_BIOMETRIC);
+}
+
 export function loadTheme(): 'dark' | 'light' {
   return safeGet(KEY_THEME) === 'light' ? 'light' : 'dark';
 }
@@ -114,5 +139,5 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 
 /** Wipes every trace of the vault from this device (the Drive copy is untouched). */
 export function wipeLocalData(): void {
-  for (const key of [KEY_CACHE, KEY_ACCOUNT]) safeRemove(key);
+  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC]) safeRemove(key);
 }
