@@ -2,6 +2,7 @@
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
 import { Badge, Button, IconButton } from './ui';
 import { Icon } from './icons';
+import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
 import { useKeeper } from '../state/keeper';
 
@@ -171,6 +172,8 @@ export function ItemDetail({
             <SecretValue value={value} fieldKey={`${item.id}:${key}`} secret defaultRevealed={!conceal} />
           </Row>
         ))}
+
+        <AttachmentList refs={item.attachments} />
 
         <div className="flex flex-wrap gap-x-6 gap-y-1 py-4 text-xs text-faint">
           <span>Criado em {formatDate(item.createdAt)}</span>

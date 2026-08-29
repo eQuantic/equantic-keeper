@@ -19,6 +19,14 @@
   --color-warn: #fbbf24;
   --color-danger: #f87171;
 
+  /*
+   * eQuantic brand. The kit ships a colour lockup for light backgrounds and a
+   * white one for dark, so the dark theme takes the white ring and the brighter
+   * green — the same pairing the brand files use, not a tint of our own.
+   */
+  --color-brand-ring: #ffffff;
+  --color-brand-leaf: #acf27f;
+
   --font-sans: 'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, monospace;
 
@@ -38,6 +46,9 @@
   --color-ok: #059669;
   --color-warn: #b45309;
   --color-danger: #dc2626;
+
+  --color-brand-ring: #0050a0;
+  --color-brand-leaf: #80b85c;
 }
 
 html,
@@ -117,4 +128,72 @@ body {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/*
+ * Invisible text layer over a rendered PDF page: it is what makes selecting and
+ * copying text from a document work, instead of leaving the user with a picture
+ * of their own residence permit.
+ *
+ * These rules mirror the contract of pdf.js's `TextLayer`, which positions each
+ * span in per-cent coordinates and hands the CSS a `--font-height` to scale.
+ * Written out here rather than importing `pdfjs-dist/web/pdf_viewer.css`: that
+ * file is 160 KB of reference-viewer chrome, with four `:root` blocks that would
+ * leak variables into the whole app.
+ */
+.keeper-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+}
+
+.keeper-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.keeper-text-layer > :not(.markedContent),
+.keeper-text-layer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.keeper-text-layer .markedContent {
+  display: contents;
+}
+
+/* Visible highlight over transparent glyphs — without this, selecting text
+   inside a PDF gives no feedback at all. */
+.keeper-text-layer ::selection {
+  background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/*
+ * Full eQuantic lockup. A background image rather than two <img> elements, so
+ * the browser fetches only the variant the current theme actually shows.
+ */
+.keeper-wordmark {
+  display: block;
+  aspect-ratio: 322 / 86;
+  background: url('./assets/brand/logo-white-vector.svg') center / contain no-repeat;
+}
+
+[data-theme='light'] .keeper-wordmark {
+  background-image: url('./assets/brand/logo-landscape-vector.svg');
 }

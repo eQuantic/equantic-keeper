@@ -213,6 +213,38 @@ const PAYLOAD = {
   ],
 };
 
+/**
+ * A minimal but structurally valid one-page PDF, built with real cross-reference
+ * offsets. Feeding pdf.js a fake would prove nothing about the viewer.
+ */
+function tinyPdf(text) {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 200] /Contents 4 0 R ' +
+      '/Resources << /Font << /F1 5 0 R >> >> >>',
+    null, // the content stream, built below
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  const stream = `BT /F1 16 Tf 24 120 Td (${text}) Tj ET`;
+  objects[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((body, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+const PDF_MARKER = 'TITULO DE RESIDENCIA 2024';
+
 const errors = [];
 
 let failures = 0;
@@ -366,6 +398,70 @@ const run = async () => {
   await check('busca pelo nome do titular encontra o documento', async () =>
     (await page.locator('main li').count()) === 1);
   await page.fill('input[type="search"]', '');
+
+  // 8e. Attachments: encrypt, store, and read the file back in the app.
+  await page.click('aside:has(h2) button:has-text("Editar")');
+  await page.waitForSelector('[role="dialog"] >> text=Anexos', { timeout: 5000 });
+  await page
+    .locator('input[aria-label="Escolher arquivos para anexar"]')
+    .setInputFiles({ name: 'residencia-2024.pdf', mimeType: 'application/pdf', buffer: tinyPdf(PDF_MARKER) });
+  await page.waitForSelector('[role="dialog"] >> text=residencia-2024.pdf', { timeout: 10000 });
+  await check('anexo aparece na lista do editor', async () => true);
+  await page.click('footer button:has-text("Salvar")');
+
+  await page.waitForSelector('aside:has(h2) >> text=residencia-2024.pdf', { timeout: 5000 });
+  await check('anexo fica no item depois de salvar', async () => true);
+  await page.screenshot({ path: `${OUT}/09-anexo-no-item.png` });
+
+  // The ciphertext is what leaves the app; the plaintext must not be findable.
+  await check('nada do conteúdo do PDF aparece no armazenamento local', async () => {
+    const found = await page.evaluate(async (marker) => {
+      const local = JSON.stringify(localStorage);
+      if (local.includes(marker)) return 'localStorage';
+      const db = await new Promise((resolve) => {
+        const request = indexedDB.open('keeper-attachments');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+      });
+      if (!db) return 'sem indexeddb';
+      const blobs = await new Promise((resolve) => {
+        const request = db.transaction('ciphertext').objectStore('ciphertext').getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve([]);
+      });
+      if (blobs.length === 0) return 'cache vazio';
+      const decoder = new TextDecoder();
+      for (const buffer of blobs) if (decoder.decode(buffer).includes(marker)) return 'indexeddb';
+      return 'ok';
+    }, PDF_MARKER);
+    if (found !== 'ok') console.log(`      (achado inesperado: ${found})`);
+    return found === 'ok';
+  });
+
+  // 8f. The viewer renders the PDF in the app, with selectable text.
+  await page.click('aside:has(h2) button:has-text("residencia-2024.pdf")');
+  await page.waitForSelector('[role="dialog"] canvas', { timeout: 30000 });
+  await check('visualizador desenha a página do PDF', async () => {
+    const box = await page.locator('[role="dialog"] canvas').first().boundingBox();
+    return !!box && box.width > 50 && box.height > 50;
+  });
+  await check('camada de texto permite seleção e cópia', async () => {
+    const text = await page.locator('[role="dialog"] .keeper-text-layer').first().innerText();
+    return text.includes('TITULO DE RESIDENCIA');
+  });
+  await page.screenshot({ path: `${OUT}/10-visualizador.png` });
+
+  await page.click('[role="dialog"] button[aria-label="Aumentar zoom"]');
+  await page.waitForTimeout(600);
+  await check('zoom altera a escala da página', async () =>
+    (await page.locator('[role="dialog"] button[title="Zoom original"]').innerText()).trim() === '125%');
+
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"] canvas', { state: 'detached', timeout: 5000 });
+  await check('Esc fecha o visualizador', async () => true);
+
+  await check('nenhum blob: sobrou registrado após fechar', async () =>
+    (await page.evaluate(() => performance.getEntriesByType('resource').filter((e) => e.name.startsWith('blob:')).length)) === 0);
 
   // 9. Generator produces a value.
   await page.click('button[aria-label="Gerador"]');

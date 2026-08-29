@@ -66,6 +66,11 @@ os dados são irrecuperáveis — por construção.
 - **Titulares**: cada item pode pertencer a uma pessoa (você, cônjuge, filhos). A barra lateral
   filtra por pessoa e a busca encontra o documento pelo nome dela, que não fica guardado no item.
   Remover uma pessoa nunca apaga os documentos dela — eles apenas ficam sem titular.
+- **Anexos cifrados** (PDF, JPG, PNG, WebP, até 25 MB cada) com **visualizador embutido**: pdf.js
+  renderiza o documento dentro do app, com zoom e seleção de texto, em vez de abrir uma aba com os
+  bytes decifrados. Cada arquivo tem chave própria, cifrada com a chave mestra, e vive como um
+  objeto separado na pasta do app — trocar a senha mestra recifra o cofre, não o acervo. Um anexo
+  adicionado sem rede fica no dispositivo e sobe na próxima sincronização.
 - **Códigos 2FA (TOTP)** gerados no próprio cofre, a partir de um segredo base32 ou de uma URI
   `otpauth://` (RFC 6238, SHA-1/256/512).
 - **Gerador** de senhas e frases-senha com `crypto.getRandomValues` e amostragem sem viés.
@@ -184,6 +189,8 @@ conecte o Drive depois.
 ```
 src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
                model (tipos de segredo) · documents (tipos de documento pessoal)
+               attachments (envelope de chaves) · blobstore (cache cifrado em IndexedDB)
+src/assets/brand/  logotipos eQuantic — fonte única dos ícones e do favicon
 src/state/     keeper.tsx  — máquina de estados (auth, cofre, sincronização)
 src/screens/   Onboarding (config, login, criação, desbloqueio) · VaultScreen
 src/components/ ItemDetail · ItemEditor · SecretValue/TOTP · Generator · SettingsDialog · ui · icons
@@ -211,8 +218,32 @@ O arquivo gravado no Drive (`vault.keeper.json`) e o backup exportado usam o mes
 - **AAD** = `format|version|cipher|kdf.algo|kdf.iterations|kdf.salt`
 - **Chave** = `HKDF-SHA256(PBKDF2(senha, salt, iterations), salt, "equantic-keeper:enc:v1")`
 - **Payload** (cifrado) = `{ "items": [...], "people": [...], "preferences": {...} }`
-- **Versão 2** acrescentou `people` (titulares) e `item.holderId`. Cofres v1 abrem normalmente;
-  um cliente antigo se recusa a abrir um cofre mais novo em vez de descartar o que não entende.
+- **Versão 2** acrescentou `people` (titulares) e `item.holderId`; a **3** acrescentou
+  `item.attachments`. Cofres antigos abrem normalmente; um cliente antigo é que se recusa a abrir um
+  cofre mais novo, em vez de descartar o que não entende.
+
+### Anexos
+
+Os bytes **não** ficam no cofre. Cada anexo é cifrado com uma chave AES-GCM própria e gravado como
+um arquivo separado na mesma pasta oculta; o cofre guarda só os metadados e essa chave, cifrada com
+a chave mestra:
+
+```jsonc
+{
+  "id": "…", "name": "residencia-2024.pdf", "mimeType": "application/pdf", "size": 184320,
+  "wrapped": { "key": "<base64>", "iv": "<base64>" },  // chave do arquivo, cifrada pela mestra
+  "iv": "<base64>",                                     // IV do conteúdo
+  "driveFileId": "…"                                    // vazio até subir ao Drive
+}
+```
+
+- **AAD da chave** = `equantic-keeper:attachment-key:v1|<id>` — impede mover a chave de um registro
+  para outro.
+- **AAD do conteúdo** = `equantic-keeper:attachment:v1|<id>|<mimeType>|<size>` — adulterar o tipo
+  declarado (renomear um PDF para imagem dentro do cofre) quebra a decifragem em vez de entregar os
+  bytes ao visualizador com outro rótulo.
+- O ciphertext também fica em cache no **IndexedDB** do navegador, para abrir offline.
+- **A exportação cifrada (`.keeper.json`) leva o cofre, não os anexos.** Os arquivos ficam no Drive.
 
 O formato é simples de propósito: com a senha mestra e ~30 linhas de Web Crypto você decifra o
 cofre sem este app. O teste de integração do repositório faz exatamente isso.
@@ -221,7 +252,8 @@ cofre sem este app. O teste de integração do repositório faz exatamente isso.
 
 ## Limitações conhecidas
 
-- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar.
+- **Sem recuperação de senha.** Exporte um backup cifrado e guarde-o em outro lugar. O backup
+  cifrado contém o cofre, mas não os anexos — os arquivos permanecem no Drive.
 - O `appDataFolder` é invisível no Drive: para levar os dados embora, use *Exportar cofre cifrado*.
 - A gravação no Drive não é atômica. O app mescla antes de escrever e detecta divergência de
   revisão, mas duas edições no mesmo segundo em dispositivos diferentes podem exigir uma
