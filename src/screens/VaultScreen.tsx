@@ -187,7 +187,7 @@ export function VaultScreen() {
   );
 
   const sidebar = (
-    <nav className="flex h-full w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3 py-4">
+    <nav className="flex h-full w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] lg:pt-4 lg:pb-4">
       <div className="space-y-0.5">
         <NavItem
           icon="layers"
@@ -368,7 +368,7 @@ export function VaultScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
+      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)] pb-2.5 sm:px-4">
         <IconButton
           icon="layers"
           label="Menu"
@@ -414,6 +414,42 @@ export function VaultScreen() {
         ) : null}
 
         <main className="flex min-w-0 flex-1 flex-col">
+          {expiring.list.length > 0 ? (
+            /* The sidebar carries these filters, but on a phone it hides behind
+               the menu button — and expiry is the one signal that must not wait
+               for a drawer to be opened. */
+            <div className="flex items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 lg:hidden">
+              {(
+                [
+                  ['expired', 'warning', 'text-danger bg-danger/10', 'vencido', 'vencidos'],
+                  ['soon', 'clock', 'text-warn bg-warn/10', 'vence em breve', 'vencem em breve'],
+                ] as const
+              ).map(([status, icon, tone, singular, plural]) => {
+                const count = expiring.list.filter((entry) => entry.status === status).length;
+                if (count === 0) return null;
+                const isActive = filters.expiry === status;
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() =>
+                      setFilter(
+                        isActive
+                          ? { ...EMPTY_FILTERS, query: filters.query }
+                          : { ...EMPTY_FILTERS, expiry: status, query: filters.query },
+                      )
+                    }
+                    className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition ${tone} ${
+                      isActive ? 'ring-1 ring-current' : ''
+                    }`}
+                  >
+                    <Icon name={icon} size={12} />
+                    {count} {count === 1 ? singular : plural}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
             <p className="text-xs text-muted">
               {visible.length} {visible.length === 1 ? 'item' : 'itens'}
@@ -449,7 +485,7 @@ export function VaultScreen() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]">
             {visible.length === 0 ? (
               <EmptyState
                 icon={filters.query ? 'search' : 'key'}
@@ -512,19 +548,22 @@ export function VaultScreen() {
                               type.label}
                           </p>
                         </div>
+                        {/* Expiry stays visible at every width — it matters most on
+                            the phone in the queue at the registry office. Folder and
+                            age are desktop garnish. */}
+                        {expiry ? (
+                          <Badge
+                            className={`shrink-0 ${
+                              expiry.status === 'expired'
+                                ? 'bg-danger/12 text-danger'
+                                : 'bg-warn/12 text-warn'
+                            }`}
+                          >
+                            <Icon name={expiry.status === 'expired' ? 'warning' : 'clock'} size={11} />
+                            {describeExpiry(expiry)}
+                          </Badge>
+                        ) : null}
                         <div className="hidden shrink-0 items-center gap-2 sm:flex">
-                          {expiry ? (
-                            <Badge
-                              className={
-                                expiry.status === 'expired'
-                                  ? 'bg-danger/12 text-danger'
-                                  : 'bg-warn/12 text-warn'
-                              }
-                            >
-                              <Icon name={expiry.status === 'expired' ? 'warning' : 'clock'} size={11} />
-                              {describeExpiry(expiry)}
-                            </Badge>
-                          ) : null}
                           {item.folder ? <Badge className="bg-raised text-muted">{item.folder}</Badge> : null}
                           <span className="w-12 text-right text-xs text-faint">{relativeTime(item.updatedAt)}</span>
                         </div>

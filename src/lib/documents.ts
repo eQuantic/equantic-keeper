@@ -41,12 +41,12 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'idCard',
     accent: '#22d3ee',
     fields: [
-      { id: 'civilId', label: 'Nº de identificação civil', kind: 'text' },
+      { id: 'civilId', label: 'Nº de identificação civil', kind: 'text', numeric: true },
       { id: 'documentNumber', label: 'Nº do documento', kind: 'text', hint: 'Inclui a versão, ex.: 12345678 9 ZZ1' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
-      { id: 'nif', label: 'NIF', kind: 'text' },
-      { id: 'niss', label: 'NISS', kind: 'text' },
-      { id: 'sns', label: 'Nº de utente (SNS)', kind: 'text' },
+      { id: 'nif', label: 'NIF', kind: 'text', numeric: true },
+      { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
+      { id: 'sns', label: 'Nº de utente (SNS)', kind: 'text', numeric: true },
     ],
   },
   {
@@ -58,7 +58,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#fbbf24',
     fields: [
-      { id: 'nif', label: 'NIF', kind: 'text', placeholder: '123456789' },
+      { id: 'nif', label: 'NIF', kind: 'text', placeholder: '123456789', numeric: true },
       { id: 'servicoFinancas', label: 'Serviço de finanças', kind: 'text' },
       { id: 'representante', label: 'Representante fiscal', kind: 'text' },
       { id: 'issuedAt', label: 'Atribuído em', kind: 'date' },
@@ -73,7 +73,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#a3e635',
     fields: [
-      { id: 'niss', label: 'NISS', kind: 'text' },
+      { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
       { id: 'issuedAt', label: 'Atribuído em', kind: 'date' },
     ],
   },
@@ -86,7 +86,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'health',
     accent: '#f472b6',
     fields: [
-      { id: 'numeroUtente', label: 'Nº de utente', kind: 'text' },
+      { id: 'numeroUtente', label: 'Nº de utente', kind: 'text', numeric: true },
       { id: 'centroSaude', label: 'Centro de saúde', kind: 'text' },
       { id: 'medicoFamilia', label: 'Médico de família', kind: 'text' },
     ],
@@ -149,7 +149,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#34d399',
     fields: [
-      { id: 'cpf', label: 'CPF', kind: 'text', placeholder: '000.000.000-00' },
+      { id: 'cpf', label: 'CPF', kind: 'text', placeholder: '000.000.000-00', numeric: true },
       { id: 'situacao', label: 'Situação cadastral', kind: 'text', placeholder: 'Regular' },
       { id: 'issuedAt', label: 'Inscrição em', kind: 'date' },
     ],
@@ -178,8 +178,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'car',
     accent: '#fbbf24',
     fields: [
-      { id: 'registro', label: 'Nº de registro', kind: 'text' },
-      { id: 'numeroEspelho', label: 'Nº do espelho', kind: 'text' },
+      { id: 'registro', label: 'Nº de registro', kind: 'text', numeric: true },
+      { id: 'numeroEspelho', label: 'Nº do espelho', kind: 'text', numeric: true },
       { id: 'categoria', label: 'Categoria', kind: 'text', placeholder: 'AB' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
@@ -195,9 +195,9 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#818cf8',
     fields: [
-      { id: 'numero', label: 'Nº de inscrição', kind: 'text' },
-      { id: 'zona', label: 'Zona', kind: 'text' },
-      { id: 'secao', label: 'Seção', kind: 'text' },
+      { id: 'numero', label: 'Nº de inscrição', kind: 'text', numeric: true },
+      { id: 'zona', label: 'Zona', kind: 'text', numeric: true },
+      { id: 'secao', label: 'Seção', kind: 'text', numeric: true },
       { id: 'municipio', label: 'Município', kind: 'text' },
       { id: 'uf', label: 'UF', kind: 'text' },
     ],
@@ -212,7 +212,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#c084fc',
     fields: [
       { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento · Óbito' },
-      { id: 'matricula', label: 'Matrícula', kind: 'text', hint: '32 dígitos das certidões novas' },
+      { id: 'matricula', label: 'Matrícula', kind: 'text', hint: '32 dígitos das certidões novas', numeric: true },
       { id: 'cartorio', label: 'Cartório', kind: 'text' },
       { id: 'livro', label: 'Livro', kind: 'text' },
       { id: 'folha', label: 'Folha', kind: 'text' },
@@ -231,7 +231,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#f87171',
     fields: [
       { id: 'orgao', label: 'Órgão', kind: 'text', placeholder: 'Polícia Federal · Polícia Civil' },
-      { id: 'numero', label: 'Nº de controle', kind: 'text' },
+      { id: 'numero', label: 'Nº de controle', kind: 'text', numeric: true },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'finalidade', label: 'Finalidade', kind: 'text' },
@@ -246,8 +246,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#a3e635',
     fields: [
-      { id: 'numero', label: 'Número', kind: 'text' },
-      { id: 'serie', label: 'Série', kind: 'text' },
+      { id: 'numero', label: 'Número', kind: 'text', numeric: true },
+      { id: 'serie', label: 'Série', kind: 'text', numeric: true },
       { id: 'uf', label: 'UF', kind: 'text' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
     ],

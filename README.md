@@ -43,7 +43,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Key in memory | Non-extractable `CryptoKey`; wiped on lock, on tab close and on inactivity |
 | Google scope | Only `drive.appdata` (the app's own hidden folder) + email/profile |
 | OAuth token | Short-lived access token, held in memory only |
-| Clipboard | Automatic clearing (default: 30s) after copying a secret |
+| Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
 | CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
 | Search | Never indexes secret values — only name, description, tags and non-sensitive fields |
 
@@ -190,9 +190,11 @@ npm run smoke      # in-browser integration test (after npm run build)
 implementation of the file format and walks the app with Playwright: first-run setup,
 wrong password, unlock, search, revealing a secret, TOTP, item creation, registering a
 document with a holder, filtering by person, an encrypted attachment opened in the PDF
-viewer, expiry alerts, theme and lock. The seeded vault is a **v1** file, so the migration
-to v2 is exercised in a real browser as well. It needs the browser installed once:
-`npx playwright install chromium`.
+viewer, expiry alerts, theme and lock — then repeats the core of it on a phone-sized,
+touch-first viewport (375×812): 16px inputs, the expiry badge and chips on the list,
+enlarged touch targets and the numeric keypad on digits-only fields. The seeded vault is a
+**v1** file, so the migration to v2 is exercised in a real browser as well. It needs the
+browser installed once: `npx playwright install chromium`.
 
 To test Google sign-in locally, add `http://localhost:5173` to the credential's
 *Authorized JavaScript origins*. Without it the app still works: create the vault, use it

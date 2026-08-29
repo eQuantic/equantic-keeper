@@ -101,6 +101,10 @@ function FieldInput({
       placeholder={field.placeholder ?? ''}
       autoComplete="off"
       spellCheck={false}
+      inputMode={field.numeric ? 'numeric' : field.kind === 'url' ? 'url' : undefined}
+      autoCapitalize={
+        field.numeric || field.kind === 'url' || field.kind === 'username' ? 'none' : undefined
+      }
       className={field.kind === 'url' || field.kind === 'text' ? '' : 'font-mono'}
     />
   );

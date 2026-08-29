@@ -199,7 +199,7 @@ export function ItemDetail({
         </div>
       </div>
 
-      <footer className="flex items-center justify-between gap-2 border-t border-line px-5 py-3">
+      <footer className="flex items-center justify-between gap-2 border-t border-line px-5 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
         {item.deletedAt ? (
           <>
             <Button icon="refresh" onClick={() => void actions.restoreItem(item.id)}>
