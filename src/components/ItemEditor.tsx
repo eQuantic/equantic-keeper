@@ -1,5 +1,5 @@
 /** Create / edit form. Fields are rendered from the type's schema. */
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   SECRET_TYPES,
   createItem,
@@ -152,6 +152,15 @@ export function ItemEditor({
   const people = activePeople(payload?.people ?? []);
   const isNew = !item;
   const type = getType(draft.type);
+  /**
+   * Any edit arms a confirmation on every exit — the X, Esc, the backdrop,
+   * the sheet's swipe-down and the system back gesture all land on onClose.
+   */
+  const dirtyRef = useRef(false);
+  const attemptClose = () => {
+    if (dirtyRef.current && !window.confirm('Descartar as alterações?')) return;
+    onClose();
+  };
 
   const canSave = draft.name.trim().length > 0;
   /**
@@ -159,7 +168,10 @@ export function ItemEditor({
    * uses Keeper purely for API tokens never sees the field.
    */
   const showHolder = type.category === 'doc' || people.length > 0 || !!draft.holderId;
-  const patch = (changes: Partial<VaultItem>) => setDraft((current) => ({ ...current, ...changes }));
+  const patch = (changes: Partial<VaultItem>) => {
+    dirtyRef.current = true;
+    setDraft((current) => ({ ...current, ...changes }));
+  };
 
   /** Adds a holder without leaving the form, and selects them right away. */
   const commitNewPerson = () => {
@@ -171,14 +183,18 @@ export function ItemEditor({
     setNewPerson('');
     setAddingPerson(false);
   };
-  const setField = (id: string, value: string) =>
+  const setField = (id: string, value: string) => {
+    dirtyRef.current = true;
     setDraft((current) => ({ ...current, fields: { ...current.fields, [id]: value } }));
+  };
 
-  const setCustom = (id: string, changes: Partial<CustomField>) =>
+  const setCustom = (id: string, changes: Partial<CustomField>) => {
+    dirtyRef.current = true;
     setDraft((current) => ({
       ...current,
       customFields: current.customFields.map((field) => (field.id === id ? { ...field, ...changes } : field)),
     }));
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -234,6 +250,7 @@ export function ItemEditor({
                   key={candidate.id}
                   type="button"
                   onClick={() => {
+                    dirtyRef.current = false;
                     setDraft(createItem(candidate.id));
                     setTypePickerOpen(false);
                   }}
@@ -264,13 +281,13 @@ export function ItemEditor({
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={attemptClose}
       wide
       title={isNew ? `Novo: ${type.label}` : 'Editar segredo'}
       subtitle={isNew ? type.description : type.label}
       footer={
         <>
-          <Button onClick={onClose}>Cancelar</Button>
+          <Button onClick={attemptClose}>Cancelar</Button>
           <Button variant="primary" icon="check" disabled={!canSave} onClick={submit}>
             Salvar
           </Button>

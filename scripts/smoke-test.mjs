@@ -809,6 +809,60 @@ const run = async () => {
     (await phone.locator('aside footer').count()) === 0 &&
     (await phone.locator('text=GitHub PAT').count()) > 0);
 
+  // 13b. Bottom-sheet gestures and tap-to-copy on the detail.
+  await phone.click('main li:has-text("Cartão de Cidadão — a renovar")');
+  await phone.waitForSelector('aside footer button:has-text("Editar")', { timeout: 5000 });
+  await phone.locator('aside:has(h2) >> text=12345678 9 ZZ1').click();
+  await check('tocar no campo copia o valor', async () => {
+    const text = await phone.evaluate(() => navigator.clipboard.readText());
+    return text === '12345678 9 ZZ1';
+  });
+
+  await phone.click('aside footer button:has-text("Editar")');
+  await phone.waitForSelector('[data-sheet-grabber]', { timeout: 5000 });
+  await check('folha inferior tem pegador no celular', async () =>
+    (await phone.locator('[data-sheet-grabber]').filter({ visible: true }).count()) === 1);
+
+  const dragSheetDown = () =>
+    phone.evaluate(() => {
+      const el = document.querySelector('[data-sheet-handle]');
+      const fire = (type, y) =>
+        el.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId: 11,
+            pointerType: 'touch',
+            isPrimary: true,
+            clientX: 200,
+            clientY: y,
+          }),
+        );
+      fire('pointerdown', 200);
+      for (let step = 1; step <= 5; step += 1) fire('pointermove', 200 + step * 40);
+      fire('pointerup', 400);
+    });
+
+  await dragSheetDown();
+  await phone.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await check('arrastar a folha para baixo fecha o editor', async () => true);
+
+  // A dirty form asks first. Playwright dismisses dialogs by default, which
+  // stands in for the user answering "não".
+  await phone.click('aside footer button:has-text("Editar")');
+  await phone.waitForSelector('[role="dialog"]', { timeout: 5000 });
+  await phone.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Cartão renomeado');
+  await dragSheetDown();
+  await phone.waitForTimeout(400);
+  await check('formulário sujo pede confirmação antes de fechar', async () =>
+    (await phone.locator('[role="dialog"]').count()) === 1);
+  phone.once('dialog', (dialog) => void dialog.accept());
+  await dragSheetDown();
+  await phone.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await check('confirmar descarta as alterações e fecha', async () => true);
+  await phone.goBack();
+  await phone.waitForTimeout(300);
+
   // 14. Biometric unlock, driven by a virtual platform authenticator with PRF.
   // Older Chromium builds do not know the hasPrf option; skip gracefully there.
   let virtualAuthenticator = false;

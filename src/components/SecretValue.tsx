@@ -1,5 +1,5 @@
 /** Reveal / copy / TOTP widgets — the pieces that actually touch secrets. */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { copySecret } from '../lib/clipboard';
 import { generateTotp, parseTotp, secondsRemaining } from '../lib/totp';
 import { useKeeper } from '../state/keeper';
@@ -30,7 +30,17 @@ export function useCopy() {
   return { copy, copiedKey, clearAfter };
 }
 
-export function CopyButton({ value, itemKey, label }: { value: string; itemKey: string; label: string }) {
+export function CopyButton({
+  value,
+  itemKey,
+  label,
+  className,
+}: {
+  value: string;
+  itemKey: string;
+  label: string;
+  className?: string;
+}) {
   const { copy, copiedKey } = useCopy();
   const copied = copiedKey === itemKey;
   return (
@@ -38,6 +48,7 @@ export function CopyButton({ value, itemKey, label }: { value: string; itemKey: 
       icon={copied ? 'check' : 'copy'}
       label={copied ? 'Copiado' : label}
       active={copied}
+      className={className ?? ''}
       onClick={() => void copy(value, itemKey)}
     />
   );
@@ -62,15 +73,57 @@ export function SecretValue({
   defaultRevealed?: boolean;
 }) {
   const [revealed, setRevealed] = useState(!secret || !!defaultRevealed);
+  const { copy, copiedKey } = useCopy();
+  const copied = copiedKey === fieldKey;
+  // Touch affordances: tapping the field copies it, holding it reveals.
+  const [coarsePointer] = useState(() => window.matchMedia('(pointer: coarse)').matches);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const heldRef = useRef(false);
 
   useEffect(() => {
     setRevealed(!secret || !!defaultRevealed);
   }, [defaultRevealed, fieldKey, secret]);
 
+  useEffect(() => () => clearTimeout(holdTimerRef.current), []);
+
   if (!value) return <span className="text-sm text-faint">—</span>;
 
+  const cancelHold = () => clearTimeout(holdTimerRef.current);
+
   return (
-    <div className="group flex items-start gap-2">
+    <div
+      className="group flex items-start gap-2"
+      onClick={
+        coarsePointer
+          ? (event) => {
+              // Buttons keep their own meaning; a hold that already revealed
+              // should not also copy on release.
+              if ((event.target as Element).closest('button')) return;
+              if (heldRef.current) {
+                heldRef.current = false;
+                return;
+              }
+              void copy(value, fieldKey);
+            }
+          : undefined
+      }
+      onPointerDown={
+        coarsePointer && secret
+          ? (event) => {
+              if (event.pointerType === 'mouse') return;
+              heldRef.current = false;
+              clearTimeout(holdTimerRef.current);
+              holdTimerRef.current = setTimeout(() => {
+                heldRef.current = true;
+                setRevealed(true);
+              }, 550);
+            }
+          : undefined
+      }
+      onPointerMove={coarsePointer && secret ? cancelHold : undefined}
+      onPointerUp={coarsePointer && secret ? cancelHold : undefined}
+      onPointerCancel={coarsePointer && secret ? cancelHold : undefined}
+    >
       <div className="min-w-0 flex-1">
         {revealed ? (
           multiline ? (
@@ -92,7 +145,12 @@ export function SecretValue({
             onClick={() => setRevealed((current) => !current)}
           />
         ) : null}
-        <CopyButton value={value} itemKey={fieldKey} label="Copiar" />
+        <IconButton
+          icon={copied ? 'check' : 'copy'}
+          label={copied ? 'Copiado' : 'Copiar'}
+          active={copied}
+          onClick={() => void copy(value, fieldKey)}
+        />
       </div>
     </div>
   );
@@ -156,7 +214,7 @@ export function TotpCode({ secret, fieldKey }: { secret: string; fieldKey: strin
 
   return (
     <div className="flex items-center gap-3">
-      <span className="font-mono text-lg tracking-[0.3em] text-ink tabular-nums">
+      <span className="font-mono text-lg tracking-[0.3em] text-ink tabular-nums pointer-coarse:text-2xl pointer-coarse:tracking-[0.25em]">
         {code ? `${code.slice(0, 3)} ${code.slice(3)}` : '••• •••'}
       </span>
       <span className="relative flex h-6 w-6 items-center justify-center" title={`${remaining}s`}>
@@ -175,7 +233,12 @@ export function TotpCode({ secret, fieldKey }: { secret: string; fieldKey: strin
           />
         </svg>
       </span>
-      <CopyButton value={code} itemKey={fieldKey} label="Copiar código" />
+      <CopyButton
+        value={code}
+        itemKey={fieldKey}
+        label="Copiar código"
+        className="pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:rounded-xl pointer-coarse:bg-accent pointer-coarse:text-white pointer-coarse:hover:bg-accent"
+      />
     </div>
   );
 }

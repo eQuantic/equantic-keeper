@@ -254,6 +254,15 @@ export function Modal({
   const ref = useRef<HTMLDivElement>(null);
   useCloseOnBack(open, onClose);
 
+  // Below the sm breakpoint the modal is a bottom sheet; dragging its handle
+  // down is the touch way to dismiss it. onClose stays the single exit, so a
+  // dirty-form confirmation upstream also guards the gesture.
+  const [sheetDrag, setSheetDrag] = useState<number | null>(null);
+  const sheetStartRef = useRef<{ y: number; pointerId: number } | null>(null);
+  // The handlers read the ref: pointermove is not a discrete event, so the
+  // state may not have re-rendered by the time pointerup fires.
+  const sheetDragRef = useRef(0);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -283,17 +292,60 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        style={
+          sheetDrag !== null
+            ? { transform: `translateY(${sheetDrag}px)`, transition: 'none' }
+            : undefined
+        }
         className={`animate-in card relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-ink">{title}</h2>
-            {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
+        <div
+          data-sheet-handle
+          className="[touch-action:none]"
+          onPointerDown={(event) => {
+            if (event.pointerType === 'mouse') return;
+            sheetStartRef.current = { y: event.clientY, pointerId: event.pointerId };
+          }}
+          onPointerMove={(event) => {
+            const start = sheetStartRef.current;
+            if (!start || event.pointerId !== start.pointerId) return;
+            const dy = event.clientY - start.y;
+            if (dy > 4) {
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch {
+                /* synthetic pointers (tests) have no capture */
+              }
+            }
+            sheetDragRef.current = Math.max(0, dy);
+            setSheetDrag(sheetDragRef.current);
+          }}
+          onPointerUp={() => {
+            const dy = sheetDragRef.current;
+            sheetDragRef.current = 0;
+            sheetStartRef.current = null;
+            setSheetDrag(null);
+            if (dy > 120) onClose();
+          }}
+          onPointerCancel={() => {
+            sheetDragRef.current = 0;
+            sheetStartRef.current = null;
+            setSheetDrag(null);
+          }}
+        >
+          <div data-sheet-grabber className="flex justify-center pt-2.5 pb-1 sm:hidden" aria-hidden="true">
+            <div className="h-1 w-10 rounded-full bg-line"></div>
           </div>
-          <IconButton icon="x" label="Fechar" onClick={onClose} />
-        </header>
+          <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 pt-2 sm:pt-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-ink">{title}</h2>
+              {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
+            </div>
+            <IconButton icon="x" label="Fechar" onClick={onClose} />
+          </header>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer ? (
           <footer className="flex items-center justify-end gap-2 border-t border-line bg-raised/50 px-5 py-3">
