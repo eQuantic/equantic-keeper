@@ -16,6 +16,7 @@
     "smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

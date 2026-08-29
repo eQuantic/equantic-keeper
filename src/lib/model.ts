@@ -1,4 +1,5 @@
 /** Domain model: what a "secret" is, and the field schema of each kind. */
+import type { WrappedKey } from './crypto';
 import { DOCUMENT_TYPES } from './documents';
 
 export type FieldKind =
@@ -57,11 +58,35 @@ export interface VaultItem {
   /** Values keyed by `FieldDef.id` of the item's type. */
   fields: Record<string, string>;
   customFields: CustomField[];
+  /** Scans and PDFs. The bytes live in Drive; only the key travels here. */
+  attachments: AttachmentRef[];
   favorite: boolean;
   createdAt: string;
   updatedAt: string;
   /** Tombstone: set when trashed so deletions propagate across devices. */
   deletedAt?: string;
+}
+
+/**
+ * One encrypted file. The vault carries the metadata and the wrapped content
+ * key; the ciphertext itself is a separate file in the Drive app folder, so a
+ * 4 MB scan never turns into a 4 MB re-upload of the whole vault on every edit.
+ *
+ * `driveFileId` is empty until the upload lands — a scan added offline is
+ * usable straight away and gets pushed on the next sync.
+ */
+export interface AttachmentRef {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** Plaintext size in bytes, for the UI. */
+  size: number;
+  /** AES-GCM key for the file content, encrypted with the master key. */
+  wrapped: WrappedKey;
+  /** base64 IV of the file content. */
+  iv: string;
+  driveFileId: string;
+  addedAt: string;
 }
 
 type BaseTypeDef = Omit<SecretTypeDef, 'category' | 'group'>;
@@ -307,6 +332,7 @@ export function createItem(type: string): VaultItem {
     tags: [],
     fields: {},
     customFields: [],
+    attachments: [],
     favorite: false,
     createdAt: now,
     updatedAt: now,

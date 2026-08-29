@@ -99,6 +99,7 @@ function item(id: string, name: string, minutesAgo: number): VaultItem {
     tags: [],
     fields: { token: `token-${id}` },
     customFields: [],
+    attachments: [],
     favorite: false,
     createdAt: stamp,
     updatedAt: stamp,
