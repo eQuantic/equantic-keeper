@@ -11,7 +11,9 @@ import { ItemDetail } from '../components/ItemDetail';
 import { ItemEditor } from '../components/ItemEditor';
 import { GeneratorDialog } from '../components/Generator';
 import { SettingsDialog } from '../components/SettingsDialog';
-import { CopyButton } from '../components/SecretValue';
+import { CopyButton, useCopy } from '../components/SecretValue';
+import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
+import { PullToSync } from '../components/PullToSync';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
 function relativeTime(value: string): string {
@@ -65,7 +67,7 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account } = useKeeper();
+  const { payload, actions, account, connected } = useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -73,7 +75,11 @@ export function VaultScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { copy } = useCopy();
+  // Gestures are a touch affordance; a mouse keeps its buttons and hovers.
+  const [coarsePointer] = useState(() => window.matchMedia('(pointer: coarse)').matches);
 
   const items = payload?.items ?? [];
   const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
@@ -162,6 +168,7 @@ export function VaultScreen() {
   const setFilter = (patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }));
     setSidebarOpen(false);
+    setSwipeOpen(null);
   };
 
   const NavItem = ({
@@ -520,7 +527,17 @@ export function VaultScreen() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]">
+          <PullToSync
+            enabled={coarsePointer}
+            className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]"
+            onSync={async () => {
+              if (!connected) {
+                actions.notify('Sem conexão com o Drive — conecte a conta nas Configurações para sincronizar.');
+                return;
+              }
+              await actions.syncNow();
+            }}
+          >
             {visible.length === 0 ? (
               <EmptyState
                 icon={filters.query ? 'search' : 'key'}
@@ -546,6 +563,24 @@ export function VaultScreen() {
                   const expiry = expiring.byItem.get(item.id);
                   return (
                     <li key={item.id}>
+                      <SwipeableRow
+                        enabled={coarsePointer && filters.view === 'active' && !item.deletedAt}
+                        open={swipeOpen?.id === item.id ? swipeOpen.side : null}
+                        onOpenChange={(side) => setSwipeOpen(side ? { id: item.id, side } : null)}
+                        canCopy={!!quick}
+                        onCopy={() => {
+                          if (!quick) return;
+                          void copy(quick.value, `swipe:${item.id}`).then((result) => {
+                            if (result.ok) actions.notify('Copiado para a área de transferência.');
+                          });
+                        }}
+                        favoriteLabel={item.favorite ? 'Remover' : 'Favoritar'}
+                        onFavorite={() => void actions.toggleFavorite(item.id)}
+                        onTrash={() => {
+                          void actions.trashItem(item.id);
+                          if (selectedId === item.id) setSelectedId(null);
+                        }}
+                      >
                       <div
                         role="button"
                         tabIndex={0}
@@ -612,12 +647,13 @@ export function VaultScreen() {
                           </div>
                         ) : null}
                       </div>
+                      </SwipeableRow>
                     </li>
                   );
                 })}
               </ul>
             )}
-          </div>
+          </PullToSync>
         </main>
 
         {selected ? (
