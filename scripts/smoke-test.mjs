@@ -657,6 +657,40 @@ const run = async () => {
     (await phone.locator('[role="dialog"] input[inputmode="numeric"]').count()) >= 3);
   await phone.screenshot({ path: `${OUT}/14-mobile-editor.png` });
   await phone.keyboard.press('Escape');
+  await phone.waitForTimeout(300);
+
+  // 13. On touch devices the system back gesture peels overlays one at a time
+  // instead of leaving the app.
+  await phone.goBack(); // the item detail is the topmost overlay
+  await phone.waitForTimeout(300);
+  await check('voltar fecha o detalhe em vez de sair do app', async () =>
+    (await phone.locator('aside footer').count()) === 0 &&
+    (await phone.locator('text=GitHub PAT').count()) > 0);
+
+  // The desktop sidebar stays in the DOM (display: none), so the drawer copy
+  // of each nav button must be matched by visibility.
+  const drawerNav = phone.locator('nav button:has-text("Tudo")').filter({ visible: true });
+  await phone.click('button[aria-label="Menu"]');
+  await phone.waitForSelector('nav button:has-text("Tudo") >> visible=true', { timeout: 3000 });
+  await phone.goBack();
+  await phone.waitForTimeout(300);
+  await check('voltar fecha a gaveta lateral', async () => (await drawerNav.count()) === 0);
+
+  await phone.click('main li:has-text("Cartão de Cidadão — a renovar")');
+  await phone.waitForSelector('aside footer button:has-text("Editar")', { timeout: 5000 });
+  await phone.click('aside footer button:has-text("Editar")');
+  await phone.waitForSelector('[role="dialog"]', { timeout: 5000 });
+  await phone.goBack();
+  await phone.waitForTimeout(300);
+  await check('voltar fecha o editor e mantém o detalhe', async () =>
+    (await phone.locator('[role="dialog"]').count()) === 0 &&
+    (await phone.locator('aside footer button:has-text("Editar")').count()) === 1);
+  await phone.goBack();
+  await phone.waitForTimeout(300);
+  await check('o segundo voltar fecha o detalhe', async () =>
+    (await phone.locator('aside footer').count()) === 0 &&
+    (await phone.locator('text=GitHub PAT').count()) > 0);
+
   await phone.close();
   currentPage = page;
 

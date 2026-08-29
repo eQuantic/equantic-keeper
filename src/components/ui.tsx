@@ -10,6 +10,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 import { Icon } from './icons';
+import { useCloseOnBack } from './use-close-on-back';
 
 type Variant = 'primary' | 'ghost' | 'outline' | 'danger' | 'subtle';
 
@@ -249,6 +250,7 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  useCloseOnBack(open, onClose);
 
   useEffect(() => {
     if (!open) return;

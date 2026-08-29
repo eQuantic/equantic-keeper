@@ -26,6 +26,7 @@ import type { AttachmentRef } from '../lib/model';
 import { useKeeper } from '../state/keeper';
 import { Icon } from './icons';
 import { IconButton, Spinner } from './ui';
+import { useCloseOnBack } from './use-close-on-back';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -174,6 +175,8 @@ export function AttachmentViewer({ refs, startAt, onClose }: {
   onClose: () => void;
 }) {
   const { actions } = useKeeper();
+  // Mounted only while open, so the back gesture always has it as the top overlay.
+  useCloseOnBack(true, onClose);
   const [index, setIndex] = useState(startAt);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);

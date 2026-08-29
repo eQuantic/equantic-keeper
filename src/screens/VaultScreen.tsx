@@ -12,6 +12,7 @@ import { ItemEditor } from '../components/ItemEditor';
 import { GeneratorDialog } from '../components/Generator';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { CopyButton } from '../components/SecretValue';
+import { useCloseOnBack } from '../components/use-close-on-back';
 
 function relativeTime(value: string): string {
   const diff = Date.now() - Date.parse(value);
@@ -90,6 +91,11 @@ export function VaultScreen() {
   const active = useMemo(() => activeItems(items), [items]);
   const trashed = useMemo(() => trashedItems(items), [items]);
   const selected = items.find((item) => item.id === selectedId) ?? null;
+
+  // On a phone these are full-screen overlays, and the system back gesture is
+  // how people dismiss them; dialogs get the same treatment inside Modal.
+  useCloseOnBack(sidebarOpen, () => setSidebarOpen(false));
+  useCloseOnBack(!!selected, () => setSelectedId(null));
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
