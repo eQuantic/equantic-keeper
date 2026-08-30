@@ -1,5 +1,6 @@
 /** Domain model: what a "secret" is, and the field schema of each kind. */
 import type { WrappedKey } from './crypto';
+import type { Block } from './blocks';
 import { DOCUMENT_ORIGINS, DOCUMENT_TYPES, TYPE_FAMILIES, type TypeFamily } from './documents';
 
 export type FieldKind =
@@ -31,7 +32,7 @@ export interface FieldDef {
   options?: string[];
 }
 
-export type TypeCategory = 'dev' | 'doc';
+export type TypeCategory = 'dev' | 'doc' | 'note';
 
 export interface SecretTypeDef {
   id: string;
@@ -90,6 +91,12 @@ export interface VaultItem {
   tags: string[];
   /** Values keyed by `FieldDef.id` of the item's type. */
   fields: Record<string, string>;
+  /**
+   * A note's body: the block tree (see lib/blocks). Only note-shaped items
+   * carry it, which is why it is optional rather than an empty array on every
+   * API token in the vault.
+   */
+  blocks?: Block[];
   customFields: CustomField[];
   /** Scans and PDFs. The bytes live in Drive; only the key travels here. */
   attachments: AttachmentRef[];
@@ -307,9 +314,30 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
 ];
 
+/**
+ * A note is an item like any other — same folders, same search, same sync —
+ * but its body is the block tree on `item.blocks`, so it declares no fields.
+ */
+export const NOTE_TYPE_ID = 'nota';
+
+/** The note: no fields, because its body is the block tree on the item. */
+const NOTE_TYPE: SecretTypeDef = {
+  id: NOTE_TYPE_ID,
+  label: 'Nota',
+  namePlaceholder: 'Reunião — 30/08',
+  description: 'Documento em blocos: títulos, listas, to-do, código, tabela, diagrama…',
+  keywords: ['anotação', 'documento', 'markdown', 'obsidian', 'wiki'],
+  category: 'note',
+  group: 'Notas',
+  icon: 'note',
+  accent: '#a78bfa',
+  fields: [],
+};
+
 export const SECRET_TYPES: SecretTypeDef[] = [
   ...DEV_TYPE_LIST.map((type) => ({ ...type, category: 'dev' as const, group: 'Desenvolvimento' })),
   ...DOCUMENT_TYPES,
+  NOTE_TYPE,
 ];
 
 const TYPE_INDEX = new Map(SECRET_TYPES.map((t) => [t.id, t]));

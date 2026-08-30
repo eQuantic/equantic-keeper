@@ -187,11 +187,14 @@ export function VaultScreen() {
   const categoryCounts = useMemo(() => {
     let dev = 0;
     let doc = 0;
+    let note = 0;
     for (const item of active) {
-      if (getType(item.type).category === 'doc') doc += 1;
+      const category = getType(item.type).category;
+      if (category === 'doc') doc += 1;
+      else if (category === 'note') note += 1;
       else dev += 1;
     }
-    return { dev, doc };
+    return { dev, doc, note };
   }, [active]);
 
   /**
@@ -615,6 +618,15 @@ export function VaultScreen() {
           }
           onClick={() => setFilter({ ...EMPTY_FILTERS, query: filters.query })}
         />
+        {categoryCounts.note > 0 ? (
+          <NavItem
+            icon="note"
+            label="Notas"
+            count={categoryCounts.note}
+            activeState={filters.category === 'note'}
+            onClick={() => setFilter({ ...EMPTY_FILTERS, category: 'note', query: filters.query })}
+          />
+        ) : null}
         {categoryCounts.dev > 0 && categoryCounts.doc > 0 ? (
           <>
             <NavItem

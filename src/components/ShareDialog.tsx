@@ -18,6 +18,7 @@ import {
   type ShareField,
 } from '../lib/share';
 import { useKeeper } from '../state/keeper';
+import { blocksToMarkdown, markdownFileName } from '../lib/markdown';
 import { useCopy } from './SecretValue';
 import { Button, Modal } from './ui';
 import { Icon } from './icons';
@@ -51,7 +52,30 @@ export function ShareDialog({ item, onClose }: { item: VaultItem; onClose: () =>
   );
 
   const selected = fields.filter((_, index) => checked[index]);
-  const text = buildShareText(item.name || 'Sem título', selected);
+  /**
+   * A note is its body: what gets sent (or exported) is plain Markdown, so the
+   * person on the other side reads a document and not a list of fields — and
+   * the file opens in Obsidian, or any editor, without this app.
+   */
+  const markdown = useMemo(() => blocksToMarkdown(item.blocks), [item.blocks]);
+  const text = markdown
+    ? [`# ${item.name || 'Sem título'}`, '', markdown, ...(selected.length ? ['', buildShareText('', selected)] : [])]
+        .join('\n')
+        .trim()
+    : buildShareText(item.name || 'Sem título', selected);
+  const canSend = selected.length > 0 || !!markdown;
+
+  const exportMarkdown = () => {
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = markdownFileName(item.name || 'nota');
+    anchor.click();
+    // Revoked on the next tick: the click has already handed the blob over.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    actions.notify('Nota exportada em Markdown — decifrada, fora do cofre.');
+  };
 
   const sendText = async () => {
     setError(null);
@@ -90,15 +114,20 @@ export function ShareDialog({ item, onClose }: { item: VaultItem; onClose: () =>
       footer={
         <>
           <Button onClick={onClose}>Fechar</Button>
+          {markdown ? (
+            <Button icon="download" onClick={exportMarkdown}>
+              Baixar .md
+            </Button>
+          ) : null}
           {sheet ? (
-            <Button variant="primary" icon="share" disabled={selected.length === 0} onClick={() => void sendText()}>
+            <Button variant="primary" icon="share" disabled={!canSend} onClick={() => void sendText()}>
               Compartilhar…
             </Button>
           ) : (
             <>
               <Button
                 icon={copiedKey === 'share' ? 'check' : 'copy'}
-                disabled={selected.length === 0}
+                disabled={!canSend}
                 onClick={() => void copy(text, 'share')}
               >
                 {copiedKey === 'share' ? 'Copiado' : 'Copiar'}
@@ -106,7 +135,7 @@ export function ShareDialog({ item, onClose }: { item: VaultItem; onClose: () =>
               <a
                 href={mailtoUrl(item.name || 'Item do Keeper', text)}
                 className={`inline-flex items-center justify-center gap-2 rounded-lg border border-transparent bg-accent px-3.5 py-2 text-sm font-medium text-white hover:brightness-110 pointer-coarse:rounded-xl pointer-coarse:px-4 pointer-coarse:py-3 ${
-                  selected.length === 0 ? 'pointer-events-none opacity-50' : ''
+                  canSend ? '' : 'pointer-events-none opacity-50'
                 }`}
               >
                 <Icon name="share" size={16} />

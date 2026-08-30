@@ -842,6 +842,59 @@ const run = async () => {
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.waitForTimeout(400);
 
+  // 11c-sexies. Notes: an item like any other, but its body is a block
+  // document — typed here, rendered in the detail, searchable, exportable.
+  await page.locator('header button:has-text("Novo")').click();
+  await page.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await check('o assistente oferece a nota como terceiro caminho', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Nota")').count()) >= 1);
+  await page.click('[role="dialog"] button:has-text("Nota")');
+  await page.waitForSelector('[data-note-editor="edit"]', { timeout: 5000 });
+  await page.fill('input[aria-label="Nome"]', 'Mudança para Lisboa');
+  await page.click('[data-note-editor="edit"]');
+  await page.keyboard.type('Pendências da semana');
+  await page.keyboard.press('Enter');
+  // The slash menu is how a block becomes something else.
+  await page.keyboard.type('/lista');
+  await page.waitForSelector('[role="listbox"][aria-label="Blocos"]', { timeout: 5000 });
+  await check('o menu de barra oferece os blocos', async () =>
+    (await page.locator('[role="listbox"][aria-label="Blocos"] [role="option"]').count()) >= 1);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('agendar AIMA');
+  await page.waitForTimeout(200);
+  await check('o bloco virou item de lista', async () =>
+    (await page.locator('[data-note-editor="edit"] li:has-text("agendar AIMA")').count()) === 1);
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Mudança para Lisboa")', { timeout: 5000 });
+  await check('a nota salva é lida como documento no detalhe', async () =>
+    (await page.locator('aside [data-note-editor="read"] li:has-text("agendar AIMA")').count()) === 1 &&
+    (await page.locator('aside [data-note-editor="read"]').innerText()).includes('Pendências da semana'));
+  await page.fill('input[type="search"]', 'agendar AIMA');
+  await page.waitForTimeout(300);
+  await check('a busca encontra o que está escrito dentro da nota', async () =>
+    (await page.locator('main li:has-text("Mudança para Lisboa")').count()) === 1);
+  await page.fill('input[type="search"]', '');
+  await page.waitForTimeout(200);
+  await page.click('main li:has-text("Mudança para Lisboa")');
+  await page.click('aside button[aria-label="Compartilhar"]');
+  await page.waitForSelector('[role="dialog"] >> text=Compartilhar', { timeout: 5000 });
+  await check('compartilhar uma nota oferece baixar .md', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Baixar .md")').count()) === 1);
+  const mdDownload = page.waitForEvent('download', { timeout: 10000 });
+  await page.click('[role="dialog"] button:has-text("Baixar .md")');
+  const file = await mdDownload;
+  const markdown = await file.createReadStream().then(async (stream) => {
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return Buffer.concat(chunks).toString('utf8');
+  });
+  await check('o .md exportado é markdown puro, com título e lista', async () =>
+    file.suggestedFilename() === 'Mudanca-para-Lisboa.md' &&
+    markdown.includes('# Mudança para Lisboa') &&
+    markdown.includes('- agendar AIMA'));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
   // 11d. Folders created straight in the sidebar, before any item uses them.
   await page.click('button[aria-label="Nova pasta"]');
   await page.fill('input[placeholder="Nome da pasta"]', 'Fiscal');

@@ -6,6 +6,7 @@ import { countryName } from '../lib/countries';
 import { Badge, Button, IconButton } from './ui';
 import { ShareDialog } from './ShareDialog';
 import { CardVisual } from './CardVisual';
+import { LazyNoteEditor } from './note/LazyNoteEditor';
 import { Icon } from './icons';
 import { CountryMark } from './flags';
 import { AttachmentList } from './Attachments';
@@ -144,6 +145,11 @@ export function ItemDetail({
 
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-2 pointer-coarse:pt-3 pointer-coarse:pb-4">
         {item.type === 'cartao-credito' ? <CardVisual item={item} /> : null}
+        {item.blocks?.length ? (
+          <div className="border-b border-line-soft py-3">
+            <LazyNoteEditor blocks={item.blocks} editable={false} />
+          </div>
+        ) : null}
         {item.description ? (
           <p className="border-b border-line-soft py-3 text-sm leading-relaxed text-muted">{item.description}</p>
         ) : null}

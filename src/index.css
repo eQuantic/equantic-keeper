@@ -187,6 +187,112 @@ input[type='date'] {
   }
 }
 
+/*
+ * The note's document styles. The editor writes plain semantic HTML, so this is
+ * the whole typography of a note: headings, lists, quotes, tables and the task
+ * checkboxes. Scoped to `.keeper-note` so nothing here leaks into the app.
+ */
+.keeper-note {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--color-ink);
+}
+.keeper-note > * + * {
+  margin-top: 0.6rem;
+}
+.keeper-note h1 {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-top: 1.2rem;
+}
+.keeper-note h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.keeper-note h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin-top: 0.9rem;
+}
+.keeper-note ul,
+.keeper-note ol {
+  padding-left: 1.35rem;
+}
+.keeper-note ul {
+  list-style: disc;
+}
+.keeper-note ol {
+  list-style: decimal;
+}
+.keeper-note li > p {
+  margin: 0;
+}
+.keeper-note blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 0.85rem;
+  color: var(--color-muted);
+}
+.keeper-note code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-raised);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.3rem;
+}
+.keeper-note a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.keeper-note hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1rem 0;
+}
+.keeper-note table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.keeper-note th,
+.keeper-note td {
+  border: 1px solid var(--color-line);
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+.keeper-note th {
+  background: var(--color-raised);
+  font-weight: 600;
+}
+/* Task lists: the checkbox is the list marker. */
+.keeper-note ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.15rem;
+}
+.keeper-note ul[data-type='taskList'] li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.keeper-note ul[data-type='taskList'] li > label {
+  margin-top: 0.28rem;
+}
+.keeper-note ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--color-faint);
+  text-decoration: line-through;
+}
+/* The empty first line says how to start, the way a blank page should. */
+.keeper-note[data-note-editor='edit'] p.is-editor-empty:first-child::before {
+  content: 'Escreva, ou digite / para inserir um bloco';
+  color: var(--color-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
 @keyframes keeper-fade-in {
   from {
     opacity: 0;
