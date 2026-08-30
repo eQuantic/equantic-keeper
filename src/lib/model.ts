@@ -271,6 +271,72 @@ export const SECRET_TYPES: SecretTypeDef[] = [
 
 const TYPE_INDEX = new Map(SECRET_TYPES.map((t) => [t.id, t]));
 
+/**
+ * A user-defined type: it lives ENCRYPTED in the vault payload (see vault.ts,
+ * format v5), merges across devices by id with tombstones, and joins an
+ * existing category (its `group`) or founds a new one. The field palette is
+ * the same `FieldKind` set the built-in types use — a field with id
+ * `expiresAt` feeds the expiry alerts exactly like a built-in validity date.
+ */
+export interface CustomTypeDef {
+  id: string;
+  label: string;
+  group: string;
+  icon: string;
+  accent: string;
+  fields: FieldDef[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+export function createCustomType(): CustomTypeDef {
+  const now = new Date().toISOString();
+  return {
+    id: `custom-${crypto.randomUUID()}`,
+    label: '',
+    group: '',
+    icon: 'file',
+    accent: '#5b8cff',
+    fields: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function toSecretTypeDef(custom: CustomTypeDef): SecretTypeDef {
+  return {
+    id: custom.id,
+    label: custom.label,
+    description: `Tipo personalizado · ${custom.fields.length} campo(s)`,
+    category: custom.group === 'Desenvolvimento' ? 'dev' : 'doc',
+    group: custom.group,
+    icon: custom.icon,
+    accent: custom.accent,
+    fields: custom.fields,
+  };
+}
+
+/**
+ * Custom types resolve through the same lookups the built-ins use, so the
+ * list, the detail and the wizard need no special cases. The keeper registers
+ * the payload's live definitions on every payload change (unlock, edit, sync,
+ * lock) — a module-level registry rather than threading a map through every
+ * `getType` call site.
+ */
+let CUSTOM_INDEX = new Map<string, SecretTypeDef>();
+
+export function registerCustomTypes(customs: CustomTypeDef[]): void {
+  CUSTOM_INDEX = new Map(
+    customs.filter((custom) => !custom.deletedAt).map((custom) => [custom.id, toSecretTypeDef(custom)]),
+  );
+}
+
+/** Built-in types plus the registered custom ones, in that order. */
+export function getAllTypes(): SecretTypeDef[] {
+  return [...SECRET_TYPES, ...CUSTOM_INDEX.values()];
+}
+
 export const FALLBACK_TYPE: SecretTypeDef = {
   id: 'unknown',
   label: 'Outro',
@@ -283,7 +349,7 @@ export const FALLBACK_TYPE: SecretTypeDef = {
 };
 
 export function getType(id: string): SecretTypeDef {
-  return TYPE_INDEX.get(id) ?? { ...FALLBACK_TYPE, id };
+  return TYPE_INDEX.get(id) ?? CUSTOM_INDEX.get(id) ?? { ...FALLBACK_TYPE, id };
 }
 
 export function isSecretKind(kind: FieldKind): boolean {

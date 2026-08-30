@@ -1,6 +1,6 @@
 /** The unlocked application: sidebar, list and detail pane. */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SECRET_TYPES, getType, isSecretKind, type VaultItem } from '../lib/model';
+import { getAllTypes, getType, isSecretKind, type VaultItem } from '../lib/model';
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
@@ -154,8 +154,8 @@ export function VaultScreen() {
   /** Only types actually in use, bucketed by origin so the sidebar stays short. */
   const typeGroups = useMemo(() => {
     const order = ['Portugal', 'Brasil', 'Geral', 'Desenvolvimento'];
-    const buckets = new Map<string, typeof SECRET_TYPES>();
-    for (const type of SECRET_TYPES) {
+    const buckets = new Map<string, ReturnType<typeof getAllTypes>>();
+    for (const type of getAllTypes()) {
       if (!typeCounts.get(type.id)) continue;
       const heading = type.category === 'dev' ? 'Desenvolvimento' : type.group;
       buckets.set(heading, [...(buckets.get(heading) ?? []), type]);
@@ -163,7 +163,8 @@ export function VaultScreen() {
     return [...buckets.entries()].sort(
       ([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
     );
-  }, [typeCounts]);
+    // `payload` re-registers custom types, so it belongs in the deps.
+  }, [typeCounts, payload]);
 
   useEffect(() => {
     const isTyping = (target: EventTarget | null) =>

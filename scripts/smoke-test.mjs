@@ -716,6 +716,63 @@ const run = async () => {
   await page.waitForSelector('nav button:has-text("Fiscal")', { state: 'detached', timeout: 5000 });
   await check('remover a pasta vazia tira a entrada da barra lateral', async () => true);
 
+  // 11e. Custom types: build one in the wizard, use it, manage it in settings.
+  await page.click('button:has-text("Novo")');
+  await page.waitForSelector('text=O que você quer guardar?');
+  await page.click('button:has-text("Criar tipo personalizado")');
+  await page.waitForSelector('text=Novo tipo personalizado', { timeout: 5000 });
+  await page.fill('input[placeholder="Contrato de aluguel — Espanha"]', 'Contrato de aluguel — Espanha');
+  await page.selectOption('select[aria-label="Categoria do tipo"]', 'Espanha');
+  await page.click('button:has-text("Adicionar campo")');
+  await page.locator('[role="dialog"] button').filter({ hasText: 'Nº do documento, órgão' }).click();
+  await page.fill('input[placeholder="Nome do campo"]', 'Número do contrato');
+  await page.click('button:has-text("Adicionar campo")');
+  await page.locator('[role="dialog"] button').filter({ hasText: 'Entra nos alertas de vencimento' }).click();
+  await page.click('button:has-text("Salvar tipo")');
+  await page.waitForSelector('text=Novo: Contrato de aluguel — Espanha', { timeout: 10000 });
+  await check('salvar o tipo abre o editor já com os campos dele', async () =>
+    (await page.locator('[role="dialog"] >> text=Número do contrato').count()) === 1 &&
+    (await page.locator('[role="dialog"] >> text=Válido até').count()) === 1);
+
+  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Aluguel Madrid');
+  await page.locator('label:has-text("Número do contrato") input').first().fill('ES-2026-01');
+  await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(20));
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Aluguel Madrid")', { timeout: 5000 });
+  await check('item do tipo personalizado é salvo e legível', async () =>
+    (await page.locator('aside:has(h2) >> text=ES-2026-01').count()) > 0);
+  await check('a validade do tipo personalizado entra nos alertas', async () =>
+    (await page.locator('aside:has(h2) >> text=expira em').count()) > 0);
+
+  // The definition travels in the encrypted payload: a reload keeps it.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+  await page.fill('input[type="password"]', PASSWORD);
+  await page.click('button:has-text("Desbloquear")');
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+  await page.click('text=Aluguel Madrid');
+  await page.waitForSelector('h2:has-text("Aluguel Madrid")', { timeout: 5000 });
+  await check('o tipo personalizado sobrevive à recarga', async () =>
+    (await page.locator('aside:has(h2) >> text=Contrato de aluguel — Espanha').count()) > 0);
+
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Tipos personalizados', { timeout: 5000 });
+  await check('configurações listam o tipo personalizado', async () =>
+    (await page.locator('button[aria-label="Remover tipo Contrato de aluguel — Espanha"]').count()) === 1);
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.click('button[aria-label="Remover tipo Contrato de aluguel — Espanha"]');
+  await page.waitForSelector('button[aria-label="Remover tipo Contrato de aluguel — Espanha"]', {
+    state: 'detached',
+    timeout: 5000,
+  });
+  await check('remover o tipo tira a definição', async () => true);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await check('itens do tipo removido continuam legíveis (fallback)', async () =>
+    (await page.locator('aside:has(h2) >> text=campo antigo').count()) > 0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.
