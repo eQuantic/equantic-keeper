@@ -884,6 +884,24 @@ const run = async () => {
     return height >= 62 && height <= 72;
   });
 
+  // What the first real-phone run caught: a page panning sideways and the
+  // command bar past the visible height. Guard the shell geometry directly.
+  await check('documento não rola na horizontal no celular', async () =>
+    phone.evaluate(() =>
+      document.scrollingElement.scrollWidth <= document.scrollingElement.clientWidth));
+  await check('shell ocupa exatamente a altura do viewport', async () =>
+    phone.evaluate(() =>
+      Math.abs(document.getElementById('root').getBoundingClientRect().height - window.innerHeight) <= 1));
+  await check('barra inferior termina no fim do viewport', async () => {
+    const delta = await phone.evaluate(() => {
+      const nav = document.querySelector('nav[aria-label="Ações rápidas"]');
+      return nav ? Math.abs(nav.getBoundingClientRect().bottom - window.innerHeight) : Infinity;
+    });
+    return delta <= 1;
+  });
+  await check('duplo toque não dispara zoom (touch-action)', async () =>
+    (await phone.evaluate(() => getComputedStyle(document.body).touchAction)) === 'manipulation');
+
   // The thumb-reach bar carries the primary commands on phones — and the
   // header must not repeat them (a regression here squeezes the search box).
   await check('barra inferior traz os comandos principais', async () =>

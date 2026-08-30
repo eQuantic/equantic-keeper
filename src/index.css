@@ -57,12 +57,36 @@ body,
   height: 100%;
 }
 
+/*
+ * `100%` tracks the layout viewport, which on iOS Safari drifts from what is
+ * actually visible while the URL bar expands and collapses — the bottom
+ * command bar ends up past the fold. `dvh` is the visible viewport by
+ * definition, so where supported the shell hugs it exactly.
+ */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
 body {
   background-color: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  /*
+   * Every surface here is quick taps (tap to copy, tap to flip); on iOS a
+   * double tap would otherwise zoom the page and leave it stuck panned
+   * sideways, with the command bar pushed past the fold. `manipulation`
+   * keeps pinch zoom (accessibility) and panning.
+   */
+  touch-action: manipulation;
+  /* The document itself never scrolls sideways; clip stray overflow instead
+     of letting it pan the whole app. */
+  overflow-x: clip;
 }
 
 /* Focus ring that stays legible on both themes. */
