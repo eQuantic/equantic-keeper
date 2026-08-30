@@ -27,6 +27,7 @@ function item(id: string, updatedAt: string, extra: Partial<VaultItem> = {}): Va
     description: '',
     folder: '',
     holderId: '',
+    country: '',
     tags: [],
     fields: {},
     customFields: [],
@@ -176,6 +177,18 @@ describe('versão do formato', () => {
 
     const opened = await unlockVault(file, 'senha');
     expect(opened.payload.people[0]?.name).toBe('Maria');
+  });
+});
+
+describe('país do item', () => {
+  it('preenche vazio em cofres antigos, sem perder o que já veio', () => {
+    const legacy = { ...item('1', '2026-01-01T00:00:00.000Z') } as Record<string, unknown>;
+    delete legacy.country;
+    const [restored] = normalizePayload({ items: [legacy] }).items;
+    expect(restored?.country).toBe('');
+
+    const [kept] = normalizePayload({ items: [item('2', '2026-01-01T00:00:00.000Z', { country: 'BR' })] }).items;
+    expect(kept?.country).toBe('BR');
   });
 });
 

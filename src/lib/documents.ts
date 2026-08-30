@@ -53,6 +53,11 @@ export interface TypeFamily {
   defaultTypeId: string;
 }
 
+/** The origin behind a stored country code, if it is one we know. */
+export function originByCode(code: string): DocumentOrigin | undefined {
+  return DOCUMENT_ORIGINS.find((origin) => origin.code === code);
+}
+
 export const TYPE_FAMILIES: TypeFamily[] = [
   {
     id: 'declaracoes',
@@ -940,7 +945,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     group: 'Alemanha',
     category: 'doc',
     description: 'Identificação fiscal alemã (11 dígitos).',
-    icon: 'diploma',
+    icon: 'stamp',
     accent: '#fbbf24',
     fields: [{ id: 'numero', label: 'Número', kind: 'text', numeric: true }],
   },
