@@ -12,6 +12,8 @@ export interface Filters {
   holderId: string | null;
   /** One family of near-identical paperwork, e.g. every declaration. */
   family: string | null;
+  /** Issuing country, as a DOCUMENT_ORIGINS/ISO code. */
+  country: string | null;
   /** Restricts the list to one half of the catalogue. */
   category: 'dev' | 'doc' | null;
   /** Only what is past its validity date, or approaching it. */
@@ -27,6 +29,7 @@ export const EMPTY_FILTERS: Filters = {
   folder: null,
   holderId: null,
   family: null,
+  country: null,
   category: null,
   expiry: null,
   favoritesOnly: false,
@@ -110,6 +113,7 @@ export function applyFilters(
     if (wantTrash !== !!item.deletedAt) return false;
     if (filters.type && item.type !== filters.type) return false;
     if (filters.family && getType(item.type).family !== filters.family) return false;
+    if (filters.country && item.country !== filters.country) return false;
     if (filters.category && getType(item.type).category !== filters.category) return false;
     if (filters.holderId && item.holderId !== filters.holderId) return false;
     if (filters.tag && !item.tags.includes(filters.tag)) return false;

@@ -1038,6 +1038,40 @@ const run = async () => {
   await page.fill('input[type="search"]', '');
   await page.waitForTimeout(200);
 
+  // 11c-bis-bis. The list carries the same filters as the sidebar, because on
+  // a phone the sidebar is a drawer and on a desktop this is where the eye is.
+  const total = await page.locator('main li').count();
+  await check('a lista traz filtros de pessoa, país e tipo', async () =>
+    (await page.locator('main select[aria-label="Pessoa"]').count()) === 1 &&
+    (await page.locator('main select[aria-label="País"]').count()) === 1 &&
+    (await page.locator('main select[aria-label="Tipo"]').count()) === 1);
+  const personOption = await page
+    .locator('main select[aria-label="Pessoa"] option')
+    .filter({ hasText: 'Maria Teste' })
+    .first()
+    .getAttribute('value');
+  await page.selectOption('main select[aria-label="Pessoa"]', personOption ?? '');
+  await page.waitForTimeout(300);
+  await check('filtrar por pessoa na lista reduz os itens', async () => {
+    // Sob o filtro da pessoa a linha não repete o titular (ver 8c), então a
+    // prova é o corte na contagem, com os documentos dela ainda presentes.
+    const rows = await page.locator('main li').count();
+    const hers = await page.locator('main li:has-text("Título de residência — Maria")').count();
+    return rows > 0 && rows < total && hers === 1;
+  });
+  await check('a barra oferece limpar os filtros ativos', async () =>
+    (await page.locator('main button:has-text("Limpar")').count()) === 1);
+  await page.selectOption('main select[aria-label="País"]', 'PT');
+  await page.waitForTimeout(300);
+  await check('país e pessoa se somam como filtros', async () =>
+    (await page.locator('main li:has-text("Título de residência — Maria")').count()) === 1 &&
+    (await page.locator('main li').count()) === 1);
+  await page.click('main button:has-text("Limpar")');
+  await page.waitForTimeout(300);
+  await check('limpar devolve a lista inteira', async () =>
+    (await page.locator('main select[aria-label="Pessoa"]').inputValue()) === '' &&
+    (await page.locator('main li').count()) > 1);
+
   // 11c-quater. Filing by drag: a row dropped on a folder or a person in the
   // sidebar moves it there. Mouse only — touch keeps the swipe gesture.
   await page.locator('nav button:has-text("Tudo")').first().click();
