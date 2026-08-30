@@ -2,10 +2,12 @@
 import { useState } from 'react';
 import { DEFAULT_WARNING_DAYS, describeExpiry, isExpiryField, statusOf } from '../lib/expiry';
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
+import { originByCode } from '../lib/documents';
 import { Badge, Button, IconButton } from './ui';
 import { ShareDialog } from './ShareDialog';
 import { CardVisual } from './CardVisual';
 import { Icon } from './icons';
+import { Flag } from './flags';
 import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
 import { useKeeper } from '../state/keeper';
@@ -75,6 +77,7 @@ export function ItemDetail({
   const conceal = payload?.preferences.concealSecrets ?? true;
   const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
   const holder = payload?.people.find((person) => person.id === item.holderId && !person.deletedAt);
+  const origin = originByCode(item.country);
   // `cardColor` is presentation for the card visual, never a field row.
   const filled = type.fields.filter(
     (field) => field.id !== 'cardColor' && (item.fields[field.id] ?? '').trim().length > 0,
@@ -96,6 +99,11 @@ export function ItemDetail({
           <h2 className="truncate text-base font-semibold text-ink">{item.name || 'Sem título'}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Badge color={type.accent}>{type.label}</Badge>
+            {origin ? (
+              <Badge className="bg-raised text-muted">
+                <Flag code={origin.code} size={13} title={origin.group} /> {origin.group}
+              </Badge>
+            ) : null}
             {holder ? (
               <Badge className="bg-raised text-muted">
                 <Icon name="users" size={11} /> {holder.name}

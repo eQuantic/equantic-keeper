@@ -1,6 +1,6 @@
 /** Domain model: what a "secret" is, and the field schema of each kind. */
 import type { WrappedKey } from './crypto';
-import { DOCUMENT_TYPES, TYPE_FAMILIES, type TypeFamily } from './documents';
+import { DOCUMENT_ORIGINS, DOCUMENT_TYPES, TYPE_FAMILIES, type TypeFamily } from './documents';
 
 export type FieldKind =
   | 'text'
@@ -73,6 +73,12 @@ export interface VaultItem {
   folder: string;
   /** `Person.id` this document belongs to. Empty for items with no holder. */
   holderId: string;
+  /**
+   * Issuing country as a DOCUMENT_ORIGINS code ("PT", "BR"…). Country-specific
+   * types fill it from their own group; the generic ones (a passport, a credit
+   * card) start empty because only the person knows which country issued theirs.
+   */
+  country: string;
   tags: string[];
   /** Values keyed by `FieldDef.id` of the item's type. */
   fields: Record<string, string>;
@@ -446,6 +452,12 @@ export function createPerson(name: string, relation = ''): Person {
   };
 }
 
+/** The country a type implies, if any: "pt-nif" is Portuguese by definition. */
+export function countryForType(typeId: string): string {
+  const group = getType(typeId).group;
+  return DOCUMENT_ORIGINS.find((origin) => origin.group === group)?.code ?? '';
+}
+
 export function createItem(type: string): VaultItem {
   const now = new Date().toISOString();
   return {
@@ -455,6 +467,7 @@ export function createItem(type: string): VaultItem {
     description: '',
     folder: '',
     holderId: '',
+    country: countryForType(type),
     tags: [],
     fields: {},
     customFields: [],

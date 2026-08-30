@@ -4,10 +4,11 @@ import { getAllTypes, getFamily, getType, isSecretKind, type SecretTypeDef, type
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
-import type { TypeFamily } from '../lib/documents';
+import { originByCode, type TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
 import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
+import { Flag } from '../components/flags';
 import { ItemDetail } from '../components/ItemDetail';
 import { ItemEditor } from '../components/ItemEditor';
 import { GeneratorDialog } from '../components/Generator';
@@ -759,14 +760,26 @@ export function VaultScreen() {
                           selectedId === item.id ? 'bg-accent/8' : 'hover:bg-raised'
                         }`}
                       >
+                        <span className="relative shrink-0">
                         <span
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg pointer-coarse:h-10 pointer-coarse:w-10 pointer-coarse:rounded-[10px]"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg pointer-coarse:h-10 pointer-coarse:w-10 pointer-coarse:rounded-[10px]"
                           style={{
                             color: type.accent,
                             backgroundColor: `color-mix(in srgb, ${type.accent} 13%, transparent)`,
                           }}
                         >
                           <Icon name={type.icon} size={15} />
+                        </span>
+                        {/* Whose country this paper is from, read without opening it. */}
+                        {item.country ? (
+                          <span className="absolute -right-1 -bottom-1 rounded-[3px] bg-surface p-[1px] leading-none">
+                            <Flag
+                              code={item.country}
+                              size={13}
+                              title={originByCode(item.country)?.group ?? item.country}
+                            />
+                          </span>
+                        ) : null}
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="flex items-center gap-1.5 truncate text-sm text-ink pointer-coarse:text-base">

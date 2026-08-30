@@ -1,6 +1,7 @@
 /** Filtering and ranking for the item list. */
 import { DEFAULT_WARNING_DAYS, expiryOf } from './expiry';
 import { getFamily, getType, isSecretKind, type VaultItem } from './model';
+import { originByCode } from './documents';
 
 export interface Filters {
   query: string;
@@ -56,6 +57,8 @@ function haystack(item: VaultItem, holderName = ''): string {
     type.group,
     // "declarações" must reach every one of them, whatever its own label says.
     getFamily(type.family)?.label ?? '',
+    // A passport issued in Brazil answers to "brasil" even though its type is generic.
+    originByCode(item.country)?.group ?? '',
     holderName,
     ...item.tags,
     // Aliases: "holerite" must find a recibo de vencimento, "nato vivo" the

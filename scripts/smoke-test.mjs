@@ -470,9 +470,10 @@ const run = async () => {
   await page.fill('input[placeholder="Nome da pessoa"]', 'Maria Teste');
   // Exact match: the same dialog also offers "Adicionar campo personalizado".
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  await check('tipo de Portugal chega com o país já preenchido', async () =>
+    (await page.locator('select[aria-label="País emissor"]').inputValue()) === 'PT');
   await check('titular criado sem sair do formulário', async () => {
-    // The holder picker is the editor's only <select>.
-    const select = page.locator('[role="dialog"] select');
+    const select = page.locator('select[aria-label="Titular"]');
     const value = await select.inputValue();
     return value !== '' && (await select.locator(`option[value="${value}"]`).textContent())?.includes('Maria Teste');
   });
@@ -691,7 +692,7 @@ const run = async () => {
   await page.locator('[role="dialog"] button:has-text("API Token")').first().click();
   await page.waitForSelector('[role="dialog"] >> text=Titular', { timeout: 5000 });
   await check('criar com filtro de pessoa pré-seleciona o titular', async () => {
-    const select = page.locator('[role="dialog"] select:has(option:has-text("sem titular"))');
+    const select = page.locator('select[aria-label="Titular"]');
     const value = await select.inputValue();
     if (!value) return false;
     return ((await select.locator(`option[value="${value}"]`).textContent()) ?? '').includes('Maria Teste');
@@ -970,6 +971,37 @@ const run = async () => {
     (await page.locator('main li:has-text("IRS 2025")').count()) === 1);
   await page.locator('nav button:has-text("Tudo")').first().click();
   await page.waitForTimeout(300);
+
+  // 11c-ter. A generic document has no country of its own: the form asks,
+  // and whatever is chosen flies the flag in the list.
+  await page.locator('header button:has-text("Novo")').click();
+  await page.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Documento pessoal")');
+  await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
+  await page.click('[role="dialog"] button:has-text("Passaporte")');
+  await page.waitForSelector('select[aria-label="País emissor"]', { timeout: 5000 });
+  await check('documento geral abre sem país escolhido', async () =>
+    (await page.locator('select[aria-label="País emissor"]').inputValue()) === '');
+  await page.fill('input[aria-label="Nome"]', 'Passaporte brasileiro');
+  await page.selectOption('select[aria-label="País emissor"]', 'BR');
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Passaporte brasileiro")', { timeout: 5000 });
+  await check('o detalhe mostra o país escolhido', async () =>
+    (await page.locator('aside:has(h2) >> text=Brasil').count()) > 0);
+  await check('a bandeira aparece na linha da lista', async () =>
+    (await page
+      .locator('main li:has-text("Passaporte brasileiro") svg[aria-label="Brasil"]')
+      .count()) === 1);
+  await check('a linha do documento português mostra a bandeira de Portugal', async () =>
+    (await page
+      .locator('main li:has-text("Título de residência — Maria") svg[aria-label="Portugal"]')
+      .count()) === 1);
+  await page.fill('input[type="search"]', 'brasil');
+  await page.waitForTimeout(300);
+  await check('busca pelo país encontra o passaporte', async () =>
+    (await page.locator('main li:has-text("Passaporte brasileiro")').count()) === 1);
+  await page.fill('input[type="search"]', '');
+  await page.waitForTimeout(200);
 
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked

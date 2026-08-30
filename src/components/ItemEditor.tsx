@@ -1,6 +1,7 @@
 /** Create / edit form. Fields are rendered from the type's schema. */
 import { useRef, useState, type FormEvent } from 'react';
 import {
+  countryForType,
   createItem,
   createPerson,
   familyMembers,
@@ -12,6 +13,7 @@ import {
   type FieldDef,
   type VaultItem,
 } from '../lib/model';
+import { DOCUMENT_ORIGINS } from '../lib/documents';
 import { pushRecentType } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activePeople } from '../lib/vault';
@@ -20,6 +22,7 @@ import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } 
 import { Icon } from './icons';
 import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
+import { Flag } from './flags';
 import { GeneratorDialog } from './Generator';
 
 function TagEditor({
@@ -216,7 +219,8 @@ export function ItemEditor({
       const value = draft.fields[field.id];
       if (value) kept[field.id] = value;
     }
-    patch({ type: typeId, fields: kept });
+    const implied = countryForType(typeId);
+    patch({ type: typeId, fields: kept, ...(implied ? { country: implied } : {}) });
     pushRecentType(typeId);
   };
 
@@ -368,6 +372,7 @@ export function ItemEditor({
               </div>
             ) : (
               <select
+                aria-label="Titular"
                 value={draft.holderId}
                 onChange={(event) => patch({ holderId: event.target.value })}
                 className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
@@ -381,6 +386,34 @@ export function ItemEditor({
                 ))}
               </select>
             )}
+          </Field>
+        ) : null}
+
+        {isDoc ? (
+          <Field
+            label="País emissor"
+            hint="Preenchido quando o tipo é de um país; nos documentos gerais, escolha o seu."
+          >
+            <span className="flex items-center gap-2">
+              <Flag
+                code={draft.country}
+                size={20}
+                title={DOCUMENT_ORIGINS.find((origin) => origin.code === draft.country)?.group}
+              />
+              <select
+                aria-label="País emissor"
+                value={draft.country}
+                onChange={(event) => patch({ country: event.target.value })}
+                className="min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
+              >
+                <option value="">— sem país —</option>
+                {DOCUMENT_ORIGINS.map((origin) => (
+                  <option key={origin.code} value={origin.code}>
+                    {origin.group}
+                  </option>
+                ))}
+              </select>
+            </span>
           </Field>
         ) : null}
 

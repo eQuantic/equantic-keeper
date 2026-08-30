@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DOCUMENT_ORIGINS, DOCUMENT_TYPES, GENERAL_GROUP } from './documents';
-import { FALLBACK_TYPE, SECRET_TYPES, getType, isSecretKind } from './model';
+import { FALLBACK_TYPE, SECRET_TYPES, countryForType, getType, isSecretKind } from './model';
 
 // The wizard's origin step is the registry: a group outside it would be
 // unreachable, so the whitelist derives from it instead of rotting apart.
@@ -91,6 +91,14 @@ describe('catálogo de tipos', () => {
       expect(type.namePlaceholder, `sem exemplo de nome em ${type.id}`).toBeTruthy();
       expect(type.namePlaceholder).not.toMatch(/GitHub|token/i);
     }
+  });
+
+  it('deduz o país dos tipos de um país e deixa os gerais em branco', () => {
+    // Um título de residência é português por definição; um passaporte, não.
+    expect(countryForType('pt-residencia')).toBe('PT');
+    expect(countryForType('br-cpf')).toBe('BR');
+    expect(countryForType('passaporte')).toBe('');
+    expect(countryForType('api-token')).toBe('');
   });
 
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {
