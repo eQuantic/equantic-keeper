@@ -912,8 +912,23 @@ const run = async () => {
   await page.waitForSelector('text=Novo: Cartão de crédito', { timeout: 5000 });
   await page.fill('input[aria-label="Nome"]', 'Cartão principal');
   await page.locator('label:has-text("Nome no cartão") input').first().fill('Edgar A Mesquita');
+  // A card prints a month, not a day — and its number is typed off the plastic,
+  // so it must be legible while being typed (concealed in the detail, not here).
+  await check('validade do cartão pede mês, não dia', async () =>
+    (await page.locator('label:has-text("Válido até") input').first().getAttribute('type')) === 'month');
+  await check('número do cartão é digitado à vista', async () =>
+    (await page.locator('label:has-text("Número do cartão") input').first().getAttribute('type')) === 'text');
+  await check('a senha do cartão continua oculta', async () =>
+    (await page.locator('label:has-text("Senha (app") input').first().getAttribute('type')) === 'password');
+  await check('bandeira do cartão tem lista de opções', async () => {
+    await page.locator('label:has-text("Bandeira") input').first().click();
+    await page.waitForSelector('[role="listbox"]', { timeout: 5000 });
+    const options = await page.locator('[role="listbox"] [role="option"]').allTextContents();
+    await page.keyboard.press('Escape');
+    return options.includes('Visa') && options.includes('Elo');
+  });
   await page.locator('label:has-text("Número do cartão") input').first().fill('4111111111111111');
-  await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(400));
+  await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(400).slice(0, 7));
   await page.locator('label:has-text("CVC") input').first().fill('123');
   await page.click('button[aria-label="Cor Roxo"]');
   await page.click('footer button:has-text("Salvar")');
@@ -998,6 +1013,10 @@ const run = async () => {
   await page.waitForSelector('select[aria-label="País emissor"]', { timeout: 5000 });
   await check('documento geral abre sem país escolhido', async () =>
     (await page.locator('select[aria-label="País emissor"]').inputValue()) === '');
+  await check('o país emissor oferece o mundo todo, não só o catálogo', async () => {
+    const options = await page.locator('select[aria-label="País emissor"] option').allTextContents();
+    return options.includes('Bélgica') && options.includes('Angola') && options.length > 200;
+  });
   await page.fill('input[aria-label="Nome"]', 'Passaporte brasileiro');
   await page.selectOption('select[aria-label="País emissor"]', 'BR');
   await page.click('footer button:has-text("Salvar")');

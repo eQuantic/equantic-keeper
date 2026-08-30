@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectExpiring, describeExpiry, expiryOf, isExpiryField, statusOf } from './expiry';
+import { collectExpiring, describeExpiry, endOfPeriod, expiryOf, isExpiryField, statusOf } from './expiry';
 import { createItem, type VaultItem } from './model';
 
 /** Fixed clock: "today" is 10 de março de 2026, midday. */
@@ -98,5 +98,26 @@ describe('describeExpiry', () => {
 
   it('vira meses quando os dias deixam de ajudar', () => {
     expect(at(90)).toBe('expira em 3 meses');
+  });
+});
+
+describe('validade em mês', () => {
+  it('trata o mês impresso como o último dia dele', () => {
+    // Um cartão "09/2028" ainda vale no dia 30; só expira em outubro.
+    expect(endOfPeriod('2028-09')).toBe('2028-09-30');
+    expect(endOfPeriod('2028-02')).toBe('2028-02-29');
+    expect(endOfPeriod('2027-02')).toBe('2027-02-28');
+    expect(endOfPeriod('2028-09-15')).toBe('2028-09-15');
+  });
+
+  it('conta os dias até o fim do mês, não até o dia 1º', () => {
+    const card = { ...createItem('cartao-credito'), name: 'Cartão', fields: { expiresAt: '2026-03' } };
+    // Hoje é 10 de março de 2026: o cartão ainda tem o resto do mês.
+    expect(expiryOf(card, 60, NOW)).toMatchObject({ days: 21, status: 'soon' });
+  });
+
+  it('marca como vencido o mês que já passou', () => {
+    const card = { ...createItem('cartao-credito'), name: 'Cartão', fields: { expiresAt: '2026-02' } };
+    expect(expiryOf(card, 60, NOW)?.status).toBe('expired');
   });
 });

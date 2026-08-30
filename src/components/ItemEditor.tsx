@@ -14,6 +14,7 @@ import {
   type VaultItem,
 } from '../lib/model';
 import { DOCUMENT_ORIGINS } from '../lib/documents';
+import { allCountries, countryName } from '../lib/countries';
 import { pushRecentType } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activePeople } from '../lib/vault';
@@ -22,7 +23,7 @@ import { Button, ComboInput, Field, IconButton, Modal, PasswordInput, TextArea, 
 import { Icon } from './icons';
 import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
-import { Flag } from './flags';
+import { CountryMark } from './flags';
 import { GeneratorDialog } from './Generator';
 
 function TagEditor({
@@ -123,13 +124,19 @@ function FieldInput({
       autoComplete="off"
       spellCheck={false}
       inputMode={field.numeric ? 'numeric' : undefined}
+      // A card number, a CVC, a PIN: you are copying them off the plastic in
+      // your hand, and sixteen digits typed blind is how they end up wrong.
+      // They stay concealed where it matters — the detail view.
+      defaultRevealed={field.numeric}
       revealLabel="Revelar"
       hideLabel="Ocultar"
     />
   ) : (
     <TextInput
-      type={field.kind === 'date' ? 'date' : 'text'}
-      value={value}
+      type={field.kind === 'date' ? 'date' : field.kind === 'month' ? 'month' : 'text'}
+      // <input type="month"> speaks YYYY-MM; a value stored as a full date
+      // (older cards) is trimmed so the control still shows the right month.
+      value={field.kind === 'month' ? value.slice(0, 7) : value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={field.placeholder ?? ''}
       autoComplete="off"
@@ -404,11 +411,7 @@ export function ItemEditor({
             hint="Preenchido quando o tipo é de um país; nos documentos gerais, escolha o seu."
           >
             <span className="flex items-center gap-2">
-              <Flag
-                code={draft.country}
-                size={20}
-                title={DOCUMENT_ORIGINS.find((origin) => origin.code === draft.country)?.group}
-              />
+              <CountryMark code={draft.country} size={20} title={countryName(draft.country)} />
               <select
                 aria-label="País emissor"
                 value={draft.country}
@@ -416,11 +419,21 @@ export function ItemEditor({
                 className="min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
               >
                 <option value="">— sem país —</option>
-                {DOCUMENT_ORIGINS.map((origin) => (
-                  <option key={origin.code} value={origin.code}>
-                    {origin.group}
-                  </option>
-                ))}
+                {/* The catalogue countries first: they are the likely answer. */}
+                <optgroup label="Mais usados">
+                  {DOCUMENT_ORIGINS.map((origin) => (
+                    <option key={origin.code} value={origin.code}>
+                      {origin.group}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Todos os países">
+                  {allCountries().map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </span>
           </Field>

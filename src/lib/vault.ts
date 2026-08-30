@@ -197,6 +197,7 @@ const FIELD_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>([
   'password',
   'totp',
   'date',
+  'month',
 ]);
 
 function isCustomTypeLike(value: unknown): value is CustomTypeDef {
