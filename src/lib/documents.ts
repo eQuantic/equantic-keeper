@@ -380,6 +380,9 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'pin', label: 'PIN', kind: 'secret', numeric: true },
       { id: 'password', label: 'Senha (app / compras online)', kind: 'password' },
       { id: 'issuer', label: 'Banco / emissor', kind: 'text' },
+      // Presentation, not data: a preset name or a hex; the detail's card
+      // visual consumes it and the editor renders a swatch picker for it.
+      { id: 'cardColor', label: 'Cor do cartão', kind: 'text' },
     ],
   },
   {

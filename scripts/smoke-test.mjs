@@ -779,6 +779,46 @@ const run = async () => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 
+  // 11f. The credit card draws itself: masked front, flip to the back, brand
+  // detected offline from the prefix, color chosen as a preset.
+  await page.click('button:has-text("Novo")');
+  await page.waitForSelector('text=O que você quer guardar?');
+  await page.click('button:has-text("Documento pessoal")');
+  await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Cartão de crédito")');
+  await page.waitForSelector('text=Novo: Cartão de crédito', { timeout: 5000 });
+  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Cartão principal');
+  await page.locator('label:has-text("Nome no cartão") input').first().fill('Edgar A Mesquita');
+  await page.locator('label:has-text("Número do cartão") input').first().fill('4111111111111111');
+  await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(400));
+  await page.locator('label:has-text("CVC") input').first().fill('123');
+  await page.click('button[aria-label="Cor Roxo"]');
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Cartão principal")', { timeout: 5000 });
+
+  await check('o detalhe desenha o cartão com a bandeira detectada', async () =>
+    (await page.locator('[data-card-visual]').count()) === 1 &&
+    (await page.locator('[data-card-visual] >> text=VISA').count()) >= 1 &&
+    (await page.locator('[data-card-visual] >> text=1111').count()) >= 1);
+  await check('o número completo não aparece no cartão', async () =>
+    (await page.locator('[data-card-visual] >> text=4111 1111').count()) === 0);
+
+  await page.click('[data-card-visual]');
+  await page.waitForTimeout(600);
+  await check('tocar no cartão vira para o verso', async () =>
+    (await page.locator('[data-card-visual][data-flipped]').count()) === 1);
+  await page.click('button[aria-label="Copiar CVC (segure para revelar)"]');
+  await check('o CVC do verso copia com um toque', async () => {
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    return text === '123';
+  });
+  await page.click('[data-card-visual]');
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.

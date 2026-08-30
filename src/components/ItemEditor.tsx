@@ -17,6 +17,7 @@ import { useKeeper } from '../state/keeper';
 import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
 import { AttachmentPicker } from './Attachments';
+import { CardColorPicker } from './CardVisual';
 import { GeneratorDialog } from './Generator';
 
 function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
@@ -74,6 +75,15 @@ function FieldInput({
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const secret = isSecretKind(field.kind);
   const generatable = field.kind === 'password' || field.kind === 'secret';
+
+  // The card's color field edits as swatches, not as text.
+  if (field.id === 'cardColor') {
+    return (
+      <Field label={field.label} wrapper="div">
+        <CardColorPicker value={value} onChange={onChange} />
+      </Field>
+    );
+  }
 
   const control = isMultilineKind(field.kind) ? (
     <TextArea
