@@ -622,9 +622,9 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'brand', label: 'Bandeira', kind: 'text', placeholder: 'Visa · Mastercard · Amex', options: ['Visa', 'Mastercard', 'American Express', 'Elo', 'Hipercard', 'Diners Club', 'Discover', 'UnionPay'] },
       {
         id: 'expiresAt',
-        label: 'Válido até (fim do mês)',
-        kind: 'date',
-        hint: 'O cartão vale até o fim do mês impresso — entra nos alertas.',
+        label: 'Válido até',
+        kind: 'month',
+        hint: 'O mês impresso no cartão — vale até o último dia dele, e entra nos alertas.',
       },
       { id: 'cvc', label: 'CVC', kind: 'secret', numeric: true },
       { id: 'pin', label: 'PIN', kind: 'secret', numeric: true },

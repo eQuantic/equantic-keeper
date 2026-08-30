@@ -1,13 +1,13 @@
 /** Read-only view of a single secret. */
 import { useState } from 'react';
-import { DEFAULT_WARNING_DAYS, describeExpiry, isExpiryField, statusOf } from '../lib/expiry';
+import { DEFAULT_WARNING_DAYS, describeExpiry, endOfPeriod, isExpiryField, statusOf } from '../lib/expiry';
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
-import { originByCode } from '../lib/documents';
+import { countryName } from '../lib/countries';
 import { Badge, Button, IconButton } from './ui';
 import { ShareDialog } from './ShareDialog';
 import { CardVisual } from './CardVisual';
 import { Icon } from './icons';
-import { Flag } from './flags';
+import { CountryMark } from './flags';
 import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
 import { useKeeper } from '../state/keeper';
@@ -20,6 +20,14 @@ function formatDate(value: string): string {
 }
 
 function formatDay(value: string): string {
+  // A month-precision value ("2028-09") reads as the month, not as its first day.
+  const month = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (month) {
+    const date = new Date(Number(month[1]), Number(month[2]) - 1, 1);
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }
   const date = new Date(`${value}T00:00:00`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR', { dateStyle: 'long' });
 }
@@ -40,7 +48,7 @@ function DateValue({
 }) {
   if (!isExpiryField(fieldId)) return <span className="text-sm text-ink">{formatDay(value)}</span>;
 
-  const days = Math.ceil((Date.parse(`${value}T23:59:59`) - Date.now()) / 86_400_000) - 1;
+  const days = Math.ceil((Date.parse(`${endOfPeriod(value)}T23:59:59`) - Date.now()) / 86_400_000) - 1;
   if (Number.isNaN(days)) return <span className="text-sm text-ink">{formatDay(value)}</span>;
 
   const status = statusOf(days, warningDays);
@@ -77,7 +85,7 @@ export function ItemDetail({
   const conceal = payload?.preferences.concealSecrets ?? true;
   const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
   const holder = payload?.people.find((person) => person.id === item.holderId && !person.deletedAt);
-  const origin = originByCode(item.country);
+  const country = item.country ? countryName(item.country) : '';
   // `cardColor` is presentation for the card visual, never a field row.
   const filled = type.fields.filter(
     (field) => field.id !== 'cardColor' && (item.fields[field.id] ?? '').trim().length > 0,
@@ -99,9 +107,9 @@ export function ItemDetail({
           <h2 className="truncate text-base font-semibold text-ink">{item.name || 'Sem título'}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Badge color={type.accent}>{type.label}</Badge>
-            {origin ? (
+            {country ? (
               <Badge className="bg-raised text-muted">
-                <Flag code={origin.code} size={13} title={origin.group} /> {origin.group}
+                <CountryMark code={item.country} size={13} title={country} /> {country}
               </Badge>
             ) : null}
             {holder ? (
@@ -150,7 +158,7 @@ export function ItemDetail({
               </Row>
             );
           }
-          if (field.kind === 'date') {
+          if (field.kind === 'date' || field.kind === 'month') {
             return (
               <Row key={field.id} label={field.label}>
                 <DateValue fieldId={field.id} value={value} warningDays={warningDays} />

@@ -35,6 +35,7 @@ const KIND_PALETTE: KindOption[] = [
     single: 'expiresAt',
     make: () => ({ id: 'expiresAt', label: 'Válido até', kind: 'date' }),
   },
+  { label: 'Mês', hint: 'Mês/ano, como a validade de um cartão', make: (id) => ({ id, label: '', kind: 'month' }) },
   { label: 'Segredo', hint: 'Oculto até revelar', make: (id) => ({ id, label: '', kind: 'secret' }) },
   { label: 'Segredo longo', hint: 'Chaves, certificados', make: (id) => ({ id, label: '', kind: 'multilineSecret' }) },
   { label: 'Senha', hint: 'Com gerador embutido', make: (id) => ({ id, label: '', kind: 'password' }) },

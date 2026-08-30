@@ -268,9 +268,15 @@ export function PasswordInput({
   className = '',
   revealLabel = 'Mostrar senha',
   hideLabel = 'Ocultar senha',
+  defaultRevealed = false,
   ...rest
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { revealLabel?: string; hideLabel?: string }) {
-  const [revealed, setRevealed] = useState(false);
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
+  revealLabel?: string;
+  hideLabel?: string;
+  /** Starts legible — for values copied off a physical card, not passwords. */
+  defaultRevealed?: boolean;
+}) {
+  const [revealed, setRevealed] = useState(defaultRevealed);
   return (
     <div className="relative">
       <input

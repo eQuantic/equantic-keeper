@@ -44,8 +44,23 @@ export function isExpiryField(fieldId: string): boolean {
  * its last day, so the comparison is against that day's end in local time —
  * anything else marks a passport expired on the morning it still works.
  */
+/**
+ * "2028-09" (a card's printed month) means the last day of that month; a full
+ * date is already the day itself. Both shapes live in the vault, so every
+ * reader goes through here.
+ */
+export function endOfPeriod(value: string): string {
+  const month = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!month) return value;
+  const year = Number(month[1]);
+  const index = Number(month[2]);
+  // Day 0 of the next month is the last day of this one.
+  const last = new Date(year, index, 0).getDate();
+  return `${month[1]}-${month[2]}-${String(last).padStart(2, '0')}`;
+}
+
 function daysUntil(day: string, now: number): number | null {
-  const end = Date.parse(`${day}T23:59:59`);
+  const end = Date.parse(`${endOfPeriod(day)}T23:59:59`);
   if (Number.isNaN(end)) return null;
   return Math.ceil((end - now) / 86_400_000) - 1;
 }
@@ -68,7 +83,7 @@ export function expiryOf(
   let earliest: Expiry | null = null;
 
   for (const field of getType(item.type).fields) {
-    if (field.kind !== 'date' || !isExpiryField(field.id)) continue;
+    if ((field.kind !== 'date' && field.kind !== 'month') || !isExpiryField(field.id)) continue;
     const value = (item.fields[field.id] ?? '').trim();
     if (!value) continue;
     const days = daysUntil(value, now);

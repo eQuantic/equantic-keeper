@@ -11,7 +11,9 @@ export type FieldKind =
   | 'username'
   | 'password'
   | 'totp'
-  | 'date';
+  | 'date'
+  /** Month precision: a card is valid to the end of the month it prints. */
+  | 'month';
 
 export interface FieldDef {
   id: string;

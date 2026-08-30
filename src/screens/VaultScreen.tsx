@@ -4,11 +4,12 @@ import { getAllTypes, getFamily, getType, isSecretKind, type SecretTypeDef, type
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
-import { originByCode, type TypeFamily } from '../lib/documents';
+import type { TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
 import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
-import { Flag } from '../components/flags';
+import { CountryMark } from '../components/flags';
+import { countryName } from '../lib/countries';
 import { ItemDetail } from '../components/ItemDetail';
 import { ItemEditor } from '../components/ItemEditor';
 import { GeneratorDialog } from '../components/Generator';
@@ -841,10 +842,10 @@ export function VaultScreen() {
                         {/* Whose country this paper is from, read without opening it. */}
                         {item.country ? (
                           <span className="absolute -right-1 -bottom-1 rounded-[3px] bg-surface p-[1px] leading-none">
-                            <Flag
+                            <CountryMark
                               code={item.country}
                               size={13}
-                              title={originByCode(item.country)?.group ?? item.country}
+                              title={countryName(item.country)}
                             />
                           </span>
                         ) : null}
