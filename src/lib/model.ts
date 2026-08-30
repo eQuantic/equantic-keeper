@@ -311,6 +311,24 @@ export interface Person {
   deletedAt?: string;
 }
 
+/**
+ * An explicitly created folder. Items reference folders by NAME (the string in
+ * `item.folder`), so the name is the identity here; the record exists so a
+ * folder can live in the sidebar before any item points at it. Tombstoned like
+ * people, so removing one propagates instead of coming back.
+ */
+export interface Folder {
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+export function createFolder(name: string): Folder {
+  const now = new Date().toISOString();
+  return { name: name.trim(), createdAt: now, updatedAt: now };
+}
+
 export function createPerson(name: string, relation = ''): Person {
   return {
     id: crypto.randomUUID(),
