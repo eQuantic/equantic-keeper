@@ -824,6 +824,24 @@ const run = async () => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
 
+  // 11c-quinquies. Every change schedules its own upload; when the Drive is
+  // out of reach the change is PENDING (and chased), not parked as "local".
+  // Offline is simulated, so the guard is exercised for real: a change made
+  // without a network must be PENDING (something is chasing it), not parked.
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }));
+  await page.click('main li:has-text("GitHub PAT")');
+  await page.waitForTimeout(200);
+  await page.click('aside button[aria-label="Favoritar"], aside button[aria-label="Remover dos favoritos"]');
+  await page.waitForTimeout(2200);
+  await check('mudança feita offline fica pendente, não parada', async () => {
+    const header = await page.locator('header').first().innerText();
+    if (!/pendente/i.test(header)) console.log(`      (cabeçalho: ${JSON.stringify(header)})`);
+    return /pendente/i.test(header);
+  });
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => true, configurable: true }));
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForTimeout(400);
+
   // 11d. Folders created straight in the sidebar, before any item uses them.
   await page.click('button[aria-label="Nova pasta"]');
   await page.fill('input[placeholder="Nome da pasta"]', 'Fiscal');

@@ -63,6 +63,7 @@ function SyncBadge() {
     syncing: { icon: 'refresh', text: 'Sincronizando…', tone: 'text-muted' },
     saved: { icon: 'cloud', text: 'Sincronizado', tone: 'text-ok' },
     offline: { icon: 'cloudOff', text: 'Somente local', tone: 'text-warn' },
+    pending: { icon: 'refresh', text: 'Envio pendente', tone: 'text-warn' },
     error: { icon: 'warning', text: 'Falha ao sincronizar', tone: 'text-danger' },
     conflict: { icon: 'warning', text: 'Conflito', tone: 'text-warn' },
     idle: { icon: connected ? 'cloud' : 'cloudOff', text: connected ? 'Pronto' : 'Somente local', tone: 'text-muted' },

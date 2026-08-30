@@ -66,12 +66,12 @@ import {
 } from '../lib/vault';
 import * as storage from '../lib/storage';
 import { clearDerivedKey, loadDerivedKey, saveDerivedKey } from '../lib/keystore';
-import { pullVault, syncVault, VaultPasswordMismatchError } from '../lib/sync';
+import { pullVault, retryDelay, syncVault, VaultPasswordMismatchError } from '../lib/sync';
 import { parseBundle, readBackup, referencedAttachments } from '../lib/backup';
 import { clearClipboard } from '../lib/clipboard';
 
 export type Phase = 'boot' | 'config' | 'signin' | 'create' | 'locked' | 'unlocked';
-export type SyncStatus = 'idle' | 'syncing' | 'saved' | 'offline' | 'error' | 'conflict';
+export type SyncStatus = 'idle' | 'syncing' | 'saved' | 'offline' | 'pending' | 'error' | 'conflict';
 
 export interface KeeperState {
   phase: Phase;
@@ -163,6 +163,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const driveIdRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef<string | undefined>(undefined);
   const syncTimerRef = useRef<number | undefined>(undefined);
+  /** A change that has not reached the Drive yet, and the retry chasing it. */
+  const pendingSyncRef = useRef(false);
+  const retryTimerRef = useRef<number | undefined>(undefined);
+  const retryAttemptRef = useRef(0);
   const bootedRef = useRef(false);
 
   const patch = useCallback((next: Partial<KeeperState>) => {
@@ -289,8 +293,21 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       const drive = driveRef.current;
       const auth = authRef.current;
       if (!derived || !payload) return;
-      if (!drive || !auth?.isSignedIn || !navigator.onLine) {
-        patch({ sync: { status: 'offline', message: 'Alterações salvas apenas neste dispositivo.' } });
+      // `auth.isSignedIn` is NOT part of this guard on purpose: a Google access
+      // token lives about an hour, and the Drive client renews it silently on
+      // every call (and once more after a 401). Refusing to try because the
+      // token aged out is what used to park the app in "somente local" until
+      // someone pressed Sincronizar by hand.
+      if (!drive || !auth || !navigator.onLine) {
+        pendingSyncRef.current = true;
+        patch({
+          sync: {
+            status: 'pending',
+            message: navigator.onLine
+              ? 'Sem conexão com o Drive — tentaremos de novo sozinhos.'
+              : 'Sem internet. As alterações sobem assim que a conexão voltar.',
+          },
+        });
         return;
       }
 
@@ -322,6 +339,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           ...(result.revision ? { driveRevision: result.revision } : {}),
           cachedAt: new Date().toISOString(),
         });
+        pendingSyncRef.current = false;
+        retryAttemptRef.current = 0;
+        window.clearTimeout(retryTimerRef.current);
         patch({ sync: { status: 'saved', at: new Date().toISOString() } });
       } catch (error) {
         if (error instanceof VaultPasswordMismatchError) {
@@ -335,6 +355,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           return;
         }
         const message = error instanceof Error ? error.message : 'Falha ao sincronizar.';
+        // A failed sync is a promise to try again, not a dead end: the change
+        // is already safe on this device, and the retry loop chases it.
+        pendingSyncRef.current = true;
         patch({ sync: { status: 'error', message } });
         if (!options.silent) patch({ error: message });
       }
@@ -343,6 +366,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   );
 
   const scheduleSync = useCallback(() => {
+    // Marked pending the moment a change happens, not when the debounce fires:
+    // the retry loop is then responsible for it even if this tab goes away.
+    pendingSyncRef.current = true;
     window.clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
       syncTimerRef.current = undefined;
@@ -1152,6 +1178,50 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [autoLockMinutes, state.phase, syncKeystore]);
+
+  // ---- keep chasing a pending sync ---------------------------------------
+  /**
+   * A change that could not reach the Drive is retried on its own: on a
+   * growing delay, and immediately whenever the situation plausibly changed —
+   * the network came back, or the person returned to the tab (which on iOS is
+   * also when a backgrounded PWA wakes up).
+   */
+  const retrySync = useCallback(async () => {
+    if (!pendingSyncRef.current || !payloadRef.current || !navigator.onLine) return;
+    if (!driveRef.current && authRef.current) await connectGoogle(false);
+    await runSync({ silent: true });
+  }, [connectGoogle, runSync]);
+
+  useEffect(() => {
+    if (state.phase !== 'unlocked') return;
+    const tick = () => {
+      window.clearTimeout(retryTimerRef.current);
+      if (!pendingSyncRef.current) {
+        retryTimerRef.current = window.setTimeout(tick, retryDelay(0));
+        return;
+      }
+      void retrySync().finally(() => {
+        // Back off while it keeps failing, so a long offline stretch is not a
+        // request every few seconds — capped, so it always comes back.
+        if (pendingSyncRef.current) retryAttemptRef.current = Math.min(retryAttemptRef.current + 1, 4);
+        retryTimerRef.current = window.setTimeout(tick, retryDelay(retryAttemptRef.current));
+      });
+    };
+    retryTimerRef.current = window.setTimeout(tick, retryDelay(0));
+
+    const wake = () => {
+      if (document.visibilityState === 'visible') void retrySync();
+    };
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.clearTimeout(retryTimerRef.current);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('focus', wake);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, [retrySync, state.phase]);
 
   // ---- flush pending writes before the tab goes away ----------------------
   useEffect(() => {
