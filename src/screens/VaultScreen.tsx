@@ -5,7 +5,7 @@ import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/ex
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeItems, activePeople, trashedItems } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
-import { Badge, Button, EmptyState, IconButton } from '../components/ui';
+import { Badge, Button, EmptyState, IconButton, Kbd } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
 import { ItemDetail } from '../components/ItemDetail';
 import { ItemEditor } from '../components/ItemEditor';
@@ -13,6 +13,7 @@ import { GeneratorDialog } from '../components/Generator';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { CopyButton, useCopy } from '../components/SecretValue';
 import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
+import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
@@ -74,6 +75,7 @@ export function VaultScreen() {
   const [editing, setEditing] = useState<{ item: VaultItem | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -149,21 +151,76 @@ export function VaultScreen() {
   }, [typeCounts]);
 
   useEffect(() => {
+    const isTyping = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      target.closest('input, textarea, select, [contenteditable="true"]') !== null;
+
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
-      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'l') {
         event.preventDefault();
         actions.lock();
-      } else if (event.key === 'Escape' && !editing && !settingsOpen) {
-        setSelectedId(null);
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (!editing && !settingsOpen && !generatorOpen && !shortcutsOpen) setSelectedId(null);
+        return;
+      }
+
+      // Single-key shortcuts: never while typing, never under an open dialog.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isTyping(event.target)) return;
+      if (editing || settingsOpen || generatorOpen || shortcutsOpen) return;
+
+      const move = (delta: number) => {
+        if (visible.length === 0) return;
+        const index = visible.findIndex((item) => item.id === selectedId);
+        const next = index === -1 ? (delta > 0 ? 0 : visible.length - 1) : Math.min(Math.max(index + delta, 0), visible.length - 1);
+        setSelectedId(visible[next].id);
+      };
+
+      const key = event.key.toLowerCase();
+      if (key === 'j' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        move(1);
+      } else if (key === 'k' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        move(-1);
+      } else if (event.key === 'Enter') {
+        if (!selected && visible.length > 0) setSelectedId(visible[0].id);
+      } else if (key === 'c') {
+        const quick = selected ? primarySecret(selected) : null;
+        if (quick) {
+          void copy(quick.value, `key:${selected!.id}`).then((result) => {
+            if (result.ok) actions.notify('Copiado para a área de transferência.');
+          });
+        }
+      } else if (key === 'e') {
+        if (selected && !selected.deletedAt) setEditing({ item: selected });
+      } else if (key === 'f') {
+        if (selected) void actions.toggleFavorite(selected.id);
+      } else if (key === 'n') {
+        setEditing({ item: null });
+      } else if (key === 'g') {
+        setGeneratorOpen(true);
+      } else if (event.key === '?') {
+        setShortcutsOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [actions, editing, settingsOpen]);
+  }, [actions, copy, editing, generatorOpen, selected, selectedId, settingsOpen, shortcutsOpen, visible]);
+
+  // Keyboard navigation should keep the selected row in view.
+  useEffect(() => {
+    if (!selectedId) return;
+    document.querySelector('[data-row-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [selectedId]);
 
   const setFilter = (patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }));
@@ -584,6 +641,7 @@ export function VaultScreen() {
                       <div
                         role="button"
                         tabIndex={0}
+                        data-row-selected={selectedId === item.id || undefined}
                         onClick={() => setSelectedId(item.id)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
@@ -633,10 +691,28 @@ export function VaultScreen() {
                             {describeExpiry(expiry)}
                           </Badge>
                         ) : null}
-                        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-                          {item.folder ? <Badge className="bg-raised text-muted">{item.folder}</Badge> : null}
-                          <span className="w-12 text-right text-xs text-faint">{relativeTime(item.updatedAt)}</span>
-                        </div>
+                        {selectedId === item.id ? (
+                          /* Shortcut hints live where the garnish was: only on
+                             the selected row, only where a keyboard exists. */
+                          <div className="hidden shrink-0 items-center gap-2.5 text-xs text-faint lg:flex">
+                            {quick ? (
+                              <span className="flex items-center gap-1">
+                                <Kbd>C</Kbd> copiar
+                              </span>
+                            ) : null}
+                            <span className="flex items-center gap-1">
+                              <Kbd>E</Kbd> editar
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Kbd>F</Kbd> favoritar
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                            {item.folder ? <Badge className="bg-raised text-muted">{item.folder}</Badge> : null}
+                            <span className="w-12 text-right text-xs text-faint">{relativeTime(item.updatedAt)}</span>
+                          </div>
+                        )}
                         {quick && !item.deletedAt ? (
                           <div onClick={(event) => event.stopPropagation()}>
                             <CopyButton
@@ -713,6 +789,7 @@ export function VaultScreen() {
 
       <GeneratorDialog open={generatorOpen} onClose={() => setGeneratorOpen(false)} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <datalist id="keeper-folders">
         {folders.map(({ folder }) => (

@@ -114,9 +114,15 @@ wraps the vault's master bits into a record kept in `localStorage`.
   (accepts both formats) and plain-text export (no lock-in).
 - **Offline PWA**: installable, with the encrypted vault cached — you can look up secrets
   with no network.
-- Instant search, folders, tags, favorites, trash, light/dark theme, `Ctrl+K` to search and
-  `Ctrl+L` to lock. On touch devices the system back gesture closes the open panel, sheet
-  or drawer instead of leaving the app.
+- Instant search, folders, tags, favorites, trash, light/dark theme.
+- **Keyboard-first on desktop**: `Ctrl+K` search, `Ctrl+L` lock, `J`/`K` or the arrows walk
+  the list, `C` copies the selected item's main secret, `E` edits, `F` favorites, `N` creates,
+  `G` opens the generator and `?` shows the cheat sheet — single-key shortcuts stay inactive
+  while a text field is focused.
+- **Touch-first on phones**: 48px controls, a thumb-reach bottom command bar, swipe a row
+  for copy/favorite/trash, pull the list down to sync, bottom sheets with a drag handle,
+  tap a detail field to copy it (hold to reveal) — and the system back gesture closes the
+  open panel, sheet or drawer instead of leaving the app.
 
 ---
 

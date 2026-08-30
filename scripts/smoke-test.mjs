@@ -601,6 +601,61 @@ const run = async () => {
   await page.waitForSelector('text=Desbloquear cofre', { timeout: 5000 });
   await check('bloqueio volta para a tela de senha', async () => true);
 
+  // 11b. Keyboard shortcuts on desktop.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.fill('input[type="password"]', PASSWORD);
+  await page.click('button:has-text("Desbloquear")');
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+
+  await page.keyboard.press('j');
+  await page.waitForTimeout(200);
+  await check('J seleciona o primeiro item', async () =>
+    (await page.locator('[data-row-selected="true"]').count()) === 1);
+  await page.keyboard.press('j');
+  await page.waitForTimeout(200);
+  await check('J desce a seleção e o detalhe acompanha', async () => {
+    const row = await page.locator('[data-row-selected="true"]').innerText();
+    const detail = (await page.locator('aside h2').innerText()).trim();
+    return detail.length > 0 && row.includes(detail);
+  });
+  await check('linha selecionada mostra dicas de atalho', async () =>
+    (await page.locator('[data-row-selected="true"] kbd').count()) >= 2);
+
+  // Pin a secret-bearing item: the "Recentes" order after the whole flow can
+  // put a copyless document in second place.
+  await page.fill('input[type="search"]', 'DigitalOcean');
+  await page.waitForTimeout(300);
+  await page.locator('input[type="search"]').blur();
+  await page.keyboard.press('j');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('c');
+  await check('C copia o segredo principal', async () => {
+    await page.getByText('Copiado para a área de transferência.').waitFor({ timeout: 5000 });
+    return true;
+  });
+
+  await page.keyboard.press('e');
+  await page.waitForSelector('[role="dialog"] >> text=Editar segredo', { timeout: 5000 });
+  await check('E abre o editor do item selecionado', async () => true);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await page.fill('input[type="search"]', '');
+  await page.locator('input[type="search"]').blur();
+
+  await page.keyboard.press('?');
+  await page.waitForSelector('text=Atalhos do teclado', { timeout: 5000 });
+  await check('? abre o painel de atalhos', async () => true);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('text=Atalhos do teclado', { state: 'detached', timeout: 5000 });
+
+  // The guard: single keys must not fire while a field is focused.
+  await page.keyboard.press('Control+k');
+  await page.keyboard.type('j');
+  await check('atalhos de uma tecla não disparam ao digitar', async () =>
+    (await page.locator('input[type="search"]').inputValue()) === 'j');
+  await page.fill('input[type="search"]', '');
+  await page.keyboard.press('Escape');
+
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
   const phone = await browser.newPage({
