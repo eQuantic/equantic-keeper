@@ -309,7 +309,7 @@ export function Modal({
             ? { transform: `translateY(${sheetDrag}px)`, transition: 'none' }
             : undefined
         }
-        className={`animate-in card relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
+        className={`animate-in card relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}
       >
