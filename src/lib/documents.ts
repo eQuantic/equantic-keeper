@@ -312,6 +312,27 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     ],
   },
   {
+    // One deliberately generic type: live-birth, tax, social-security standing,
+    // personal or mortgage credit… declarations are endless, and the item name
+    // plus these fields describe any of them better than a type per flavor.
+    id: 'declaracao',
+    label: 'Declaração',
+    group: 'Geral',
+    category: 'doc',
+    description: 'Nado vivo, IRS, situação contributiva, crédito — de qualquer entidade.',
+    icon: 'file',
+    accent: '#e8b45a',
+    fields: [
+      { id: 'tipo', label: 'Tipo de declaração', kind: 'text', placeholder: 'Nado vivo · IRS · Situação contributiva' },
+      { id: 'entidade', label: 'Entidade emissora', kind: 'text', placeholder: 'AT · Segurança Social · Banco · Hospital' },
+      { id: 'numero', label: 'Número / referência', kind: 'text' },
+      { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret', hint: 'Recupera o documento online, quando existir' },
+      { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
+      { id: 'expiresAt', label: 'Válida até', kind: 'date', hint: 'Vazio se não expira' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Crédito habitação · Matrícula · Concurso' },
+    ],
+  },
+  {
     id: 'diploma',
     label: 'Habilitações',
     group: 'Geral',
