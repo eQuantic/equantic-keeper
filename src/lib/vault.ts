@@ -19,19 +19,21 @@ import {
 } from './crypto';
 import { DEFAULT_WARNING_DAYS } from './expiry';
 import { DOCUMENT_ORIGINS } from './documents';
+import { normalizeBlocks } from './blocks';
 import type { AttachmentRef, CustomTypeDef, FieldDef, FieldKind, Folder, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
 /**
  * v2 added `people` and `holderId`; v3 added `item.attachments`; v4 added
  * explicitly created `folders`; v5 added user-defined `customTypes`; v6 adds
- * `item.country`, the issuing country of a document. Each bump
+ * `item.country`, the issuing country of a document; v7 adds `item.blocks`,
+ * the body of a note. Each bump
  * matters: a client that predates one would silently drop what it does not
  * understand on its next save, so refusing to open a newer vault (which
  * `unlockVault` already does) is the safe failure. Older vaults still open —
  * `normalizePayload` fills in what is missing.
  */
-export const VAULT_VERSION = 6;
+export const VAULT_VERSION = 7;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -345,6 +347,7 @@ function normalizeItem(item: VaultItem): VaultItem {
     country: countryOf(item),
     tags: Array.isArray(item.tags) ? item.tags.filter((t) => typeof t === 'string') : [],
     fields: withoutMigratedCountry(item),
+    ...(item.blocks ? { blocks: normalizeBlocks(item.blocks) } : {}),
     customFields: Array.isArray(item.customFields) ? item.customFields : [],
     attachments: Array.isArray(item.attachments) ? item.attachments.filter(isAttachmentLike) : [],
     favorite: Boolean(item.favorite),

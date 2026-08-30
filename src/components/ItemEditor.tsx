@@ -1,6 +1,7 @@
 /** Create / edit form. Fields are rendered from the type's schema. */
 import { useRef, useState, type FormEvent } from 'react';
 import {
+  NOTE_TYPE_ID,
   countryForType,
   createItem,
   createPerson,
@@ -25,6 +26,7 @@ import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
 import { CountryMark } from './flags';
 import { GeneratorDialog } from './Generator';
+import { LazyNoteEditor } from './note/LazyNoteEditor';
 
 function TagEditor({
   tags,
@@ -464,6 +466,17 @@ export function ItemEditor({
             placeholder={isDoc ? 'renovar, viagem, família' : 'produção, cliente-x, urgente'}
           />
         </Field>
+
+        {draft.type === NOTE_TYPE_ID ? (
+          <div className="border-t border-line-soft pt-4">
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
+              <Icon name={type.icon} size={13} style={{ color: type.accent }} />
+              Conteúdo
+              <span className="ml-auto normal-case text-faint">digite / para inserir um bloco</span>
+            </p>
+            <LazyNoteEditor blocks={draft.blocks} onChange={(blocks) => patch({ blocks })} />
+          </div>
+        ) : null}
 
         <div className="border-t border-line-soft pt-4">
           <p className="mb-3 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">

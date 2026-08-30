@@ -6,7 +6,7 @@
  * types skip the steps entirely.
  */
 import { useMemo, useState } from 'react';
-import { getAllTypes, getFamily, getType, type SecretTypeDef } from '../lib/model';
+import { NOTE_TYPE_ID, getAllTypes, getFamily, getType, type SecretTypeDef } from '../lib/model';
 import { DOCUMENT_ORIGINS, GENERAL_GROUP, type TypeFamily } from '../lib/documents';
 import { normalizeSearchText } from '../lib/search';
 import { loadRecentTypes } from '../lib/storage';
@@ -138,7 +138,8 @@ function BranchCard({
   accent: string;
   title: string;
   description: string;
-  count: number;
+  /** How many types live behind the card; a note is the type itself. */
+  count?: number;
   onClick: () => void;
 }) {
   return (
@@ -158,7 +159,7 @@ function BranchCard({
         <span className="mt-0.5 block text-[13px] leading-snug text-muted">{description}</span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5 text-xs text-faint">
-        {count} tipos
+        {count === undefined ? null : `${count} tipos`}
         <Icon name="chevron" size={14} />
       </span>
     </button>
@@ -392,6 +393,14 @@ export function TypeWizard({
           description="Identidade, residência, certidões, vistos…"
           count={docTypes.length}
           onClick={() => goTo({ kind: 'origin' })}
+        />
+
+        <BranchCard
+          icon="note"
+          accent="#a78bfa"
+          title="Nota"
+          description="Documento em blocos: títulos, listas, to-do, código, tabela…"
+          onClick={() => onPick(NOTE_TYPE_ID)}
         />
 
         <button

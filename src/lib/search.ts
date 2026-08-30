@@ -3,6 +3,7 @@ import { DEFAULT_WARNING_DAYS, expiryOf } from './expiry';
 import { getFamily, getType, isSecretKind, type VaultItem } from './model';
 import { originByCode } from './documents';
 import { isWithinFolder } from './folders';
+import { blocksToPlainText } from './blocks';
 
 export interface Filters {
   query: string;
@@ -15,8 +16,8 @@ export interface Filters {
   family: string | null;
   /** Issuing country, as a DOCUMENT_ORIGINS/ISO code. */
   country: string | null;
-  /** Restricts the list to one half of the catalogue. */
-  category: 'dev' | 'doc' | null;
+  /** Restricts the list to one part of the catalogue. */
+  category: 'dev' | 'doc' | 'note' | null;
   /** Only what is past its validity date, or approaching it. */
   expiry: 'expired' | 'soon' | null;
   favoritesOnly: boolean;
@@ -63,6 +64,8 @@ function haystack(item: VaultItem, holderName = ''): string {
     getFamily(type.family)?.label ?? '',
     // A passport issued in Brazil answers to "brasil" even though its type is generic.
     originByCode(item.country)?.group ?? '',
+    // A note is found by what is written in it, block by block.
+    item.blocks ? blocksToPlainText(item.blocks) : '',
     holderName,
     ...item.tags,
     // Aliases: "holerite" must find a recibo de vencimento, "nato vivo" the
