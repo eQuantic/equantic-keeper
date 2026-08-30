@@ -364,7 +364,11 @@ const run = async () => {
 
   // 8. Create an item through the UI and confirm it is persisted encrypted.
   await page.click('button:has-text("Novo")');
-  await page.waitForSelector('text=Escolha o tipo');
+  await page.waitForSelector('text=O que você quer guardar?');
+  await page.click('button:has-text("Segredo de desenvolvimento")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await check('ramo de desenvolvimento vai direto à lista', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Chave SSH")').count()) === 1);
   await page.click('button:has-text("Banco de dados")');
   await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Postgres — staging');
   await page.locator('label:has-text("Host") input').first().fill('db.staging.internal');
@@ -380,11 +384,19 @@ const run = async () => {
   // seeded vault is a v1 file with neither `people` nor `holderId`, so this
   // also proves the migration works in a real browser.
   await page.click('button:has-text("Novo")');
-  await page.waitForSelector('text=Escolha o tipo');
+  await page.waitForSelector('text=O que você quer guardar?');
+  await page.click('button:has-text("Documento pessoal")');
+  await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await check('documento pergunta a origem antes de listar', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Geral — qualquer país")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Portugal")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Brasil")').count()) === 1);
+  await page.click('[role="dialog"] button:has-text("Portugal")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
   await page.fill('input[placeholder*="Filtrar tipos"]', 'residência');
   await page.waitForTimeout(200);
   await check('filtro do seletor de tipos reduz a lista', async () => {
-    const labels = await page.locator('[role="dialog"] section button span.font-medium').allTextContents();
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
     return labels.length > 0 && labels.every((label) => /resid/i.test(label));
   });
   await page.screenshot({ path: `${OUT}/06-tipos-documento.png` });
@@ -777,10 +789,37 @@ const run = async () => {
   await phone.waitForTimeout(300);
   await check('tocar de novo em Favoritos desfaz o filtro', async () => (await phone.locator('main li').count()) === 7);
   await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Novo")');
-  await phone.waitForSelector('text=Escolha o tipo', { timeout: 5000 });
-  await check('Novo na barra abre o seletor de tipos', async () => true);
+  await phone.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await check('Novo na barra abre o assistente em passos', async () => true);
+
+  // Walk the document branch, then peel the steps back with the system gesture.
+  await phone.click('[role="dialog"] button:has-text("Documento pessoal")');
+  await phone.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await phone.click('[role="dialog"] button:has-text("Portugal")');
+  await phone.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await phone.goBack();
+  await phone.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await check('voltar no assistente descasca um passo', async () => true);
+  await phone.goBack();
+  await phone.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await check('o segundo voltar chega ao primeiro passo', async () => true);
+
+  // Pick a type for real; the next opening remembers it.
+  await phone.click('[role="dialog"] button:has-text("Documento pessoal")');
+  await phone.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await phone.click('[role="dialog"] button:has-text("Portugal")');
+  await phone.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await phone.click('[role="dialog"] button:has-text("Cartão de Cidadão")');
+  await phone.waitForSelector('[role="dialog"] >> text=Campos de Cartão de Cidadão', { timeout: 5000 });
   await phone.keyboard.press('Escape');
-  await phone.waitForSelector('text=Escolha o tipo', { state: 'detached', timeout: 5000 });
+  await phone.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Novo")');
+  await phone.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await check('o assistente lembra os usados recentemente', async () =>
+    (await phone.locator('[role="dialog"] >> text=Usados recentemente').count()) === 1 &&
+    (await phone.locator('[role="dialog"] button:has-text("Cartão de Cidadão")').count()) >= 1);
+  await phone.keyboard.press('Escape');
+  await phone.waitForSelector('text=O que você quer guardar?', { state: 'detached', timeout: 5000 });
 
   // 12b. Row swipes. Synthetic pointer events walk the same handlers a finger
   // would; the clipboard permission lets the Copiar action actually copy.

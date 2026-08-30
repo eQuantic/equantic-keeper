@@ -1,7 +1,6 @@
 /** Create / edit form. Fields are rendered from the type's schema. */
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import {
-  SECRET_TYPES,
   createItem,
   createPerson,
   getType,
@@ -9,9 +8,10 @@ import {
   isSecretKind,
   type CustomField,
   type FieldDef,
-  type SecretTypeDef,
   type VaultItem,
 } from '../lib/model';
+import { pushRecentType } from '../lib/storage';
+import { TypeWizard } from './TypeWizard';
 import { activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
 import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
@@ -145,7 +145,6 @@ export function ItemEditor({
 }) {
   const [draft, setDraft] = useState<VaultItem>(() => item ?? createItem('api-token'));
   const [typePickerOpen, setTypePickerOpen] = useState(!item);
-  const [typeQuery, setTypeQuery] = useState('');
   const [addingPerson, setAddingPerson] = useState(false);
   const [newPerson, setNewPerson] = useState('');
   const { payload, actions } = useKeeper();
@@ -207,74 +206,17 @@ export function ItemEditor({
     });
   };
 
-  // With 30+ types a flat grid stops being browsable, so the picker groups by
-  // origin and offers a filter.
-  const groups = useMemo(() => {
-    const order = ['Portugal', 'Brasil', 'Geral', 'Desenvolvimento'];
-    const needle = typeQuery.trim().toLocaleLowerCase('pt-BR');
-    const buckets = new Map<string, SecretTypeDef[]>();
-    for (const candidate of SECRET_TYPES) {
-      const heading = candidate.category === 'dev' ? 'Desenvolvimento' : candidate.group;
-      const haystack = `${candidate.label} ${candidate.description} ${candidate.group}`.toLocaleLowerCase('pt-BR');
-      if (needle && !haystack.includes(needle)) continue;
-      buckets.set(heading, [...(buckets.get(heading) ?? []), candidate]);
-    }
-    return [...buckets.entries()].sort(([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
-  }, [typeQuery]);
-
   if (typePickerOpen) {
     return (
-      <Modal
-        open
+      <TypeWizard
         onClose={onClose}
-        title="Novo item"
-        subtitle="Escolha o tipo — os campos se ajustam automaticamente."
-        wide
-      >
-        <TextInput
-          value={typeQuery}
-          onChange={(event) => setTypeQuery(event.target.value)}
-          placeholder="Filtrar tipos: residência, CPF, passaporte, token…"
-          autoFocus
-          className="mb-4"
-        />
-        {groups.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{typeQuery}”.</p>
-        ) : null}
-        {groups.map(([heading, types]) => (
-          <section key={heading} className="mb-5 last:mb-0">
-            <p className="mb-2 text-[11px] font-medium tracking-wider text-faint uppercase">{heading}</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {types.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => {
-                    dirtyRef.current = false;
-                    setDraft(createItem(candidate.id));
-                    setTypePickerOpen(false);
-                  }}
-                  className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3 text-left transition hover:border-accent/50 hover:bg-raised"
-                >
-                  <span
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{
-                      color: candidate.accent,
-                      backgroundColor: `color-mix(in srgb, ${candidate.accent} 14%, transparent)`,
-                    }}
-                  >
-                    <Icon name={candidate.icon} size={16} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-ink">{candidate.label}</span>
-                    <span className="mt-0.5 block text-xs leading-snug text-muted">{candidate.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
-      </Modal>
+        onPick={(typeId) => {
+          dirtyRef.current = false;
+          setDraft(createItem(typeId));
+          setTypePickerOpen(false);
+          pushRecentType(typeId);
+        }}
+      />
     );
   }
 

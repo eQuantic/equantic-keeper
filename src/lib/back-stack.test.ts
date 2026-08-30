@@ -2,18 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackStack } from './back-stack';
 
 /**
- * The fake history queues back() calls; the test delivers them by calling
- * handlePop(), the way the browser would fire popstate asynchronously.
+ * The fake history counts calls; the test delivers each traversal's popstate
+ * by calling handlePop(), the way the browser would — asynchronously, one
+ * per back().
  */
 let stack: BackStack;
-let pushState: ReturnType<typeof vi.fn<(data: unknown, unused: string) => void>>;
+let pushState: ReturnType<typeof vi.fn>;
 let backCalls: number;
 
 beforeEach(() => {
-  pushState = vi.fn<(data: unknown, unused: string) => void>();
+  pushState = vi.fn();
   backCalls = 0;
   stack = new BackStack({
-    pushState,
+    pushState: pushState as unknown as (data: unknown, unused: string) => void,
     back: () => {
       backCalls += 1;
     },
@@ -31,14 +32,14 @@ describe('BackStack', () => {
     expect(stack.depth).toBe(0);
   });
 
-  it('closing via the UI consumes the entry with a synthetic back', () => {
+  it('closing via the UI consumes the entry with one synthetic back', () => {
     const close = vi.fn();
     const release = stack.push(close);
 
     release(); // user tapped the X
     expect(backCalls).toBe(1);
 
-    stack.handlePop(); // the synthetic pop arrives
+    stack.handlePop(); // the traversal lands
     expect(close).not.toHaveBeenCalled();
     expect(stack.depth).toBe(0);
   });
@@ -73,22 +74,50 @@ describe('BackStack', () => {
     expect(drawer).toHaveBeenCalledTimes(1);
   });
 
-  it('survives StrictMode-style mount → unmount → mount', () => {
-    const close = vi.fn();
-    const release1 = stack.push(close); // dev mount
-    release1(); // dev cleanup queues a synthetic back
-    stack.push(close); // dev re-mount, before the pop arrives
+  it('serializes traversals: one back() in flight at a time', () => {
+    // Three overlays release together and a fourth pushes right after — the
+    // wizard-into-editor swap that used to walk the app out of the document.
+    const releases = [stack.push(vi.fn()), stack.push(vi.fn()), stack.push(vi.fn())];
+    for (const release of releases) release();
+    expect(backCalls).toBe(1); // the rest wait for the first popstate
 
-    stack.handlePop(); // the queued synthetic pop — must be swallowed
-    expect(close).not.toHaveBeenCalled();
+    const editorClose = vi.fn();
+    stack.push(editorClose); // queued behind the pending traversals
+    expect(pushState).toHaveBeenCalledTimes(3); // not yet executed
+
+    stack.handlePop(); // traversal 1 lands
+    expect(backCalls).toBe(2);
+    stack.handlePop(); // traversal 2 lands
+    expect(backCalls).toBe(3);
+    stack.handlePop(); // traversal 3 lands → now the push executes, settled
+    expect(pushState).toHaveBeenCalledTimes(4);
     expect(stack.depth).toBe(1);
 
-    stack.handlePop(); // the user's actual back
-    expect(close).toHaveBeenCalledTimes(1);
+    stack.handlePop(); // user back closes the editor
+    expect(editorClose).toHaveBeenCalledTimes(1);
     expect(stack.depth).toBe(0);
   });
 
-  it('a pop with nothing open falls through', () => {
+  it('a push released while still queued never touches the history', () => {
+    // StrictMode-style mount → unmount before the queue drains.
+    const release1 = stack.push(vi.fn());
+    release1(); // back queued + in flight
+    const close = vi.fn();
+    const release2 = stack.push(close); // queued behind the traversal
+    release2(); // cancels the queued push outright
+    expect(pushState).toHaveBeenCalledTimes(1);
+
+    stack.handlePop(); // the one traversal lands
+    expect(backCalls).toBe(1);
+    expect(stack.depth).toBe(0);
+  });
+
+  it('a pop with nothing owned falls through to the browser', () => {
     expect(() => stack.handlePop()).not.toThrow();
+    const close = vi.fn();
+    stack.push(close);
+    stack.handlePop();
+    stack.handlePop(); // beyond our entries
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

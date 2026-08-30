@@ -1,0 +1,292 @@
+/**
+ * Step-by-step replacement for the flat 33-type picker: first WHAT to store
+ * (development secret or personal document), then — for documents — WHERE it
+ * is from, and only then a short, relevant type list. Search stays available
+ * at every list step and filters within the current scope; recently used
+ * types skip the steps entirely.
+ */
+import { useMemo, useState } from 'react';
+import { SECRET_TYPES, getType, type SecretTypeDef } from '../lib/model';
+import { DOCUMENT_ORIGINS, GENERAL_GROUP } from '../lib/documents';
+import { loadRecentTypes } from '../lib/storage';
+import { Icon } from './icons';
+import { IconButton, Modal, TextInput } from './ui';
+import { useCloseOnBack } from './use-close-on-back';
+
+type Step = { kind: 'root' } | { kind: 'dev' } | { kind: 'origin' } | { kind: 'types'; group: string };
+
+function matches(type: SecretTypeDef, needle: string): boolean {
+  if (!needle) return true;
+  return `${type.label} ${type.description} ${type.group}`.toLocaleLowerCase('pt-BR').includes(needle);
+}
+
+function TypeRow({ type, onPick }: { type: SecretTypeDef; onPick: (typeId: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(type.id)}
+      className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-raised"
+    >
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]"
+        style={{ color: type.accent, backgroundColor: `color-mix(in srgb, ${type.accent} 13%, transparent)` }}
+      >
+        <Icon name={type.icon} size={18} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-ink pointer-coarse:text-base">{type.label}</span>
+        <span className="block truncate text-xs leading-snug text-muted pointer-coarse:text-[13px]">
+          {type.description}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function BranchCard({
+  icon,
+  accent,
+  title,
+  description,
+  count,
+  onClick,
+}: {
+  icon: string;
+  accent: string;
+  title: string;
+  description: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-canvas p-4 text-left transition hover:border-accent/50 hover:bg-raised"
+    >
+      <span
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+        style={{ color: accent, backgroundColor: `color-mix(in srgb, ${accent} 13%, transparent)` }}
+      >
+        <Icon name={icon} size={22} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-semibold text-ink">{title}</span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-muted">{description}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-faint">
+        {count} tipos
+        <Icon name="chevron" size={14} />
+      </span>
+    </button>
+  );
+}
+
+export function TypeWizard({
+  onPick,
+  onClose,
+}: {
+  onPick: (typeId: string) => void;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState<Step>({ kind: 'root' });
+  const [query, setQuery] = useState('');
+
+  const devTypes = useMemo(() => SECRET_TYPES.filter((type) => type.category === 'dev'), []);
+  const docTypes = useMemo(() => SECRET_TYPES.filter((type) => type.category === 'doc'), []);
+  const recents = useMemo(
+    () => loadRecentTypes().map((id) => getType(id)).filter((type) => type.label).slice(0, 3),
+    [],
+  );
+
+  const goBack = () => {
+    setQuery('');
+    setStep(step.kind === 'types' ? { kind: 'origin' } : { kind: 'root' });
+  };
+  const goTo = (next: Step) => {
+    setQuery('');
+    setStep(next);
+  };
+  // On touch, the system back gesture peels one step at a time; the document
+  // branch is two deep, hence the second armed entry. These stack ON TOP of
+  // the single Modal's own close-the-wizard entry — which is why the wizard
+  // must render ONE Modal across steps: a Modal per step would arm and
+  // release close-all entries on every transition and scramble the history.
+  useCloseOnBack(step.kind !== 'root', goBack);
+  useCloseOnBack(step.kind === 'types', goBack);
+
+  const needle = query.trim().toLocaleLowerCase('pt-BR');
+
+  const search = (placeholder: string) => (
+    <TextInput
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+      placeholder={placeholder}
+      autoComplete="off"
+      spellCheck={false}
+      className="mb-3"
+      type="search"
+    />
+  );
+
+  const header =
+    step.kind === 'dev'
+      ? { title: 'Desenvolvimento', subtitle: 'Escolha o tipo — os campos se ajustam.' }
+      : step.kind === 'origin'
+        ? { title: 'Documento pessoal', subtitle: 'De onde é o documento?' }
+        : step.kind === 'types'
+          ? { title: step.group, subtitle: 'Escolha o tipo — os campos se ajustam.' }
+          : { title: 'Novo item', subtitle: 'O que você quer guardar?' };
+
+  let body = null;
+  if (step.kind === 'dev') {
+    const types = devTypes.filter((type) => matches(type, needle));
+    body = (
+      <>
+        {search('Filtrar tipos: token, ssh, registry…')}
+        <div className="grid gap-1 sm:grid-cols-2">
+          {types.map((type) => (
+            <TypeRow key={type.id} type={type} onPick={onPick} />
+          ))}
+        </div>
+        {types.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
+        ) : null}
+      </>
+    );
+  } else if (step.kind === 'origin') {
+    const general = docTypes.filter((type) => type.group === GENERAL_GROUP);
+    const origins = DOCUMENT_ORIGINS.map((origin) => ({
+      ...origin,
+      count: docTypes.filter((type) => type.group === origin.group).length,
+    })).filter((origin) => origin.count > 0 && (!needle || origin.group.toLocaleLowerCase('pt-BR').includes(needle)));
+    const generalVisible = !needle || GENERAL_GROUP.toLocaleLowerCase('pt-BR').includes(needle);
+    body = (
+      <>
+        {search('Buscar país…')}
+        <div className="space-y-1">
+          {generalVisible ? (
+            <button
+              type="button"
+              onClick={() => goTo({ kind: 'types', group: GENERAL_GROUP })}
+              className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-raised"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent/13 text-accent">
+                <Icon name="globe" size={19} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-ink pointer-coarse:text-base">Geral — qualquer país</span>
+                <span className="block truncate text-xs text-muted pointer-coarse:text-[13px]">
+                  Passaporte, visto, diploma, vacinação, seguro…
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-faint">
+                {general.length}
+                <Icon name="chevron" size={13} />
+              </span>
+            </button>
+          ) : null}
+
+          {origins.length > 0 ? (
+            <p className="px-2 pt-3 pb-1 text-[11px] font-medium tracking-wider text-faint uppercase">Países</p>
+          ) : null}
+          {origins.map((origin) => (
+            <button
+              key={origin.group}
+              type="button"
+              onClick={() => goTo({ kind: 'types', group: origin.group })}
+              className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-raised"
+            >
+              <span
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] font-mono text-[13px] font-semibold tracking-wide"
+                style={{ color: origin.accent, backgroundColor: `color-mix(in srgb, ${origin.accent} 13%, transparent)` }}
+              >
+                {origin.code}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-ink pointer-coarse:text-base">{origin.group}</span>
+                <span className="block truncate text-xs text-muted pointer-coarse:text-[13px]">{origin.hint}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-faint">
+                {origin.count}
+                <Icon name="chevron" size={13} />
+              </span>
+            </button>
+          ))}
+          {!generalVisible && origins.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">Nenhum país corresponde a “{query}”.</p>
+          ) : null}
+        </div>
+      </>
+    );
+  } else if (step.kind === 'types') {
+    const group = step.group;
+    const types = docTypes.filter((type) => type.group === group && matches(type, needle));
+    body = (
+      <>
+        {search('Filtrar tipos: residência, CPF, passaporte…')}
+        <div className="grid gap-1 sm:grid-cols-2">
+          {types.map((type) => (
+            <TypeRow key={type.id} type={type} onPick={onPick} />
+          ))}
+        </div>
+        {types.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
+        ) : null}
+      </>
+    );
+  } else {
+    body = (
+      <div className="space-y-3">
+        {recents.length > 0 ? (
+          <div>
+            <p className="mb-2 text-[11px] font-medium tracking-wider text-faint uppercase">Usados recentemente</p>
+            <div className="flex flex-wrap gap-2">
+              {recents.map((type) => (
+                <button
+                  key={type.id}
+                  type="button"
+                  onClick={() => onPick(type.id)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm text-ink transition hover:border-accent/50 hover:bg-raised pointer-coarse:py-2.5"
+                >
+                  <Icon name={type.icon} size={15} style={{ color: type.accent }} />
+                  {type.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <BranchCard
+          icon="terminal"
+          accent="var(--color-accent)"
+          title="Segredo de desenvolvimento"
+          description="Tokens, chaves SSH, .env, registries, bancos…"
+          count={devTypes.length}
+          onClick={() => goTo({ kind: 'dev' })}
+        />
+        <BranchCard
+          icon="idCard"
+          accent="#2dd4bf"
+          title="Documento pessoal"
+          description="Identidade, residência, certidões, vistos…"
+          count={docTypes.length}
+          onClick={() => goTo({ kind: 'origin' })}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      wide={step.kind !== 'root'}
+      title={header.title}
+      subtitle={header.subtitle}
+      leading={step.kind !== 'root' ? <IconButton icon="chevronLeft" label="Voltar" onClick={goBack} /> : undefined}
+    >
+      {body}
+    </Modal>
+  );
+}
