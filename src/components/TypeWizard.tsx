@@ -215,7 +215,7 @@ export function TypeWizard({
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-ink pointer-coarse:text-base">Geral — qualquer país</span>
                 <span className="block truncate text-xs text-muted pointer-coarse:text-[13px]">
-                  Passaporte, visto, diploma, vacinação, seguro…
+                  Passaporte, visto, cartão de crédito, diploma, seguro…
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-1.5 text-xs text-faint">

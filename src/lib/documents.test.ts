@@ -48,13 +48,21 @@ describe('catálogo de tipos', () => {
    * Documentos são consultados, não rotacionados: marcá-los como segredo os
    * esconderia da busca e exigiria um clique para ler o próprio NIF. As
    * exceções são deliberadas — dados que CONCEDEM acesso em vez de apenas
-   * identificar: o código de acesso da certidão online e o SSN americano.
+   * identificar: o código de acesso da certidão online, o SSN americano e os
+   * segredos do cartão de crédito (número, CVC, PIN e senha compram coisas).
    */
   it('só marca como segredo os dados de documento que concedem acesso', () => {
     const secret = DOCUMENT_TYPES.flatMap((type) =>
       type.fields.filter((field) => isSecretKind(field.kind)).map((field) => `${type.id}.${field.id}`),
     );
-    expect(secret.sort()).toEqual(['pt-certidao.codigoAcesso', 'us-ssn.ssn']);
+    expect(secret.sort()).toEqual([
+      'cartao-credito.cvc',
+      'cartao-credito.number',
+      'cartao-credito.password',
+      'cartao-credito.pin',
+      'pt-certidao.codigoAcesso',
+      'us-ssn.ssn',
+    ]);
   });
 
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {

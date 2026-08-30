@@ -394,6 +394,12 @@ const run = async () => {
   await check('a expansão traz os novos países', async () =>
     (await page.locator('[role="dialog"] button:has-text("Espanha")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Reino Unido")').count()) === 1);
+  await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await check('Geral inclui o cartão de crédito', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Cartão de crédito")').count()) === 1);
+  await page.click('button[aria-label="Voltar"]');
+  await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Portugal")');
   await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
   await check('Portugal ganhou os tipos novos', async () =>
