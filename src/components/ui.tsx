@@ -171,6 +171,15 @@ export function PasswordInput({
   );
 }
 
+/** Keyboard-key chip, as in the shortcuts cheat sheet and inline hints. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-line border-b-2 bg-canvas px-1.5 font-mono text-[11px] text-muted">
+      {children}
+    </kbd>
+  );
+}
+
 export function Badge({
   children,
   color,
