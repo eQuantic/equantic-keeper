@@ -221,6 +221,8 @@ export function ItemEditor({
   const showHolder = type.category === 'doc' || people.length > 0 || !!draft.holderId;
   /** Placeholders follow the subject: a declaration form suggests declarations. */
   const isDoc = type.category === 'doc';
+  /** A note is a page: it gets the wide dialog and a pane of its own. */
+  const isNote = draft.type === NOTE_TYPE_ID;
   const patch = (changes: Partial<VaultItem>) => {
     dirtyRef.current = true;
     setDraft((current) => ({ ...current, ...changes }));
@@ -302,6 +304,7 @@ export function ItemEditor({
       open
       onClose={attemptClose}
       wide
+      split={isNote}
       title={isNew ? `Novo: ${type.label}` : 'Editar segredo'}
       subtitle={isNew ? type.description : type.label}
       footer={
@@ -313,7 +316,23 @@ export function ItemEditor({
         </>
       }
     >
-      <form onSubmit={submit} className="space-y-4">
+      <form
+        onSubmit={submit}
+        className={
+          isNote
+            ? 'flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden'
+            : 'space-y-4'
+        }
+      >
+        {/* On a wide screen the note is a page with its details beside it; on a
+            phone the two panes stack and the form itself is the scroller. */}
+        <div
+          className={
+            isNote
+              ? 'space-y-4 px-5 py-4 lg:w-[360px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-line'
+              : 'contents'
+          }
+        >
         {family ? (
           <Field
             label={family.pickerLabel}
@@ -467,18 +486,9 @@ export function ItemEditor({
           />
         </Field>
 
-        {draft.type === NOTE_TYPE_ID ? (
-          <div className="border-t border-line-soft pt-4">
-            <p className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
-              <Icon name={type.icon} size={13} style={{ color: type.accent }} />
-              Conteúdo
-              <span className="ml-auto normal-case text-faint">digite / para inserir um bloco</span>
-            </p>
-            <LazyNoteEditor blocks={draft.blocks} onChange={(blocks) => patch({ blocks })} />
-          </div>
-        ) : null}
-
-        <div className="border-t border-line-soft pt-4">
+        {/* A note keeps its content in blocks, so it declares no fields — and a
+            heading with nothing under it is just noise. */}
+        <div className={`border-t border-line-soft pt-4 ${type.fields.length ? '' : 'hidden'}`}>
           <p className="mb-3 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
             <Icon name={type.icon} size={13} style={{ color: type.accent }} />
             Campos de {type.label}
@@ -557,6 +567,18 @@ export function ItemEditor({
 
         {/* Lets the browser submit the form with Enter. */}
         <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+        </div>
+
+        {isNote ? (
+          <div className="flex min-h-0 flex-col px-5 py-4 lg:flex-1 lg:overflow-y-auto">
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
+              <Icon name={type.icon} size={13} style={{ color: type.accent }} />
+              Conteúdo
+              <span className="ml-auto normal-case text-faint">digite / para inserir um bloco</span>
+            </p>
+            <LazyNoteEditor blocks={draft.blocks} onChange={(blocks) => patch({ blocks })} />
+          </div>
+        ) : null}
       </form>
     </Modal>
   );

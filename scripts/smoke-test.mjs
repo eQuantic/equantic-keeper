@@ -864,6 +864,24 @@ const run = async () => {
   await page.waitForTimeout(200);
   await check('o bloco virou item de lista', async () =>
     (await page.locator('[data-note-editor="edit"] li:has-text("agendar AIMA")').count()) === 1);
+  // On a wide screen the note is a page: the details in a column of their own,
+  // the content beside them, both filling the dialog's height.
+  await check('a nota abre em duas colunas no desktop', async () => {
+    const panes = await page.evaluate(() => {
+      const form = document.querySelector('[role="dialog"] form');
+      if (!form) return null;
+      const boxes = [...form.children].map((node) => node.getBoundingClientRect());
+      const dialog = document.querySelector('[role="dialog"]').getBoundingClientRect();
+      return {
+        columns: boxes.length,
+        sideBySide: boxes.length === 2 && boxes[1].left >= boxes[0].right - 1,
+        tall: dialog.height > window.innerHeight * 0.8,
+      };
+    });
+    return !!panes && panes.columns === 2 && panes.sideBySide && panes.tall;
+  });
+  await check('o formulário da nota não mostra seção de campos vazia', async () =>
+    (await page.locator('[role="dialog"] >> text=Campos de Nota').filter({ visible: true }).count()) === 0);
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("Mudança para Lisboa")', { timeout: 5000 });
   await check('a nota salva é lida como documento no detalhe', async () =>

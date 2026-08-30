@@ -379,6 +379,7 @@ export function Modal({
   children,
   footer,
   wide,
+  split,
 }: {
   open: boolean;
   onClose: () => void;
@@ -389,6 +390,12 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /**
+   * A document-shaped dialog: as wide and as tall as the screen sensibly
+   * allows, with the body laid out by the caller instead of scrolled as one
+   * column — the note editor puts the form beside the page.
+   */
+  split?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useCloseOnBack(open, onClose);
@@ -447,7 +454,7 @@ export function Modal({
             : undefined
         }
         className={`animate-in card relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
-          wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
+          split ? 'sm:h-[92dvh] sm:max-w-6xl' : wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}
       >
         <div
@@ -497,7 +504,15 @@ export function Modal({
           </header>
         </div>
         {/* overflow-x-hidden: a too-wide child must never pan the whole sheet sideways. */}
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">{children}</div>
+        <div
+          className={
+            split
+              ? 'min-h-0 flex-1 overflow-hidden'
+              : 'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4'
+          }
+        >
+          {children}
+        </div>
         {footer ? (
           <footer className="flex items-center justify-end gap-2 border-t border-line bg-raised/50 px-5 py-3">
             {footer}
