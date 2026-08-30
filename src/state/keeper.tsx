@@ -180,9 +180,14 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [patch],
   );
 
-  /** "Never lock" keeps the derived key on-device; anything else removes it. */
+  /**
+   * Keep the derived key on-device with the auto-lock deadline stamped on it:
+   * a reload inside the inactivity window must reopen without the password —
+   * on iOS every app switch can reload the page, so memory-only would demand
+   * the password constantly. "Never" stores no deadline; boot enforces expiry.
+   */
   const syncKeystore = useCallback((derived: DerivedKey | null, minutes: number) => {
-    if (minutes === 0 && derived) void saveDerivedKey(derived);
+    if (derived) void saveDerivedKey(derived, minutes === 0 ? null : Date.now() + minutes * 60_000);
     else void clearDerivedKey();
   }, []);
 
@@ -1022,17 +1027,22 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     const cached = storage.loadCachedVault();
     if (cached) {
       adoptVaultFile(cached.file, cached.driveFileId, cached.driveRevision);
-      // With "never lock", a non-extractable copy of the key lives on the
-      // device: a discarded tab or an app update must not cost the password.
+      // A non-extractable copy of the key lives on the device while the
+      // auto-lock window is open (or forever, with "never"): a discarded tab
+      // or an app update must not cost the password.
       void (async () => {
-        const derived = await loadDerivedKey();
-        if (derived) {
+        const stored = await loadDerivedKey();
+        if (stored && stored.expiresAt !== null && stored.expiresAt <= Date.now()) {
+          await clearDerivedKey();
+        } else if (stored) {
           try {
-            const { payload } = await unlockVaultWithDerived(cached.file, derived);
-            derivedRef.current = derived;
+            const { payload } = await unlockVaultWithDerived(cached.file, stored.derived);
+            derivedRef.current = stored.derived;
             setPayload(payload);
             patch({ phase: 'unlocked' });
-            await pullAfterUnlock(derived, payload);
+            // Reopening counts as activity: the window restarts.
+            syncKeystore(stored.derived, payload.preferences.autoLockMinutes);
+            await pullAfterUnlock(stored.derived, payload);
             return;
           } catch {
             await clearDerivedKey();
@@ -1076,6 +1086,24 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       for (const event of events) window.removeEventListener(event, reset);
     };
   }, [autoLockMinutes, lock, state.phase]);
+
+  // Leaving the page is when inactivity really starts: restamp the stored
+  // deadline so a reload inside the window reopens silently and one after it
+  // asks for the password. (After a manual lock derivedRef is null and the
+  // restamp clears the record instead.)
+  useEffect(() => {
+    if (state.phase !== 'unlocked' || autoLockMinutes <= 0) return;
+    const restamp = () => syncKeystore(derivedRef.current, autoLockMinutes);
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') restamp();
+    };
+    window.addEventListener('pagehide', restamp);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', restamp);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [autoLockMinutes, state.phase, syncKeystore]);
 
   // ---- flush pending writes before the tab goes away ----------------------
   useEffect(() => {

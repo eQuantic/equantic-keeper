@@ -750,11 +750,10 @@ const run = async () => {
   await check('a validade do tipo personalizado entra nos alertas', async () =>
     (await page.locator('aside:has(h2) >> text=expira em').count()) > 0);
 
-  // The definition travels in the encrypted payload: a reload keeps it.
+  // The definition travels in the encrypted payload: a reload keeps it. (The
+  // reload reopens without the password — the derived key persists while the
+  // auto-lock window is open; 11d asserts that on purpose.)
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
-  await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
   await page.click('text=Aluguel Madrid');
   await page.waitForSelector('h2:has-text("Aluguel Madrid")', { timeout: 5000 });
@@ -832,14 +831,51 @@ const run = async () => {
   await check('com "Nunca", recarregar reabre sem pedir a senha', async () =>
     (await page.locator('text=Desbloquear cofre').count()) === 0);
 
+  const storedDeadline = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const req = indexedDB.open('keeper-keystore', 1);
+          req.onsuccess = () => {
+            const get = req.result.transaction('derived', 'readonly').objectStore('derived').get('v1');
+            get.onsuccess = () => resolve(get.result ? { expiresAt: get.result.expiresAt ?? null } : 'vazio');
+            get.onerror = () => resolve('erro');
+          };
+          req.onerror = () => resolve('erro');
+        }),
+    );
+  await check('registro do "Nunca" fica sem prazo', async () => {
+    const record = await storedDeadline();
+    return typeof record === 'object' && record.expiresAt === null;
+  });
+
+  // A timed auto-lock persists too, stamped with the deadline: on phones every
+  // app switch can reload the page, and a reload inside the inactivity window
+  // must not demand the master password.
   await page.locator('nav button:has-text("Configurações")').click();
   await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
   await page.selectOption('select[aria-label="Bloquear automaticamente"]', '15');
   await page.waitForTimeout(500);
   await page.keyboard.press('Escape');
+  await check('bloqueio por tempo guarda a chave com prazo futuro', async () => {
+    const record = await storedDeadline();
+    return typeof record === 'object' && typeof record.expiresAt === 'number' && record.expiresAt > Date.now();
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+  await check('com 15 minutos, recarregar dentro da janela não pede a senha', async () =>
+    (await page.locator('text=Desbloquear cofre').count()) === 0);
+
+  // A deliberate lock is different: it deletes the record, and no reload
+  // brings the vault back without the password.
+  await page.locator('button[aria-label="Bloquear (Ctrl+L)"]').click();
+  await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
-  await check('voltar para 15 minutos volta a exigir a senha', async () => true);
+  await check('bloquear manualmente apaga a chave e volta a exigir a senha', async () => true);
+  await page.fill('input[type="password"]', PASSWORD);
+  await page.click('button:has-text("Desbloquear")');
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
@@ -1211,10 +1247,8 @@ const run = async () => {
 
   if (virtualAuthenticator) {
     // The availability probe runs at boot, before the authenticator existed.
+    // The reload itself reopens without the password (persisted key).
     await phone.reload({ waitUntil: 'domcontentloaded' });
-    await phone.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
-    await phone.fill('input[type="password"]', PASSWORD);
-    await phone.click('button:has-text("Desbloquear")');
     await phone.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
     await phone.click('button[aria-label="Menu"]');

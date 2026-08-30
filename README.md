@@ -40,7 +40,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Key separation | HKDF-SHA256 splits the material into an encryption key and a verifier |
 | Cipher | AES-GCM-256 with a fresh 12-byte IV on every write and a 128-bit tag |
 | Header integrity | The public header is fed in as *additional authenticated data* — tampering with it invalidates the tag |
-| Key in memory | Non-extractable `CryptoKey`; wiped on lock, on tab close and on inactivity. With auto-lock set to "Never", a non-extractable copy is kept in IndexedDB so the vault reopens without the password after tab discards and app updates, until it is locked manually |
+| Key at rest | Non-extractable `CryptoKey`, wiped on manual lock and when the auto-lock window ends. While the window is open (or forever, with auto-lock "Never") a non-extractable copy sits in IndexedDB stamped with the deadline, so tab discards, app updates and reloads reopen the vault without the password; boot deletes an expired record and asks for the password again |
 | Biometric unlock (optional) | Master bits AES-GCM-wrapped under a key derived from a platform passkey's WebAuthn PRF output — per device, gated by Face ID / fingerprint / device PIN, invalidated by a password change |
 | Google scope | Only `drive.appdata` (the app's own hidden folder) + email/profile |
 | OAuth token | Short-lived access token, held in memory only |

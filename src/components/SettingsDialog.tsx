@@ -304,7 +304,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <span className="mt-0.5 block text-xs text-muted">
                 {prefs.autoLockMinutes === 0
                   ? 'O cofre reabre sem senha neste dispositivo até você bloquear manualmente.'
-                  : 'A chave é apagada da memória após inatividade.'}
+                  : 'Sem uso por esse tempo, a senha é pedida de novo. Recarregar dentro do período mantém o cofre aberto.'}
               </span>
             </span>
             <select

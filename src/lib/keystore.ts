@@ -1,14 +1,17 @@
 /**
- * Persisted derived key for the "never lock" preference.
- *
- * With auto-lock set to "Never", losing the page must not cost the master
- * password: browsers discard idle tabs, iOS kills backgrounded PWAs, and every
+ * Persisted derived key, so losing the page does not cost the master password:
+ * browsers discard idle tabs, iOS kills backgrounded PWAs, and every
  * service-worker update reloads the app — none of which the user reads as
  * "I locked my vault". The AES-GCM CryptoKey is stored via structured clone,
  * so it stays NON-EXTRACTABLE: IndexedDB hands back a handle that can decrypt,
- * never the raw key bits. A manual lock, a preference change, a master-password
- * change or a device wipe removes it, and everything degrades to the password
- * prompt when IndexedDB is unavailable.
+ * never the raw key bits.
+ *
+ * The record carries the auto-lock deadline: `expiresAt: null` for "never
+ * lock", otherwise an epoch-ms instant after which boot refuses the record and
+ * deletes it — a reload inside the inactivity window reopens silently, one
+ * after it asks for the password, same contract as the in-page timer. A manual
+ * lock, a master-password change or a device wipe removes the record, and
+ * everything degrades to the password prompt when IndexedDB is unavailable.
  */
 import type { DerivedKey } from './crypto';
 
@@ -21,7 +24,7 @@ let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 function openDatabase(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve) => {
+  const attempt = new Promise<IDBDatabase | null>((resolve) => {
     if (typeof indexedDB === 'undefined') return resolve(null);
     let request: IDBOpenDBRequest;
     try {
@@ -35,6 +38,12 @@ function openDatabase(): Promise<IDBDatabase | null> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => resolve(null);
     request.onblocked = () => resolve(null);
+  });
+  // A failed open (a transient startup race on iOS PWAs) must not poison the
+  // whole session: cache only a real database, retry on the next call.
+  dbPromise = attempt.then((db) => {
+    if (!db) dbPromise = null;
+    return db;
   });
   return dbPromise;
 }
@@ -56,17 +65,27 @@ function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDB
   );
 }
 
-export async function saveDerivedKey(derived: DerivedKey): Promise<void> {
-  await run('readwrite', (store) => store.put(derived, RECORD_KEY));
+export interface StoredKey {
+  derived: DerivedKey;
+  /** epoch ms after which the record is dead; null = never lock. */
+  expiresAt: number | null;
 }
 
-export async function loadDerivedKey(): Promise<DerivedKey | null> {
+export async function saveDerivedKey(derived: DerivedKey, expiresAt: number | null): Promise<void> {
+  await run('readwrite', (store) => store.put({ ...derived, expiresAt }, RECORD_KEY));
+}
+
+export async function loadDerivedKey(): Promise<StoredKey | null> {
   const value = await run<unknown>('readonly', (store) => store.get(RECORD_KEY));
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as DerivedKey;
+  const candidate = value as DerivedKey & { expiresAt?: unknown };
   if (typeof CryptoKey === 'undefined' || !(candidate.key instanceof CryptoKey)) return null;
   if (typeof candidate.verifier !== 'string' || typeof candidate.kdf?.salt !== 'string') return null;
-  return candidate;
+  return {
+    derived: { key: candidate.key, verifier: candidate.verifier, kdf: candidate.kdf },
+    // Records written before deadlines existed were all "never lock".
+    expiresAt: typeof candidate.expiresAt === 'number' ? candidate.expiresAt : null,
+  };
 }
 
 export async function clearDerivedKey(): Promise<void> {

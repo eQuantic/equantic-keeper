@@ -12,7 +12,8 @@ describe('keystore without IndexedDB', () => {
   });
 
   it('saves and clears without throwing', async () => {
-    await expect(saveDerivedKey({} as never)).resolves.toBeUndefined();
+    await expect(saveDerivedKey({} as never, null)).resolves.toBeUndefined();
+    await expect(saveDerivedKey({} as never, Date.now() + 60_000)).resolves.toBeUndefined();
     await expect(clearDerivedKey()).resolves.toBeUndefined();
   });
 });

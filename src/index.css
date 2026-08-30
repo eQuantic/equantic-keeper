@@ -108,6 +108,16 @@ input::placeholder {
  * !important because Tailwind's text-sm/text-xs utilities on the elements win
  * over any element selector.
  */
+/*
+ * iOS gives date inputs a UA minimum width that refuses to shrink; in narrow
+ * cards (the person rows in Settings) the empty control pokes past its box.
+ * Desktop engines ignore the clamp — their date fields are already flexible.
+ */
+input[type='date'] {
+  min-width: 0;
+  max-width: 100%;
+}
+
 @media (pointer: coarse) {
   input,
   select,
@@ -120,9 +130,16 @@ input::placeholder {
    * invisible ::after pad tops the hit area up to ~48px without moving a
    * single pixel of layout. Adjacent buttons overlap a few pads' pixels; the
    * one on top wins, which is how native toolbars behave too.
+   *
+   * In @layer components so `position` stays a default: this file's unlayered
+   * rules outrank every Tailwind layer, and an unlayered `relative` here was
+   * overriding the `absolute` utility on touch screens — the password-reveal
+   * eye dropped to below the field, bottom-left.
    */
-  .tap-target {
-    position: relative;
+  @layer components {
+    .tap-target {
+      position: relative;
+    }
   }
   .tap-target::after {
     content: '';
