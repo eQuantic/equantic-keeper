@@ -50,7 +50,7 @@ function DateValue({
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-b border-line-soft py-3 last:border-0">
+    <div className="border-b border-line-soft py-3 last:border-0 pointer-coarse:mb-2.5 pointer-coarse:rounded-xl pointer-coarse:border pointer-coarse:border-line-soft pointer-coarse:bg-surface pointer-coarse:px-4 pointer-coarse:last:mb-0">
       <p className="mb-1 text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
       {children}
     </div>
@@ -118,7 +118,7 @@ export function ItemDetail({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2 pointer-coarse:pt-3 pointer-coarse:pb-4">
         {item.description ? (
           <p className="border-b border-line-soft py-3 text-sm leading-relaxed text-muted">{item.description}</p>
         ) : null}
@@ -169,6 +169,12 @@ export function ItemDetail({
             </Row>
           );
         })}
+
+        {filled.length > 0 ? (
+          <p className="hidden px-1 pt-2 text-xs text-faint pointer-coarse:block">
+            Tocar num campo copia o valor · tocar e segurar revela
+          </p>
+        ) : null}
 
         {item.customFields
           .filter((field) => field.value.trim())

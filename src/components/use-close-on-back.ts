@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BackStack } from '../lib/back-stack';
 
 let stack: BackStack | null = null;
@@ -21,9 +21,16 @@ function appStack(): BackStack {
 export function useCloseOnBack(active: boolean, onClose: () => void): void {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  // Bumps when a pop ran but the overlay refused to close (e.g. a dirty-form
+  // confirm was declined): the consumed history entry must be re-armed, or
+  // the next back would leave the app with the overlay still open.
+  const [popCount, setPopCount] = useState(0);
 
   useEffect(() => {
     if (!active || !window.matchMedia('(pointer: coarse)').matches) return;
-    return appStack().push(() => closeRef.current());
-  }, [active]);
+    return appStack().push(() => {
+      closeRef.current();
+      setPopCount((count) => count + 1);
+    });
+  }, [active, popCount]);
 }
