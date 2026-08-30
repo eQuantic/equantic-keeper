@@ -733,13 +733,26 @@ export function VaultScreen() {
                             {item.favorite ? <Icon name="star" size={12} className="shrink-0 text-warn" /> : null}
                             {item.name || 'Sem título'}
                           </p>
-                          <p className="mt-0.5 truncate text-xs text-muted pointer-coarse:text-[13px]">
-                            {item.description ||
-                              item.fields.username ||
-                              item.fields.service ||
-                              item.fields.registry ||
-                              item.fields.host ||
-                              type.label}
+                          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted pointer-coarse:text-[13px]">
+                            {/* The holder reads from the row in "Tudo"/"Favoritos";
+                                under a person's own filter it would only repeat. */}
+                            {!filters.holderId && item.holderId && holderNames.has(item.holderId) ? (
+                              <>
+                                <Icon name="users" size={10} className="shrink-0" />
+                                <span className="max-w-[45%] shrink-0 truncate">
+                                  {holderNames.get(item.holderId)}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                              </>
+                            ) : null}
+                            <span className="min-w-0 truncate">
+                              {item.description ||
+                                item.fields.username ||
+                                item.fields.service ||
+                                item.fields.registry ||
+                                item.fields.host ||
+                                type.label}
+                            </span>
                           </p>
                         </div>
                         {/* Expiry stays visible at every width — it matters most on

@@ -433,6 +433,8 @@ const run = async () => {
     (await page.locator('aside:has(h2) >> text=RP-2024-99887').count()) > 0);
   await check('detalhe mostra o titular', async () =>
     (await page.locator('aside:has(h2) >> text=Maria Teste').count()) > 0);
+  await check('linha da lista mostra o titular em "Tudo"', async () =>
+    (await page.locator('main li:has-text("Título de residência — Maria") >> text=Maria Teste').count()) > 0);
   await page.screenshot({ path: `${OUT}/07-documento.png` });
 
   // 8c. The holder becomes a filter of its own, next to the type filters.
@@ -443,6 +445,8 @@ const run = async () => {
   await page.waitForTimeout(300);
   await check('filtrar por titular mostra só os itens dela', async () =>
     (await page.locator('main li').count()) === 1);
+  await check('sob o filtro da pessoa, a linha não repete o titular', async () =>
+    (await page.locator('main li >> text=Maria Teste').count()) === 0);
   await page.click('nav button:has-text("Tudo")');
   await page.waitForTimeout(300);
   await check('voltar para “Tudo” restaura a lista', async () => (await page.locator('main li').count()) === 9);
