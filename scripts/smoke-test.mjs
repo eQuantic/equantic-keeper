@@ -370,7 +370,7 @@ const run = async () => {
   await check('ramo de desenvolvimento vai direto à lista', async () =>
     (await page.locator('[role="dialog"] button:has-text("Chave SSH")').count()) === 1);
   await page.click('button:has-text("Banco de dados")');
-  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Postgres — staging');
+  await page.fill('input[aria-label="Nome"]', 'Postgres — staging');
   await page.locator('label:has-text("Host") input').first().fill('db.staging.internal');
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("Postgres — staging")', { timeout: 5000 });
@@ -465,7 +465,7 @@ const run = async () => {
   await page.screenshot({ path: `${OUT}/06-tipos-documento.png` });
 
   await page.click('button:has-text("Título de residência")');
-  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Título de residência — Maria');
+  await page.fill('input[aria-label="Nome"]', 'Título de residência — Maria');
   await page.click('button:has-text("nova pessoa")');
   await page.fill('input[placeholder="Nome da pessoa"]', 'Maria Teste');
   // Exact match: the same dialog also offers "Adicionar campo personalizado".
@@ -845,7 +845,7 @@ const run = async () => {
     (await page.locator('[role="dialog"] >> text=Número do contrato').count()) === 1 &&
     (await page.locator('[role="dialog"] >> text=Válido até').count()) === 1);
 
-  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Aluguel Madrid');
+  await page.fill('input[aria-label="Nome"]', 'Aluguel Madrid');
   await page.locator('label:has-text("Número do contrato") input').first().fill('ES-2026-01');
   await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(20));
   await page.click('footer button:has-text("Salvar")');
@@ -893,7 +893,7 @@ const run = async () => {
   await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Cartão de crédito")');
   await page.waitForSelector('text=Novo: Cartão de crédito', { timeout: 5000 });
-  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Cartão principal');
+  await page.fill('input[aria-label="Nome"]', 'Cartão principal');
   await page.locator('label:has-text("Nome no cartão") input').first().fill('Edgar A Mesquita');
   await page.locator('label:has-text("Número do cartão") input').first().fill('4111111111111111');
   await page.locator('label:has-text("Válido até") input').first().fill(relativeDay(400));
@@ -932,18 +932,28 @@ const run = async () => {
   await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
   await page.click('[role="dialog"] button:has-text("Declarações")');
   await page.waitForSelector('select[aria-label="Tipo de declaração"]', { timeout: 5000 });
+  // Placeholders follow the subject: no "GitHub PAT" hint on a declaration.
+  await check('o exemplo do nome acompanha o tipo escolhido', async () => {
+    const generic = await page.locator('input[aria-label="Nome"]').getAttribute('placeholder');
+    await page.selectOption('select[aria-label="Tipo de declaração"]', 'pt-irs');
+    await page.waitForTimeout(150);
+    const irs = await page.locator('input[aria-label="Nome"]').getAttribute('placeholder');
+    await page.selectOption('select[aria-label="Tipo de declaração"]', 'declaracao');
+    await page.waitForTimeout(150);
+    return /declara/i.test(generic ?? '') && irs === 'IRS 2025' && !/GitHub/.test(generic ?? '');
+  });
   await check('a família abre o formulário com o seletor de tipo', async () => {
     const options = await page.locator('select[aria-label="Tipo de declaração"] option').allTextContents();
     return options.includes('Declaração de IRS') && options.includes('Declaração de nascido vivo');
   });
-  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'IRS 2025');
+  await page.fill('input[aria-label="Nome"]', 'IRS 2025');
   await page.selectOption('select[aria-label="Tipo de declaração"]', 'pt-irs');
   await page.waitForTimeout(200);
   await check('escolher IRS troca os campos do formulário', async () =>
     (await page.locator('[role="dialog"] label:has-text("Ano fiscal")').count()) === 1 &&
     (await page.locator('[role="dialog"] label:has-text("Nº da declaração")').count()) === 1);
   await check('o nome já digitado sobrevive à troca de tipo', async () =>
-    (await page.locator('input[placeholder="GitHub PAT — CI eQuantic"]').inputValue()) === 'IRS 2025');
+    (await page.locator('input[aria-label="Nome"]').inputValue()) === 'IRS 2025');
   await page.locator('label:has-text("Ano fiscal") input').first().fill('2025');
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("IRS 2025")', { timeout: 5000 });
@@ -1333,7 +1343,7 @@ const run = async () => {
   // stands in for the user answering "não".
   await phone.click('aside footer button:has-text("Editar")');
   await phone.waitForSelector('[role="dialog"]', { timeout: 5000 });
-  await phone.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'Cartão renomeado');
+  await phone.fill('input[aria-label="Nome"]', 'Cartão renomeado');
   await dragSheetDown();
   await phone.waitForTimeout(400);
   await check('formulário sujo pede confirmação antes de fechar', async () =>

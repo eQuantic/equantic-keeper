@@ -22,7 +22,15 @@ import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
 import { GeneratorDialog } from './Generator';
 
-function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+function TagEditor({
+  tags,
+  onChange,
+  placeholder,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+  placeholder: string;
+}) {
   const [draft, setDraft] = useState('');
 
   const commit = () => {
@@ -58,7 +66,7 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string
           }
         }}
         onBlur={commit}
-        placeholder={tags.length ? '' : 'produção, cliente-x, urgente'}
+        placeholder={tags.length ? '' : placeholder}
         className="min-w-24 flex-1 bg-transparent px-1 py-1 text-sm text-ink outline-none placeholder:text-faint"
       />
     </div>
@@ -183,6 +191,8 @@ export function ItemEditor({
    * uses Keeper purely for API tokens never sees the field.
    */
   const showHolder = type.category === 'doc' || people.length > 0 || !!draft.holderId;
+  /** Placeholders follow the subject: a declaration form suggests declarations. */
+  const isDoc = type.category === 'doc';
   const patch = (changes: Partial<VaultItem>) => {
     dirtyRef.current = true;
     setDraft((current) => ({ ...current, ...changes }));
@@ -301,9 +311,10 @@ export function ItemEditor({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome">
             <TextInput
+              aria-label="Nome"
               value={draft.name}
               onChange={(event) => patch({ name: event.target.value })}
-              placeholder="GitHub PAT — CI eQuantic"
+              placeholder={type.namePlaceholder ?? type.label}
               autoFocus
             />
           </Field>
@@ -311,7 +322,7 @@ export function ItemEditor({
             <TextInput
               value={draft.folder}
               onChange={(event) => patch({ folder: event.target.value })}
-              placeholder="Infra"
+              placeholder={isDoc ? 'Documentos' : 'Infra'}
               list="keeper-folders"
             />
           </Field>
@@ -377,12 +388,16 @@ export function ItemEditor({
           <TextInput
             value={draft.description}
             onChange={(event) => patch({ description: event.target.value })}
-            placeholder="Para que serve, onde é usado…"
+            placeholder={isDoc ? 'Onde está o original, para que serviu…' : 'Para que serve, onde é usado…'}
           />
         </Field>
 
         <Field label="Tags">
-          <TagEditor tags={draft.tags} onChange={(tags) => patch({ tags })} />
+          <TagEditor
+            tags={draft.tags}
+            onChange={(tags) => patch({ tags })}
+            placeholder={isDoc ? 'renovar, viagem, família' : 'produção, cliente-x, urgente'}
+          />
         </Field>
 
         <div className="border-t border-line-soft pt-4">
