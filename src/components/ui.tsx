@@ -359,7 +359,8 @@ export function Modal({
             <IconButton icon="x" label="Fechar" onClick={onClose} />
           </header>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {/* overflow-x-hidden: a too-wide child must never pan the whole sheet sideways. */}
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">{children}</div>
         {footer ? (
           <footer className="flex items-center justify-end gap-2 border-t border-line bg-raised/50 px-5 py-3">
             {footer}
