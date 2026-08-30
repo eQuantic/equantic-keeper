@@ -298,19 +298,22 @@ describe('folders in the payload', () => {
   });
 
   it('normalizes junk out and keeps the freshest duplicate of a name', () => {
+    // Timestamps are pinned once: daysAgo() re-called in the assertion can
+    // land 1ms later and flake.
+    const fresh = daysAgo(1);
     const raw = {
       ...emptyPayload(),
       folders: [
         folder('Fiscal', daysAgo(5)),
-        folder('Fiscal', daysAgo(1)),
-        folder('  ', daysAgo(1)),
+        folder('Fiscal', fresh),
+        folder('  ', fresh),
         { nope: true },
         folder('  Infra ', daysAgo(2)),
       ],
     };
     const normalized = normalizePayload(raw);
     expect(normalized.folders.map((entry) => entry.name).sort()).toEqual(['Fiscal', 'Infra']);
-    expect(normalized.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(daysAgo(1));
+    expect(normalized.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(fresh);
   });
 
   it('vaults without the field still open', () => {
@@ -319,11 +322,12 @@ describe('folders in the payload', () => {
   });
 
   it('merges by name with most-recent-wins', () => {
-    const local = { ...emptyPayload(), folders: [folder('Fiscal', daysAgo(1))] };
+    const fresh = daysAgo(1);
+    const local = { ...emptyPayload(), folders: [folder('Fiscal', fresh)] };
     const remote = { ...emptyPayload(), folders: [folder('Fiscal', daysAgo(3)), folder('Clientes', daysAgo(2))] };
     const merged = mergePayloads(local, remote);
     expect(merged.folders.map((entry) => entry.name).sort()).toEqual(['Clientes', 'Fiscal']);
-    expect(merged.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(daysAgo(1));
+    expect(merged.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(fresh);
   });
 
   it('a newer tombstone deletes across devices; activeFolders hides it', () => {

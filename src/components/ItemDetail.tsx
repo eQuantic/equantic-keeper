@@ -1,7 +1,9 @@
 /** Read-only view of a single secret. */
+import { useState } from 'react';
 import { DEFAULT_WARNING_DAYS, describeExpiry, isExpiryField, statusOf } from '../lib/expiry';
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
 import { Badge, Button, IconButton } from './ui';
+import { ShareDialog } from './ShareDialog';
 import { Icon } from './icons';
 import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
@@ -67,6 +69,7 @@ export function ItemDetail({
   onClose: () => void;
 }) {
   const { actions, payload } = useKeeper();
+  const [sharing, setSharing] = useState(false);
   const type = getType(item.type);
   const conceal = payload?.preferences.concealSecrets ?? true;
   const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
@@ -107,6 +110,7 @@ export function ItemDetail({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton icon="share" label="Compartilhar" onClick={() => setSharing(true)} />
           <IconButton
             icon="star"
             label={item.favorite ? 'Remover dos favoritos' : 'Favoritar'}
@@ -242,6 +246,8 @@ export function ItemDetail({
           </>
         )}
       </footer>
+
+      {sharing ? <ShareDialog item={item} onClose={() => setSharing(false)} /> : null}
     </div>
   );
 }
