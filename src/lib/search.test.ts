@@ -66,6 +66,27 @@ describe('matches', () => {
   it('matches everything on an empty query', () => {
     expect(matches(items[0]!, '   ')).toBe(true);
   });
+
+  it('reaches a document through its type, not only its own text', () => {
+    // "título de residência" never says AIMA on the item; the type does.
+    expect(matches(items[3]!, 'SEF')).toBe(true);
+    expect(matches(items[3]!, 'imigração')).toBe(true);
+  });
+
+  it('finds a form by the name the person actually uses', () => {
+    const liveBirth = make({ id: '6', type: 'declaracao-nado-vivo', name: 'Do bebê' });
+    // The label is the official "nascido vivo"; these are what people type.
+    expect(matches(liveBirth, 'nato vivo')).toBe(true);
+    expect(matches(liveBirth, 'nado vivo')).toBe(true);
+    expect(matches(liveBirth, 'DNV')).toBe(true);
+
+    const payslip = make({ id: '7', type: 'recibo-vencimento', name: 'Agosto' });
+    expect(matches(payslip, 'holerite')).toBe(true);
+    expect(matches(payslip, 'contracheque')).toBe(true);
+
+    const cpf = items[4]!;
+    expect(matches(cpf, 'receita federal')).toBe(true);
+  });
 });
 
 describe('applyFilters', () => {

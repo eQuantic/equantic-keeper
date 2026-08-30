@@ -31,7 +31,8 @@ export const EMPTY_FILTERS: Filters = {
 
 export type SortMode = 'updated' | 'name' | 'created' | 'type';
 
-function normalize(value: string): string {
+/** Lowercase and strip accents: "residencia" must find "residência". */
+export function normalizeSearchText(value: string): string {
   return value
     .toLocaleLowerCase('pt-BR')
     .normalize('NFD')
@@ -44,7 +45,18 @@ function normalize(value: string): string {
  */
 function haystack(item: VaultItem, holderName = ''): string {
   const type = getType(item.type);
-  const parts = [item.name, item.description, item.folder, type.label, type.group, holderName, ...item.tags];
+  const parts = [
+    item.name,
+    item.description,
+    item.folder,
+    type.label,
+    type.group,
+    holderName,
+    ...item.tags,
+    // Aliases: "holerite" must find a recibo de vencimento, "nato vivo" the
+    // nascido vivo declaration, "carteira de motorista" every country's licence.
+    ...(type.keywords ?? []),
+  ];
   for (const field of type.fields) {
     if (!isSecretKind(field.kind)) {
       const value = item.fields[field.id];
@@ -55,11 +67,11 @@ function haystack(item: VaultItem, holderName = ''): string {
     parts.push(custom.label);
     if (!custom.secret) parts.push(custom.value);
   }
-  return normalize(parts.join(' '));
+  return normalizeSearchText(parts.join(' '));
 }
 
 export function matches(item: VaultItem, query: string, holderName = ''): boolean {
-  const terms = normalize(query).split(/\s+/).filter(Boolean);
+  const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
   const hay = haystack(item, holderName);
   return terms.every((term) => hay.includes(term));
@@ -67,12 +79,12 @@ export function matches(item: VaultItem, query: string, holderName = ''): boolea
 
 export function scoreItem(item: VaultItem, query: string): number {
   if (!query) return 0;
-  const name = normalize(item.name);
-  const q = normalize(query);
+  const name = normalizeSearchText(item.name);
+  const q = normalizeSearchText(query);
   if (name === q) return 100;
   if (name.startsWith(q)) return 80;
   if (name.includes(q)) return 60;
-  if (item.tags.some((tag) => normalize(tag).includes(q))) return 40;
+  if (item.tags.some((tag) => normalizeSearchText(tag).includes(q))) return 40;
   return 10;
 }
 

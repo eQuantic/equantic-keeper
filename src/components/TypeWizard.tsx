@@ -8,6 +8,7 @@
 import { useMemo, useState } from 'react';
 import { getAllTypes, getType, type SecretTypeDef } from '../lib/model';
 import { DOCUMENT_ORIGINS, GENERAL_GROUP } from '../lib/documents';
+import { normalizeSearchText } from '../lib/search';
 import { loadRecentTypes } from '../lib/storage';
 import { TypeBuilder } from './TypeBuilder';
 import { Icon } from './icons';
@@ -18,7 +19,10 @@ type Step = { kind: 'root' } | { kind: 'dev' } | { kind: 'origin' } | { kind: 't
 
 function matches(type: SecretTypeDef, needle: string): boolean {
   if (!needle) return true;
-  return `${type.label} ${type.description} ${type.group}`.toLocaleLowerCase('pt-BR').includes(needle);
+  // Keywords included on purpose: someone looking for a payslip types
+  // "holerite", and the form is called "Recibo de vencimento".
+  const hay = [type.label, type.description, type.group, ...(type.keywords ?? [])].join(' ');
+  return normalizeSearchText(hay).includes(needle);
 }
 
 function TypeRow({ type, onPick }: { type: SecretTypeDef; onPick: (typeId: string) => void }) {
@@ -120,7 +124,7 @@ export function TypeWizard({
   useCloseOnBack(step.kind !== 'root', goBack);
   useCloseOnBack(step.kind === 'types', goBack);
 
-  const needle = query.trim().toLocaleLowerCase('pt-BR');
+  const needle = normalizeSearchText(query.trim());
 
   if (builder) {
     return (
@@ -197,8 +201,8 @@ export function TypeWizard({
         ...origin,
         count: docTypes.filter((type) => type.group === origin.group).length,
       }))
-      .filter((origin) => origin.count > 0 && (!needle || origin.group.toLocaleLowerCase('pt-BR').includes(needle)));
-    const generalVisible = !needle || GENERAL_GROUP.toLocaleLowerCase('pt-BR').includes(needle);
+      .filter((origin) => origin.count > 0 && (!needle || normalizeSearchText(origin.group).includes(needle)));
+    const generalVisible = !needle || normalizeSearchText(GENERAL_GROUP).includes(needle);
     body = (
       <>
         {search('Buscar país…')}

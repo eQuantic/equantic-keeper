@@ -69,6 +69,22 @@ describe('catálogo de tipos', () => {
     ]);
   });
 
+  it('não repete palavras-chave dentro de um tipo nem guarda vazios', () => {
+    for (const type of DOCUMENT_TYPES) {
+      const keywords = type.keywords ?? [];
+      expect(new Set(keywords).size, `palavras-chave duplicadas em ${type.id}`).toBe(keywords.length);
+      expect(keywords.every((word) => word.trim().length > 1), `palavra-chave vazia em ${type.id}`).toBe(true);
+    }
+  });
+
+  it('usa o nome oficial da declaração de nascido vivo, com os apelidos na busca', () => {
+    const type = DOCUMENT_TYPES.find((candidate) => candidate.id === 'declaracao-nado-vivo');
+    // Oficialmente "nado-vivo" em Portugal e "nascido vivo" (DNV) no Brasil;
+    // "nato vivo" é a forma falada, e precisa encontrar o documento na busca.
+    expect(type?.label).toBe('Declaração de nascido vivo');
+    expect(type?.keywords).toEqual(expect.arrayContaining(['nado-vivo', 'nato vivo', 'DNV']));
+  });
+
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {
     const ids = DOCUMENT_TYPES.map((type) => type.id);
     expect(ids).toEqual(

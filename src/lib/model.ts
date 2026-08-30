@@ -37,6 +37,13 @@ export interface SecretTypeDef {
   icon: string;
   /** CSS color token used for the type badge. */
   accent: string;
+  /**
+   * Extra search terms for this type: the other country's name for the same
+   * paper (holerite/recibo de vencimento, IPTU/IMI), the colloquial spelling
+   * someone will actually type, the acronym. Never rendered — the point is
+   * that the document is reachable by whatever the person calls it.
+   */
+  keywords?: string[];
   fields: FieldDef[];
 }
 
