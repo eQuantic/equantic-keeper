@@ -365,6 +365,38 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     ],
   },
   {
+    id: 'recibo-vencimento',
+    label: 'Recibo de vencimento',
+    group: 'Geral',
+    category: 'doc',
+    description: 'Um por mês — holerite/contracheque no Brasil. Processos de crédito pedem os últimos três.',
+    icon: 'note',
+    accent: '#4ade80',
+    fields: [
+      { id: 'empregador', label: 'Empregador', kind: 'text' },
+      { id: 'mes', label: 'Mês de referência', kind: 'text', placeholder: '2026-08' },
+      { id: 'bruto', label: 'Vencimento bruto', kind: 'text' },
+      { id: 'liquido', label: 'Líquido recebido', kind: 'text' },
+    ],
+  },
+  {
+    id: 'contrato-trabalho',
+    label: 'Contrato de trabalho',
+    group: 'Geral',
+    category: 'doc',
+    description: 'Empregador, função, tipo e datas — o termo certo entra nos alertas.',
+    icon: 'badge',
+    accent: '#60a5fa',
+    fields: [
+      { id: 'empregador', label: 'Empregador', kind: 'text' },
+      { id: 'funcao', label: 'Função / cargo', kind: 'text' },
+      { id: 'tipoContrato', label: 'Tipo de contrato', kind: 'text', placeholder: 'Sem termo · Termo certo · Recibos verdes' },
+      { id: 'inicio', label: 'Início', kind: 'date' },
+      { id: 'expiresAt', label: 'Termina em', kind: 'date', hint: 'Vazio para contratos sem termo' },
+      { id: 'vencimento', label: 'Vencimento acordado', kind: 'text' },
+    ],
+  },
+  {
     // Last resort only: the platform's promise is a SPECIFIC form per document
     // kind (see the types above). This one exists so an unforeseen declaration
     // still gets structured fields instead of a loose file.
@@ -560,6 +592,24 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret' },
       { id: 'finalidade', label: 'Finalidade', kind: 'text' },
+    ],
+  },
+  {
+    id: 'pt-imi',
+    label: 'IMI',
+    group: 'Portugal',
+    category: 'doc',
+    description: 'Nota de cobrança anual do imóvel — VPT, valor e prestações.',
+    icon: 'home',
+    accent: '#f472b6',
+    fields: [
+      { id: 'ano', label: 'Ano', kind: 'text', numeric: true },
+      { id: 'imovel', label: 'Imóvel', kind: 'text', placeholder: 'Morada · artigo matricial' },
+      { id: 'vpt', label: 'Valor patrimonial (VPT)', kind: 'text' },
+      { id: 'valor', label: 'Valor do imposto', kind: 'text' },
+      { id: 'prestacoes', label: 'Prestações', kind: 'text', placeholder: 'Maio · Agosto · Novembro' },
+      { id: 'expiresAt', label: 'Pagar até', kind: 'date', hint: 'Prazo da próxima prestação — alimenta os alertas' },
+      { id: 'referencia', label: 'Referência de pagamento', kind: 'text' },
     ],
   },
 
