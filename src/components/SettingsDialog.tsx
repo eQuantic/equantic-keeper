@@ -146,7 +146,16 @@ function PeopleSection() {
 }
 
 const selectClass =
-  'rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3 pointer-coarse:py-2.5';
+  'min-w-0 max-w-full rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3 pointer-coarse:py-2.5';
+
+/*
+ * A `select` refuses to shrink below its widest option, so on narrow phones
+ * (320–375px: mini, SE, Display Zoom) a roomy row overflows the sheet and the
+ * whole content pans sideways. These rows wrap instead: the control drops to
+ * its own line, right-aligned, iOS-Settings style.
+ */
+const prefRowClass = 'flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 py-2 text-sm text-ink';
+const prefLabelClass = 'min-w-0 flex-1 basis-48';
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
@@ -289,8 +298,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
       <Section title="Segurança">
         <div className="space-y-1">
-          <label className="flex items-center justify-between gap-4 py-2 text-sm text-ink">
-            <span>
+          <label className={prefRowClass}>
+            <span className={prefLabelClass}>
               Bloquear automaticamente
               <span className="mt-0.5 block text-xs text-muted">
                 {prefs.autoLockMinutes === 0
@@ -299,7 +308,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </span>
             </span>
             <select
-              className={selectClass}
+              className={`${selectClass} ml-auto`}
               aria-label="Bloquear automaticamente"
               value={prefs.autoLockMinutes}
               onChange={(event) => void actions.updatePreferences({ autoLockMinutes: Number(event.target.value) })}
@@ -312,13 +321,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <option value={0}>Nunca (não recomendado)</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-4 py-2 text-sm text-ink">
-            <span>
+          <label className={prefRowClass}>
+            <span className={prefLabelClass}>
               Limpar área de transferência
               <span className="mt-0.5 block text-xs text-muted">Após copiar um segredo.</span>
             </span>
             <select
-              className={selectClass}
+              className={`${selectClass} ml-auto`}
               aria-label="Limpar área de transferência"
               value={prefs.clipboardClearSeconds}
               onChange={(event) =>
@@ -331,15 +340,15 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <option value={0}>Não limpar</option>
             </select>
           </label>
-          <label className="flex items-center justify-between gap-4 py-2 text-sm text-ink">
-            <span>
+          <label className={prefRowClass}>
+            <span className={prefLabelClass}>
               Avisar sobre validade
               <span className="mt-0.5 block text-xs text-muted">
                 Com quanta antecedência um documento aparece como “vence em breve”.
               </span>
             </span>
             <select
-              className={selectClass}
+              className={`${selectClass} ml-auto`}
               aria-label="Avisar sobre validade"
               value={prefs.expiryWarningDays}
               onChange={(event) =>
@@ -362,8 +371,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
         {biometricAvailable ? (
           biometricEnrolled ? (
-            <div className="mt-3 flex items-center justify-between gap-4 rounded-lg border border-line bg-canvas p-3">
-              <span className="min-w-0 text-sm text-ink">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-line bg-canvas p-3">
+              <span className="min-w-0 flex-1 basis-48 text-sm text-ink">
                 <span className="flex items-center gap-2">
                   <Icon name="fingerprint" size={15} /> Desbloqueio por biometria
                 </span>
@@ -371,7 +380,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   Ativado neste dispositivo. A senha mestra continua valendo em todos.
                 </span>
               </span>
-              <Button size="sm" variant="ghost" onClick={actions.disableBiometrics}>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={actions.disableBiometrics}>
                 Desativar
               </Button>
             </div>
@@ -465,10 +474,10 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       </Section>
 
       <Section title="Aparência">
-        <div className="flex items-center justify-between gap-4 py-1 text-sm text-ink">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 py-1 text-sm text-ink">
           <span>Tema</span>
           <select
-            className={selectClass}
+            className={`${selectClass} ml-auto`}
             aria-label="Tema"
             value={prefs.theme}
             onChange={(event) =>

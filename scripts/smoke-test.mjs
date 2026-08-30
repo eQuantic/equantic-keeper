@@ -902,6 +902,20 @@ const run = async () => {
   await check('duplo toque não dispara zoom (touch-action)', async () =>
     (await phone.evaluate(() => getComputedStyle(document.body).touchAction)) === 'manipulation');
 
+  // The settings sheet must fit the narrowest phones (320px: SE, Display
+  // Zoom): a select wider than its row used to pan the whole sheet sideways.
+  await phone.setViewportSize({ width: 320, height: 660 });
+  await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Ajustes")');
+  await phone.waitForSelector('[role="dialog"]', { timeout: 5000 });
+  await check('Configurações cabem sem rolagem lateral a 320px', async () =>
+    phone.evaluate(() => {
+      const scroller = document.querySelector('[role="dialog"] .overflow-y-auto');
+      return scroller.scrollWidth <= scroller.clientWidth;
+    }));
+  await phone.click('[role="dialog"] button[aria-label="Fechar"]');
+  await phone.waitForTimeout(300);
+  await phone.setViewportSize({ width: 390, height: 844 });
+
   // The thumb-reach bar carries the primary commands on phones — and the
   // header must not repeat them (a regression here squeezes the search box).
   await check('barra inferior traz os comandos principais', async () =>

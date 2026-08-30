@@ -126,7 +126,7 @@ export function ItemDetail({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2 pointer-coarse:pt-3 pointer-coarse:pb-4">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-2 pointer-coarse:pt-3 pointer-coarse:pb-4">
         {item.type === 'cartao-credito' ? <CardVisual item={item} /> : null}
         {item.description ? (
           <p className="border-b border-line-soft py-3 text-sm leading-relaxed text-muted">{item.description}</p>

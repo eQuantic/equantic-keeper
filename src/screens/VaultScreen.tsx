@@ -652,7 +652,7 @@ export function VaultScreen() {
 
           <PullToSync
             enabled={coarsePointer}
-            className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]"
             onSync={async () => {
               if (!connected) {
                 actions.notify('Sem conexão com o Drive — conecte a conta nas Configurações para sincronizar.');
