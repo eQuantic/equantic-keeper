@@ -1019,6 +1019,45 @@ const run = async () => {
   await page.fill('input[type="search"]', '');
   await page.waitForTimeout(200);
 
+  // 11c-quater. Filing by drag: a row dropped on a folder or a person in the
+  // sidebar moves it there. Mouse only — touch keeps the swipe gesture.
+  await page.locator('nav button:has-text("Tudo")').first().click();
+  await page.waitForTimeout(200);
+  // The gesture is driven with real DragEvents and a real DataTransfer: a
+  // headless browser never runs its native drag loop, so Playwright's own
+  // dragTo (and a hand-rolled mouse sequence) fire nothing here. This still
+  // exercises the app's whole path — dragstart, dragover, drop, the write.
+  const drag = (name, targetSelector) =>
+    page.evaluate(
+      ([itemName, selector]) => {
+        const row = [...document.querySelectorAll('main li div[draggable="true"]')].find((node) =>
+          node.textContent?.includes(itemName),
+        );
+        const target = document.querySelector(selector);
+        if (!row || !target) return false;
+        const dataTransfer = new DataTransfer();
+        row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+        target.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }));
+        target.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }));
+        row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+        return true;
+      },
+      [name, targetSelector],
+    );
+
+  const folderTarget = page.locator('nav [data-drop-target^="folder:"]').first();
+  const folderName = ((await folderTarget.getAttribute('data-drop-target')) ?? '').replace('folder:', '');
+  await check('a linha da lista é arrastável no desktop', async () =>
+    (await page.locator('main li div[draggable="true"]').count()) > 0 && folderName.length > 0);
+  await drag('IRS 2025', 'nav [data-drop-target^="folder:"]');
+  await page.waitForTimeout(400);
+  await check('arrastar a linha para a pasta arquiva o item', async () =>
+    (await page.locator(`main li:has-text("IRS 2025") >> text=${folderName}`).count()) === 1);
+  await drag('IRS 2025', 'nav [data-drop-target^="person:"]');
+  await page.waitForTimeout(400);
+  await check('arrastar a linha para a pessoa define o titular', async () =>
+    (await page.locator('main li:has-text("IRS 2025") >> text=Maria Teste').count()) === 1);
+
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.

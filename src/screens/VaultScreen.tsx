@@ -86,6 +86,13 @@ export function VaultScreen() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
   const [addingFolder, setAddingFolder] = useState(false);
+  /**
+   * Dragging a row onto a folder or a person files it there. Mouse only: on
+   * touch the horizontal swipe already owns the gesture, and the sidebar is a
+   * drawer that is not even on screen while the list is.
+   */
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const { copy } = useCopy();
@@ -126,6 +133,18 @@ export function VaultScreen() {
   // how people dismiss them; dialogs get the same treatment inside Modal.
   useCloseOnBack(sidebarOpen, () => setSidebarOpen(false));
   useCloseOnBack(!!selected, () => setSelectedId(null));
+
+  /** Files the dragged item under a folder or a person, and says so. */
+  const dropOnto = (itemId: string, change: Partial<VaultItem>, where: string) => {
+    setDragging(null);
+    setDropTarget(null);
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const [key, value] = Object.entries(change)[0] as [keyof VaultItem, string];
+    if (item[key] === value) return;
+    void actions.saveItem({ ...item, ...change });
+    actions.notify(`“${item.name || 'Sem título'}” em ${where}.`);
+  };
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -276,6 +295,8 @@ export function VaultScreen() {
     activeState,
     onClick,
     accent,
+    dropKey,
+    onDropItem,
   }: {
     icon: string;
     label: string;
@@ -283,19 +304,52 @@ export function VaultScreen() {
     activeState: boolean;
     onClick: () => void;
     accent?: string;
-  }) => (
+    /** Identifies this entry as a drop target while a row is being dragged. */
+    dropKey?: string;
+    onDropItem?: (itemId: string) => void;
+  }) => {
+    const armed = !!dragging && !!dropKey;
+    const over = armed && dropTarget === dropKey;
+    return (
     <button
       type="button"
       onClick={onClick}
+      data-drop-target={dropKey}
+      onDragOver={
+        onDropItem
+          ? (event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              if (dropTarget !== dropKey) setDropTarget(dropKey ?? null);
+            }
+          : undefined
+      }
+      onDragLeave={onDropItem ? () => setDropTarget((current) => (current === dropKey ? null : current)) : undefined}
+      onDrop={
+        onDropItem
+          ? (event) => {
+              event.preventDefault();
+              const itemId = event.dataTransfer.getData('text/plain');
+              if (itemId) onDropItem(itemId);
+            }
+          : undefined
+      }
       className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition pointer-coarse:py-2.5 ${
-        activeState ? 'bg-accent/12 text-ink' : 'text-muted hover:bg-raised hover:text-ink'
+        over
+          ? 'bg-accent/25 text-ink ring-2 ring-accent'
+          : armed
+            ? 'text-muted ring-1 ring-line ring-dashed'
+            : activeState
+              ? 'bg-accent/12 text-ink'
+              : 'text-muted hover:bg-raised hover:text-ink'
       }`}
     >
       <Icon name={icon} size={15} style={accent ? { color: accent } : undefined} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count !== undefined ? <span className="text-xs text-faint tabular-nums">{count}</span> : null}
     </button>
-  );
+    );
+  };
 
   const BarAction = ({
     icon,
@@ -415,6 +469,8 @@ export function VaultScreen() {
                 onClick={() =>
                   setFilter({ ...EMPTY_FILTERS, holderId: person.id, query: filters.query })
                 }
+                dropKey={`person:${person.id}`}
+                onDropItem={(itemId) => dropOnto(itemId, { holderId: person.id }, `nome de ${person.name}`)}
               />
             ))}
           </div>
@@ -506,6 +562,8 @@ export function VaultScreen() {
                 count={count}
                 activeState={filters.folder === folder}
                 onClick={() => setFilter({ ...EMPTY_FILTERS, folder, query: filters.query })}
+                dropKey={`folder:${folder}`}
+                onDropItem={(itemId) => dropOnto(itemId, { folder }, `“${folder}”`)}
               />
               {count === 0 && explicitFolders.has(folder) ? (
                 <button
@@ -749,6 +807,16 @@ export function VaultScreen() {
                         role="button"
                         tabIndex={0}
                         data-row-selected={selectedId === item.id || undefined}
+                        draggable={!coarsePointer}
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData('text/plain', item.id);
+                          event.dataTransfer.effectAllowed = 'move';
+                          setDragging(item.id);
+                        }}
+                        onDragEnd={() => {
+                          setDragging(null);
+                          setDropTarget(null);
+                        }}
                         onClick={() => setSelectedId(item.id)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
