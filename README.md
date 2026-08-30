@@ -79,13 +79,18 @@ wraps the vault's master bits into a record kept in `localStorage`.
 - **12 secret types** with purpose-built fields: API Token, API Client/Secret, Username and
   password, Container Registry, Cloud/Provider, SSH Key, Database, Variables/`.env`,
   Certificate, Webhook, License and Secure note — plus custom fields on any item.
-- **21 personal document types**, each with the fields that document actually has:
+- **45 personal document types**, each with the fields that document actually has:
   - *Portugal*: residence permit (per issuance, with issuing entity, process number and
     validity), Cartão de Cidadão, NIF, NISS, health service number, criminal record,
-    proof of address and lease agreement.
+    proof of address, lease agreement, driving licence and civil-registry certificate
+    (with the online access code kept as a secret).
   - *Brazil*: CPF, RG, CNH, voter registration, civil registry certificates (birth,
     marriage, death — with matrícula, registry office, book/page/term and apostille),
     criminal background check and CTPS.
+  - *Spain, United States, France, Germany, Italy, United Kingdom*: the national ID,
+    residence permit, social-security/tax number and driving licence of each — DNI,
+    NIE/TIE, SSN (kept as a secret), Green Card, Titre de Séjour, Personalausweis,
+    Steuer-ID, Codice Fiscale, NI Number, BRP/eVisa…
   - *General*: passport, visa, diploma, vaccination card, health insurance and a generic type.
 - **Holders**: every item can belong to a person (you, your spouse, your children). The
   sidebar filters by person and search finds a document by the person's name, which is not

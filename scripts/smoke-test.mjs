@@ -391,8 +391,14 @@ const run = async () => {
     (await page.locator('[role="dialog"] button:has-text("Geral — qualquer país")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Portugal")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Brasil")').count()) === 1);
+  await check('a expansão traz os novos países', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Espanha")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Reino Unido")').count()) === 1);
   await page.click('[role="dialog"] button:has-text("Portugal")');
   await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await check('Portugal ganhou os tipos novos', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Carta de Condução")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Certidão (registo civil)")').count()) === 1);
   await page.fill('input[placeholder*="Filtrar tipos"]', 'residência');
   await page.waitForTimeout(200);
   await check('filtro do seletor de tipos reduz a lista', async () => {
