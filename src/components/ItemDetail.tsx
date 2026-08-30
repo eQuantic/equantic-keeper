@@ -4,6 +4,7 @@ import { DEFAULT_WARNING_DAYS, describeExpiry, isExpiryField, statusOf } from '.
 import { getType, isMultilineKind, isSecretKind, type VaultItem } from '../lib/model';
 import { Badge, Button, IconButton } from './ui';
 import { ShareDialog } from './ShareDialog';
+import { CardVisual } from './CardVisual';
 import { Icon } from './icons';
 import { AttachmentList } from './Attachments';
 import { SecretValue, TotpCode } from './SecretValue';
@@ -74,7 +75,10 @@ export function ItemDetail({
   const conceal = payload?.preferences.concealSecrets ?? true;
   const warningDays = payload?.preferences.expiryWarningDays ?? DEFAULT_WARNING_DAYS;
   const holder = payload?.people.find((person) => person.id === item.holderId && !person.deletedAt);
-  const filled = type.fields.filter((field) => (item.fields[field.id] ?? '').trim().length > 0);
+  // `cardColor` is presentation for the card visual, never a field row.
+  const filled = type.fields.filter(
+    (field) => field.id !== 'cardColor' && (item.fields[field.id] ?? '').trim().length > 0,
+  );
   const extras = Object.entries(item.fields).filter(
     ([key, value]) => value?.trim() && !type.fields.some((field) => field.id === key),
   );
@@ -123,6 +127,7 @@ export function ItemDetail({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2 pointer-coarse:pt-3 pointer-coarse:pb-4">
+        {item.type === 'cartao-credito' ? <CardVisual item={item} /> : null}
         {item.description ? (
           <p className="border-b border-line-soft py-3 text-sm leading-relaxed text-muted">{item.description}</p>
         ) : null}

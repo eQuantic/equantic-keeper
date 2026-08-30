@@ -93,7 +93,10 @@ wraps the vault's master bits into a record kept in `localStorage`.
     Steuer-ID, Codice Fiscale, NI Number, BRP/eVisa…
   - *General*: passport, visa, diploma, vaccination card, health insurance, **credit/debit
     card** (holder, number, CVC, PIN and purchase password concealed — with the numeric
-    keypad — and the expiry wired to the alerts) and a generic type.
+    keypad — and the expiry wired to the alerts; the detail draws the card itself: tap to
+    flip to the back where the CVC copies with a tap, the network wordmark is detected
+    offline from the number prefix, and the face color is customizable per card) and a
+    generic type.
 - **Holders**: every item can belong to a person (you, your spouse, your children). The
   sidebar filters by person and search finds a document by the person's name, which is not
   stored on the item. Removing a person never deletes their documents — they just lose

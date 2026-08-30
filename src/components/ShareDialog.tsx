@@ -27,7 +27,7 @@ function shareableFields(item: VaultItem): ShareField[] {
   const fields: ShareField[] = [];
   for (const field of type.fields) {
     const value = (item.fields[field.id] ?? '').trim();
-    if (!value || field.kind === 'totp') continue;
+    if (!value || field.kind === 'totp' || field.id === 'cardColor') continue;
     fields.push({ label: field.label, value, secret: isSecretKind(field.kind) });
   }
   for (const field of item.customFields) {
