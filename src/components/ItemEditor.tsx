@@ -90,6 +90,7 @@ function FieldInput({
       placeholder={field.placeholder ?? ''}
       autoComplete="off"
       spellCheck={false}
+      inputMode={field.numeric ? 'numeric' : undefined}
       revealLabel="Revelar"
       hideLabel="Ocultar"
     />
