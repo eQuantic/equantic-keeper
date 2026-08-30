@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { SECRET_TYPES, getType, isSecretKind, type VaultItem } from '../lib/model';
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
-import { activeItems, activePeople, trashedItems } from '../lib/vault';
+import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
-import { Badge, Button, EmptyState, IconButton, Kbd } from '../components/ui';
+import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
 import { ItemDetail } from '../components/ItemDetail';
 import { ItemEditor } from '../components/ItemEditor';
@@ -78,6 +78,8 @@ export function VaultScreen() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [newFolder, setNewFolder] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const { copy } = useCopy();
   // Gestures are a touch affordance; a mouse keeps its buttons and hovers.
@@ -95,7 +97,20 @@ export function VaultScreen() {
     [items, filters, sort, holderNames, warningDays],
   );
   const tags = useMemo(() => collectTags(items), [items]);
-  const folders = useMemo(() => collectFolders(items), [items]);
+  const folders = useMemo(() => {
+    const byName = new Map(collectFolders(items).map((entry) => [entry.folder, entry.count]));
+    for (const folder of activeFolders(payload?.folders ?? [])) {
+      if (!byName.has(folder.name)) byName.set(folder.name, 0);
+    }
+    return [...byName.entries()]
+      .map(([folder, count]) => ({ folder, count }))
+      .sort((a, b) => a.folder.localeCompare(b.folder, 'pt-BR'));
+  }, [items, payload]);
+  /** Only an explicitly created record can be removed from the sidebar. */
+  const explicitFolders = useMemo(
+    () => new Set(activeFolders(payload?.folders ?? []).map((folder) => folder.name)),
+    [payload],
+  );
   const active = useMemo(() => activeItems(items), [items]);
   const trashed = useMemo(() => trashedItems(items), [items]);
   const selected = items.find((item) => item.id === selectedId) ?? null;
@@ -402,23 +417,74 @@ export function VaultScreen() {
         <p className="px-2.5 text-xs text-faint">Nenhum item ainda.</p>
       ) : null}
 
-      {folders.length > 0 ? (
-        <div>
-          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Pastas</p>
-          <div className="space-y-0.5">
-            {folders.map(({ folder, count }) => (
+      <div>
+        <div className="mb-1 flex items-center justify-between pr-1.5">
+          <p className="px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Pastas</p>
+          <button
+            type="button"
+            aria-label="Nova pasta"
+            onClick={() => {
+              setAddingFolder((open) => !open);
+              setNewFolder('');
+            }}
+            className="tap-target flex h-6 w-6 items-center justify-center rounded-md text-faint transition hover:bg-raised hover:text-ink"
+          >
+            <Icon name={addingFolder ? 'x' : 'plus'} size={13} />
+          </button>
+        </div>
+        {addingFolder ? (
+          <div className="px-1 pb-1.5">
+            <TextInput
+              autoFocus
+              value={newFolder}
+              onChange={(event) => setNewFolder(event.target.value)}
+              placeholder="Nome da pasta"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  const name = newFolder.trim();
+                  if (name) void actions.saveFolder(name);
+                  setAddingFolder(false);
+                  setNewFolder('');
+                } else if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setAddingFolder(false);
+                  setNewFolder('');
+                }
+              }}
+            />
+          </div>
+        ) : null}
+        <div className="space-y-0.5">
+          {folders.map(({ folder, count }) => (
+            <div key={folder} className="group/folder relative">
               <NavItem
-                key={folder}
                 icon="folder"
                 label={folder}
                 count={count}
                 activeState={filters.folder === folder}
                 onClick={() => setFilter({ ...EMPTY_FILTERS, folder, query: filters.query })}
               />
-            ))}
-          </div>
+              {count === 0 && explicitFolders.has(folder) ? (
+                <button
+                  type="button"
+                  aria-label={`Remover pasta ${folder}`}
+                  onClick={() => {
+                    void actions.removeFolder(folder);
+                    if (filters.folder === folder) setFilter({ ...EMPTY_FILTERS, query: filters.query });
+                  }}
+                  className="tap-target absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-surface text-faint opacity-0 transition group-hover/folder:opacity-100 hover:text-danger focus-visible:opacity-100 pointer-coarse:opacity-100"
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {folders.length === 0 && !addingFolder ? (
+            <p className="px-2.5 text-xs text-faint">Nenhuma pasta ainda.</p>
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
       {tags.length > 0 ? (
         <div>

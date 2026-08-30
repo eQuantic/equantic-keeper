@@ -33,6 +33,7 @@ import {
 } from '../lib/biometric';
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
+import { createFolder } from '../lib/model';
 import type { AttachmentRef, Person, VaultItem } from '../lib/model';
 import {
   cacheAttachment,
@@ -99,6 +100,8 @@ export interface KeeperActions {
   emptyTrash(): Promise<void>;
   toggleFavorite(id: string): Promise<void>;
   savePerson(person: Person): Promise<void>;
+  saveFolder(name: string): Promise<void>;
+  removeFolder(name: string): Promise<void>;
   removePerson(id: string): Promise<void>;
   prepareAttachment(file: File): Promise<AttachmentRef>;
   readAttachment(ref: AttachmentRef): Promise<Blob>;
@@ -657,6 +660,48 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [patchItem],
   );
 
+  const saveFolder = useCallback(
+    (name: string) =>
+      mutate((payload) => {
+        const trimmed = name.trim();
+        if (!trimmed) return payload;
+        const stamp = new Date().toISOString();
+        const existing = payload.folders.find((folder) => folder.name === trimmed);
+        if (existing && !existing.deletedAt) return payload;
+        return {
+          ...payload,
+          folders: existing
+            ? payload.folders.map((folder) =>
+                folder.name === trimmed
+                  ? { name: folder.name, createdAt: folder.createdAt, updatedAt: stamp }
+                  : folder,
+              )
+            : [...payload.folders, createFolder(trimmed)],
+        };
+      }),
+    [mutate],
+  );
+
+  /**
+   * Removes the explicit record only — items referencing the name keep the
+   * derived folder. The UI offers this on empty folders alone.
+   */
+  const removeFolder = useCallback(
+    (name: string) =>
+      mutate((payload) => {
+        const stamp = new Date().toISOString();
+        return {
+          ...payload,
+          folders: payload.folders.map((folder) =>
+            folder.name === name && !folder.deletedAt
+              ? { ...folder, updatedAt: stamp, deletedAt: stamp }
+              : folder,
+          ),
+        };
+      }),
+    [mutate],
+  );
+
   const savePerson = useCallback(
     (person: Person) =>
       mutate((payload) => {
@@ -1020,6 +1065,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       purgeItem,
       emptyTrash,
       toggleFavorite,
+      saveFolder,
+      removeFolder,
       savePerson,
       removePerson,
       prepareAttachment,
@@ -1060,6 +1107,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       readAttachment,
       removePerson,
       restoreItem,
+      saveFolder,
+      removeFolder,
       savePerson,
       saveItem,
       setClientId,

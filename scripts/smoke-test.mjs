@@ -656,7 +656,27 @@ const run = async () => {
   await page.fill('input[type="search"]', '');
   await page.keyboard.press('Escape');
 
-  // 11c. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
+  // 11c. Folders created straight in the sidebar, before any item uses them.
+  await page.click('button[aria-label="Nova pasta"]');
+  await page.fill('input[placeholder="Nome da pasta"]', 'Fiscal');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('nav button:has-text("Fiscal")', { timeout: 5000 });
+  await check('pasta criada na barra lateral aparece vazia', async () =>
+    (await page.locator('nav button:has-text("Fiscal")').innerText()).includes('0'));
+
+  await page.click('nav button:has-text("Fiscal")');
+  await page.waitForTimeout(300);
+  await check('filtrar pela pasta vazia mostra 0 itens', async () =>
+    (await page.locator('main li').count()) === 0);
+  await page.click('nav button:has-text("Tudo")');
+  await page.waitForTimeout(300);
+
+  await page.hover('nav button:has-text("Fiscal")');
+  await page.click('button[aria-label="Remover pasta Fiscal"]');
+  await page.waitForSelector('nav button:has-text("Fiscal")', { state: 'detached', timeout: 5000 });
+  await check('remover a pasta vazia tira a entrada da barra lateral', async () => true);
+
+  // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.
   await page.locator('nav button:has-text("Configurações")').click();

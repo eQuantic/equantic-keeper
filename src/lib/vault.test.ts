@@ -4,6 +4,7 @@ import type { Person, VaultItem } from './model';
 import {
   TOMBSTONE_TTL_DAYS,
   VAULT_VERSION,
+  activeFolders,
   activePeople,
   WrongPasswordError,
   createVault,
@@ -257,11 +258,13 @@ describe('mergePayloads', () => {
     const local = {
       items: [item('a', daysAgo(1))],
       people: [],
+      folders: [],
       preferences: { ...base.preferences, autoLockMinutes: 1 },
     };
     const remote = {
       items: [item('b', daysAgo(20))],
       people: [],
+      folders: [],
       preferences: { ...base.preferences, autoLockMinutes: 60 },
     };
     expect(mergePayloads(local, remote).preferences.autoLockMinutes).toBe(1);
@@ -282,5 +285,60 @@ describe('purgeTombstones', () => {
       now,
     );
     expect(kept.map((entry) => entry.id)).toEqual(['recent', 'alive']);
+  });
+});
+
+describe('folders in the payload', () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const folder = (name: string, updatedAt: string, extra: Partial<import('./model').Folder> = {}) => ({
+    name,
+    createdAt: updatedAt,
+    updatedAt,
+    ...extra,
+  });
+
+  it('normalizes junk out and keeps the freshest duplicate of a name', () => {
+    const raw = {
+      ...emptyPayload(),
+      folders: [
+        folder('Fiscal', daysAgo(5)),
+        folder('Fiscal', daysAgo(1)),
+        folder('  ', daysAgo(1)),
+        { nope: true },
+        folder('  Infra ', daysAgo(2)),
+      ],
+    };
+    const normalized = normalizePayload(raw);
+    expect(normalized.folders.map((entry) => entry.name).sort()).toEqual(['Fiscal', 'Infra']);
+    expect(normalized.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(daysAgo(1));
+  });
+
+  it('vaults without the field still open', () => {
+    const legacy = { items: [], people: [], preferences: emptyPayload().preferences };
+    expect(normalizePayload(legacy).folders).toEqual([]);
+  });
+
+  it('merges by name with most-recent-wins', () => {
+    const local = { ...emptyPayload(), folders: [folder('Fiscal', daysAgo(1))] };
+    const remote = { ...emptyPayload(), folders: [folder('Fiscal', daysAgo(3)), folder('Clientes', daysAgo(2))] };
+    const merged = mergePayloads(local, remote);
+    expect(merged.folders.map((entry) => entry.name).sort()).toEqual(['Clientes', 'Fiscal']);
+    expect(merged.folders.find((entry) => entry.name === 'Fiscal')?.updatedAt).toBe(daysAgo(1));
+  });
+
+  it('a newer tombstone deletes across devices; activeFolders hides it', () => {
+    const deletedAt = daysAgo(1);
+    const local = { ...emptyPayload(), folders: [folder('Fiscal', daysAgo(4))] };
+    const remote = { ...emptyPayload(), folders: [folder('Fiscal', deletedAt, { deletedAt })] };
+    const merged = mergePayloads(local, remote);
+    expect(merged.folders).toHaveLength(1);
+    expect(merged.folders[0]?.deletedAt).toBe(deletedAt);
+    expect(activeFolders(merged.folders)).toHaveLength(0);
+  });
+
+  it('a tombstone past retention is purged from the payload', () => {
+    const deletedAt = daysAgo(TOMBSTONE_TTL_DAYS + 1);
+    const local = { ...emptyPayload(), folders: [folder('Fiscal', deletedAt, { deletedAt })] };
+    expect(mergePayloads(local, emptyPayload()).folders).toHaveLength(0);
   });
 });

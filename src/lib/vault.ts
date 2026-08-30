@@ -18,17 +18,18 @@ import {
   timingSafeEqual,
 } from './crypto';
 import { DEFAULT_WARNING_DAYS } from './expiry';
-import type { AttachmentRef, Person, VaultItem } from './model';
+import type { AttachmentRef, Folder, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
 /**
- * v2 added `people` and `holderId`; v3 adds `item.attachments`. Each bump
- * matters: a client that predates one would silently drop what it does not
- * understand on its next save, so refusing to open a newer vault (which
- * `unlockVault` already does) is the safe failure. Older vaults still open —
- * `normalizePayload` fills in what is missing.
+ * v2 added `people` and `holderId`; v3 added `item.attachments`; v4 adds
+ * explicitly created `folders`. Each bump matters: a client that predates one
+ * would silently drop what it does not understand on its next save, so
+ * refusing to open a newer vault (which `unlockVault` already does) is the
+ * safe failure. Older vaults still open — `normalizePayload` fills in what is
+ * missing.
  */
-export const VAULT_VERSION = 3;
+export const VAULT_VERSION = 4;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -49,6 +50,8 @@ export interface VaultPayload {
   items: VaultItem[];
   /** Document holders: you, spouse, children. */
   people: Person[];
+  /** Folders created in the sidebar; the ones items reference are derived. */
+  folders: Folder[];
   /** Preferences that follow the vault across devices. */
   preferences: VaultPreferences;
 }
@@ -71,7 +74,7 @@ export const DEFAULT_PREFERENCES: VaultPreferences = {
 };
 
 export function emptyPayload(): VaultPayload {
-  return { items: [], people: [], preferences: { ...DEFAULT_PREFERENCES } };
+  return { items: [], people: [], folders: [], preferences: { ...DEFAULT_PREFERENCES } };
 }
 
 /** Header bytes bound to the ciphertext through AES-GCM additional data. */
@@ -165,11 +168,50 @@ export function normalizePayload(raw: unknown): VaultPayload {
   const source = (raw ?? {}) as Partial<VaultPayload>;
   const items = Array.isArray(source.items) ? source.items.filter(isItemLike).map(normalizeItem) : [];
   const people = Array.isArray(source.people) ? source.people.filter(isPersonLike).map(normalizePerson) : [];
+  const folders = Array.isArray(source.folders)
+    ? dedupeFolders(source.folders.filter(isFolderLike).map(normalizeFolder))
+    : [];
   return {
     items,
     people,
+    folders,
     preferences: { ...DEFAULT_PREFERENCES, ...(source.preferences ?? {}) },
   };
+}
+
+function isFolderLike(value: unknown): value is Folder {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Folder).name === 'string' &&
+    (value as Folder).name.trim().length > 0
+  );
+}
+
+function normalizeFolder(folder: Folder): Folder {
+  const now = new Date().toISOString();
+  return {
+    name: folder.name.trim(),
+    createdAt: folder.createdAt ?? now,
+    updatedAt: folder.updatedAt ?? folder.createdAt ?? now,
+    ...(folder.deletedAt ? { deletedAt: folder.deletedAt } : {}),
+  };
+}
+
+/** Names are the identity, so a duplicated name keeps its freshest record. */
+function dedupeFolders(folders: Folder[]): Folder[] {
+  const byName = new Map<string, Folder>();
+  for (const folder of folders) {
+    const current = byName.get(folder.name);
+    if (!current || Date.parse(folder.updatedAt) >= Date.parse(current.updatedAt)) {
+      byName.set(folder.name, folder);
+    }
+  }
+  return [...byName.values()];
+}
+
+export function activeFolders(folders: Folder[]): Folder[] {
+  return folders.filter((folder) => !folder.deletedAt);
 }
 
 function isPersonLike(value: unknown): value is Person {
@@ -242,12 +284,22 @@ export function mergePayloads(local: VaultPayload, remote: VaultPayload): VaultP
     if (!other || Date.parse(person.updatedAt) >= Date.parse(other.updatedAt)) peopleById.set(person.id, person);
   }
 
+  const foldersByName = new Map<string, Folder>();
+  for (const folder of remote.folders) foldersByName.set(folder.name, folder);
+  for (const folder of local.folders) {
+    const other = foldersByName.get(folder.name);
+    if (!other || Date.parse(folder.updatedAt) >= Date.parse(other.updatedAt)) {
+      foldersByName.set(folder.name, folder);
+    }
+  }
+
   const localNewer = Date.parse(lastTouch(local)) >= Date.parse(lastTouch(remote));
   return {
     items: purgeTombstones([...byId.values()]),
     // Tombstoned people stay in the payload for the same reason items do: a
     // third device still holding the live record would otherwise resurrect it.
     people: purgeTombstones([...peopleById.values()]),
+    folders: purgeTombstones([...foldersByName.values()]),
     preferences: localNewer ? local.preferences : remote.preferences,
   };
 }

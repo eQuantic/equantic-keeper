@@ -271,8 +271,10 @@ envelope:
 - **Key** = `HKDF-SHA256(PBKDF2(password, salt, iterations), salt, "equantic-keeper:enc:v1")`
 - **Payload** (encrypted) = `{ "items": [...], "people": [...], "preferences": {...} }`
 - **Version 2** added `people` (holders) and `item.holderId`; **version 3** added
-  `item.attachments`. Old vaults open normally; it is the old client that refuses to open
-  a newer vault, instead of discarding what it does not understand.
+  `item.attachments`; **version 4** added `folders` (folders created in the sidebar, which
+  may hold no items yet — the ones items reference are derived). Old vaults open normally;
+  it is the old client that refuses to open a newer vault, instead of discarding what it
+  does not understand.
 
 ### Attachments
 
