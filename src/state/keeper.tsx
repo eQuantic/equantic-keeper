@@ -34,6 +34,13 @@ import {
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import { createFolder, registerCustomTypes } from '../lib/model';
+import {
+  folderLeaf,
+  isWithinFolder,
+  movedFolderPath,
+  normalizeFolderPath,
+  rewriteFolderPath,
+} from '../lib/folders';
 import type { CustomTypeDef } from '../lib/model';
 import type { AttachmentRef, Person, VaultItem } from '../lib/model';
 import {
@@ -95,6 +102,8 @@ export interface KeeperActions {
   disableBiometrics(): void;
   lock(): void;
   saveItem(item: VaultItem): Promise<void>;
+  /** Moves a folder (and its subtree) under another; resolves to an error message or null. */
+  moveFolder(from: string, toParent: string): Promise<string | null>;
   trashItem(id: string): Promise<void>;
   restoreItem(id: string): Promise<void>;
   purgeItem(id: string): Promise<void>;
@@ -747,6 +756,45 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [mutate],
   );
 
+  /**
+   * Re-parents a folder and everything under it: the folder records and every
+   * item filed at or below the old path are rewritten in ONE mutation, so a
+   * half-moved subtree can never be what syncs. Returns why it refused, or
+   * null when the move happened.
+   */
+  const moveFolder = useCallback(
+    async (from: string, toParent: string): Promise<string | null> => {
+      const source = normalizeFolderPath(from);
+      const target = movedFolderPath(source, toParent);
+      if (!source) return 'Pasta inválida.';
+      if (target === source) return null;
+      // Dropping a folder into its own subtree would take the branch with it.
+      if (isWithinFolder(toParent, source)) return 'Uma pasta não pode entrar nela mesma.';
+
+      const payload = payloadRef.current;
+      const taken =
+        payload?.folders.some((folder) => !folder.deletedAt && folder.name === target) ||
+        payload?.items.some((item) => !item.deletedAt && item.folder === target);
+      if (taken) return `Já existe uma pasta “${folderLeaf(target)}” aí.`;
+
+      await mutate((current) => ({
+        ...current,
+        folders: current.folders.map((folder) =>
+          isWithinFolder(folder.name, source)
+            ? { ...folder, name: rewriteFolderPath(folder.name, source, target), updatedAt: new Date().toISOString() }
+            : folder,
+        ),
+        items: current.items.map((item) =>
+          item.folder && isWithinFolder(item.folder, source)
+            ? { ...item, folder: rewriteFolderPath(item.folder, source, target), updatedAt: new Date().toISOString() }
+            : item,
+        ),
+      }));
+      return null;
+    },
+    [mutate],
+  );
+
   const savePerson = useCallback(
     (person: Person) =>
       mutate((payload) => {
@@ -1128,6 +1176,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       disableBiometrics,
       lock,
       saveItem,
+      moveFolder,
       trashItem,
       restoreItem,
       purgeItem,
@@ -1178,6 +1227,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       removePerson,
       restoreItem,
       saveFolder,
+      moveFolder,
       removeFolder,
       saveCustomType,
       removeCustomType,
