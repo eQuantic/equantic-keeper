@@ -164,6 +164,43 @@ export function VaultScreen() {
     return { dev, doc };
   }, [active]);
 
+  /**
+   * The filter bar only offers what the vault actually holds — a picker full
+   * of countries with nothing behind them is a list of dead ends. Counts come
+   * from the active items, whatever the current filter is, so the bar never
+   * narrows itself out of the options you might switch to.
+   */
+  const countryOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of active) {
+      if (item.country) counts.set(item.country, (counts.get(item.country) ?? 0) + 1);
+    }
+    const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+    return [...counts.entries()]
+      .map(([code, count]) => ({ code, name: countryName(code), count }))
+      .sort((a, b) => collator.compare(a.name, b.name));
+  }, [active]);
+
+  const typeOptions = useMemo(() => {
+    const collator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+    return [...typeCounts.entries()]
+      .map(([id, count]) => ({ id, label: getType(id).label, count }))
+      .sort((a, b) => collator.compare(a.label, b.label));
+    // `payload` re-registers custom types, so their labels belong in the deps.
+  }, [typeCounts, payload]);
+
+  const activeFilterCount = [
+    filters.holderId,
+    filters.country,
+    filters.type,
+    filters.family,
+    filters.folder,
+    filters.tag,
+    filters.category,
+    filters.expiry,
+    filters.favoritesOnly || null,
+  ].filter(Boolean).length;
+
   /** Indexed by item id so a list row can look its own status up in O(1). */
   const expiring = useMemo(() => {
     const found = collectExpiring(items, warningDays);
@@ -351,6 +388,35 @@ export function VaultScreen() {
     </button>
     );
   };
+
+  /** One compact picker in the list's filter bar. */
+  const FilterSelect = ({
+    label,
+    value,
+    onChange,
+    options,
+  }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    options: { value: string; label: string; count: number }[];
+  }) => (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={`shrink-0 rounded-lg border px-2 py-1 text-xs focus:outline-none pointer-coarse:rounded-[10px] pointer-coarse:px-3 pointer-coarse:py-2 ${
+        value ? 'border-accent bg-accent/10 text-ink' : 'border-line bg-canvas text-muted'
+      }`}
+    >
+      <option value="">{label}: todos</option>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label} ({option.count})
+        </option>
+      ))}
+    </select>
+  );
 
   const BarAction = ({
     icon,
@@ -713,6 +779,77 @@ export function VaultScreen() {
                   </button>
                 );
               })}
+            </div>
+          ) : null}
+          {/* The same filters the sidebar carries, within reach of the list —
+              on a phone the sidebar is a drawer, and on a desktop this is
+              where the eye already is. Each picker only shows up when there
+              is something to choose between. */}
+          {filters.view === 'active' &&
+          (people.length > 0 || countryOptions.length > 1 || typeOptions.length > 1) ? (
+            <div className="flex items-center gap-2 overflow-x-auto border-b border-line px-4 py-2">
+              {people.length > 0 ? (
+                <FilterSelect
+                  label="Pessoa"
+                  value={filters.holderId ?? ''}
+                  onChange={(value) => setFilter({ ...filters, holderId: value || null })}
+                  options={people.map((person) => ({
+                    value: person.id,
+                    label: person.name,
+                    count: holderCounts.get(person.id) ?? 0,
+                  }))}
+                />
+              ) : null}
+              {countryOptions.length > 1 ? (
+                <FilterSelect
+                  label="País"
+                  value={filters.country ?? ''}
+                  onChange={(value) => setFilter({ ...filters, country: value || null })}
+                  options={countryOptions.map((country) => ({
+                    value: country.code,
+                    label: country.name,
+                    count: country.count,
+                  }))}
+                />
+              ) : null}
+              {typeOptions.length > 1 ? (
+                <FilterSelect
+                  label="Tipo"
+                  value={filters.type ?? ''}
+                  onChange={(value) => setFilter({ ...filters, type: value || null, family: null })}
+                  options={typeOptions.map((type) => ({
+                    value: type.id,
+                    label: type.label,
+                    count: type.count,
+                  }))}
+                />
+              ) : null}
+              {folders.length > 0 ? (
+                <FilterSelect
+                  label="Pasta"
+                  value={filters.folder ?? ''}
+                  onChange={(value) => setFilter({ ...filters, folder: value || null })}
+                  options={folders.map(({ folder, count }) => ({ value: folder, label: folder, count }))}
+                />
+              ) : null}
+              {tags.length > 0 ? (
+                <FilterSelect
+                  label="Tag"
+                  value={filters.tag ?? ''}
+                  onChange={(value) => setFilter({ ...filters, tag: value || null })}
+                  options={tags.map(({ tag, count }) => ({ value: tag, label: tag, count }))}
+                />
+              ) : null}
+              {activeFilterCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setFilter({ ...EMPTY_FILTERS, query: filters.query })}
+                  className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-accent transition hover:bg-raised pointer-coarse:py-2"
+                >
+                  <Icon name="x" size={12} />
+                  Limpar {activeFilterCount}
+                </button>
+              ) : null}
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">

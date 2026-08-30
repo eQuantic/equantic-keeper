@@ -89,6 +89,16 @@ describe('matches', () => {
   });
 });
 
+describe('filtro por país', () => {
+  it('separa o mesmo tipo de documento por país emissor', () => {
+    const br = make({ id: 'br', type: 'passaporte', name: 'Passaporte BR', country: 'BR' });
+    const be = make({ id: 'be', type: 'passaporte', name: 'Passaporte BE', country: 'BE' });
+    const semPais = make({ id: 'sem', type: 'passaporte', name: 'Passaporte sem país' });
+    const filtered = applyFilters([br, be, semPais], { ...EMPTY_FILTERS, country: 'BE' }, 'name');
+    expect(filtered.map((item) => item.id)).toEqual(['be']);
+  });
+});
+
 describe('applyFilters', () => {
   it('hides trashed items from the active view and vice versa', () => {
     expect(applyFilters(items, EMPTY_FILTERS, 'name').map((item) => item.id)).toEqual(['2', '5', '1', '4']);
