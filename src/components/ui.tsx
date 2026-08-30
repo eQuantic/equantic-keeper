@@ -283,12 +283,22 @@ export function Modal({
     window.addEventListener('keydown', onKey);
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    ref.current?.focus();
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = previous;
     };
   }, [open, onClose]);
+
+  // Focus moves to the dialog ONLY when it opens — in its own effect because
+  // an unstable `onClose` (an inline arrow in the parent) re-runs the effect
+  // above on every keystroke in a controlled field, and a focus() there kept
+  // yanking the caret out of the input after each typed letter. The guard
+  // covers re-runs from StrictMode and prop churn alike.
+  useEffect(() => {
+    if (!open) return;
+    const node = ref.current;
+    if (node && !node.contains(document.activeElement)) node.focus();
+  }, [open]);
 
   if (!open) return null;
   return (

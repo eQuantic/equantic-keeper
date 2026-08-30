@@ -844,6 +844,12 @@ export function VaultScreen() {
       {editing ? (
         <ItemEditor
           item={editing.item}
+          // Creating while a sidebar filter is active means "inside it": the
+          // filtered person or folder arrives pre-selected on the new item.
+          preset={{
+            ...(filters.holderId ? { holderId: filters.holderId } : {}),
+            ...(filters.folder ? { folder: filters.folder } : {}),
+          }}
           onClose={() => setEditing(null)}
           onSave={(item) => {
             void actions.saveItem(item);

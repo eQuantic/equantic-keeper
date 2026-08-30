@@ -611,6 +611,32 @@ const run = async () => {
   await check('o parentesco editado sobrevive ao fechar e reabrir', async () =>
     (await page.locator('[role="dialog"] input[aria-label="Parentesco"]').inputValue()) === 'esposa');
   await page.screenshot({ path: `${OUT}/08-pessoas.png` });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+
+  // Creating an item while a person's filter is active means "for them": the
+  // holder select opens already pointing at the sidebar person.
+  await page.locator('nav button:has-text("Maria Teste")').click();
+  await page.waitForTimeout(300);
+  await page.locator('header button:has-text("Novo")').click();
+  await page.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Segredo de desenvolvimento")');
+  await page.locator('[role="dialog"] button:has-text("API Token")').first().click();
+  await page.waitForSelector('[role="dialog"] >> text=Titular', { timeout: 5000 });
+  await check('criar com filtro de pessoa pré-seleciona o titular', async () => {
+    const select = page.locator('[role="dialog"] select:has(option:has-text("sem titular"))');
+    const value = await select.inputValue();
+    if (!value) return false;
+    return ((await select.locator(`option[value="${value}"]`).textContent()) ?? '').includes('Maria Teste');
+  });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await page.locator('nav button:has-text("Tudo")').click();
+  await page.waitForTimeout(300);
+
+  // The theme block below expects the settings dialog open again.
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('select[aria-label="Tema"]', { timeout: 5000 });
 
   await page.selectOption('select[aria-label="Tema"]', 'light');
   await page.waitForTimeout(400);
@@ -661,6 +687,18 @@ const run = async () => {
   await page.keyboard.press('e');
   await page.waitForSelector('[role="dialog"] >> text=Editar segredo', { timeout: 5000 });
   await check('E abre o editor do item selecionado', async () => true);
+
+  // Typed letter by letter on purpose: the dialog used to steal the focus
+  // back after every keystroke (its focus() lived in an effect keyed on an
+  // unstable onClose), so the caret left the field after one letter.
+  await page.locator('[role="dialog"] input').first().click();
+  await page.keyboard.type(' teste', { delay: 40 });
+  await check('digitar num campo do editor mantém o foco no campo', async () =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return active instanceof HTMLInputElement && active.value.endsWith('teste');
+    }));
+  page.once('dialog', (dialog) => void dialog.accept());
   await page.keyboard.press('Escape');
   await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
   await page.fill('input[type="search"]', '');
