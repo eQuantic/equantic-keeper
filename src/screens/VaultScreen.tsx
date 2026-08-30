@@ -4,6 +4,13 @@ import { getAllTypes, getFamily, getType, isSecretKind, type SecretTypeDef, type
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
+import {
+  buildFolderTree,
+  type FolderNode,
+  flattenFolderTree,
+  isWithinFolder,
+  normalizeFolderPath,
+} from '../lib/folders';
 import type { TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
 import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
@@ -94,6 +101,10 @@ export function VaultScreen() {
    */
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  /** A folder being dragged to another parent, and which folders are open. */
+  const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [addingChildOf, setAddingChildOf] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const { copy } = useCopy();
@@ -121,6 +132,24 @@ export function VaultScreen() {
       .map(([folder, count]) => ({ folder, count }))
       .sort((a, b) => a.folder.localeCompare(b.folder, 'pt-BR'));
   }, [items, payload]);
+  /** Folders as a tree: paths carry the hierarchy, the sidebar draws it. */
+  const folderTree = useMemo(
+    () => buildFolderTree(folders.map((entry) => entry.folder), new Map(folders.map((entry) => [entry.folder, entry.count]))),
+    [folders],
+  );
+  const visibleFolders = useMemo(() => {
+    // Open by default: a tree that hides everything on first sight teaches
+    // nothing about what is in the vault. Collapsing is the explicit act.
+    const expanded = new Set<string>();
+    const walk = (nodes: typeof folderTree) => {
+      for (const node of nodes) {
+        if (!collapsed.has(node.path)) expanded.add(node.path);
+        walk(node.children);
+      }
+    };
+    walk(folderTree);
+    return flattenFolderTree(folderTree, expanded);
+  }, [folderTree, collapsed]);
   /** Only an explicitly created record can be removed from the sidebar. */
   const explicitFolders = useMemo(
     () => new Set(activeFolders(payload?.folders ?? []).map((folder) => folder.name)),
@@ -389,6 +418,131 @@ export function VaultScreen() {
     );
   };
 
+  /** Moves a folder under another (or to the root) and reports the refusal. */
+  const dropFolderInto = (from: string, toParent: string) => {
+    setDraggingFolder(null);
+    setDropTarget(null);
+    void actions.moveFolder(from, toParent).then((error) => {
+      if (error) return actions.notify(error);
+      // Follow the folder if the sidebar was filtered by it.
+      if (filters.folder && isWithinFolder(filters.folder, from)) {
+        setFilter({ ...EMPTY_FILTERS, query: filters.query });
+      }
+    });
+  };
+
+  /**
+   * One folder in the tree: a disclosure triangle when it has children, the
+   * count of everything below it, and three drop behaviours — an item lands
+   * in it, another folder becomes its child, and it can itself be dragged.
+   */
+  const FolderRow = ({ node }: { node: FolderNode }) => {
+    const dropKey = `folder:${node.path}`;
+    const armed = (!!dragging || !!draggingFolder) && draggingFolder !== node.path;
+    const forbidden = !!draggingFolder && isWithinFolder(node.path, draggingFolder);
+    const over = dropTarget === dropKey && !forbidden;
+    const open = !collapsed.has(node.path);
+    return (
+      <div className="group/folder relative flex items-center" style={{ paddingLeft: node.depth * 14 }}>
+        {node.children.length > 0 ? (
+          <button
+            type="button"
+            aria-label={open ? `Recolher ${node.name}` : `Expandir ${node.name}`}
+            aria-expanded={open}
+            onClick={() =>
+              setCollapsed((current) => {
+                const next = new Set(current);
+                if (next.has(node.path)) next.delete(node.path);
+                else next.add(node.path);
+                return next;
+              })
+            }
+            className="tap-target flex h-5 w-4 shrink-0 items-center justify-center text-faint transition hover:text-ink"
+          >
+            <Icon name="chevron" size={11} className={open ? 'rotate-90' : ''} />
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" aria-hidden="true" />
+        )}
+        <button
+          type="button"
+          data-folder-row={node.path}
+          data-drop-target={dropKey}
+          draggable={!coarsePointer}
+          onDragStart={(event) => {
+            event.dataTransfer.setData('application/x-keeper-folder', node.path);
+            event.dataTransfer.setData('text/plain', '');
+            event.dataTransfer.effectAllowed = 'move';
+            setDraggingFolder(node.path);
+          }}
+          onDragEnd={() => {
+            setDraggingFolder(null);
+            setDropTarget(null);
+          }}
+          onDragOver={(event) => {
+            if (forbidden) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (dropTarget !== dropKey) setDropTarget(dropKey);
+          }}
+          onDragLeave={() => setDropTarget((current) => (current === dropKey ? null : current))}
+          onDrop={(event) => {
+            event.preventDefault();
+            const folder = event.dataTransfer.getData('application/x-keeper-folder');
+            if (folder) return dropFolderInto(folder, node.path);
+            const itemId = event.dataTransfer.getData('text/plain');
+            if (itemId) dropOnto(itemId, { folder: node.path }, `“${node.path}”`);
+          }}
+          onClick={() => setFilter({ ...EMPTY_FILTERS, folder: node.path, query: filters.query })}
+          className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition pointer-coarse:py-2.5 ${
+            over
+              ? 'bg-accent/25 text-ink ring-2 ring-accent'
+              : armed
+                ? 'text-muted ring-1 ring-line ring-dashed'
+                : filters.folder === node.path
+                  ? 'bg-accent/12 text-ink'
+                  : 'text-muted hover:bg-raised hover:text-ink'
+          }`}
+        >
+          <Icon name="folder" size={15} />
+          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+          {node.total > 0 ? <span className="text-xs text-faint tabular-nums">{node.total}</span> : null}
+        </button>
+        <span className="absolute right-1.5 flex items-center gap-0.5 opacity-0 transition group-hover/folder:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+          <button
+            type="button"
+            aria-label={`Nova subpasta em ${node.name}`}
+            onClick={() => {
+              setAddingChildOf(node.path);
+              setNewFolder('');
+              setCollapsed((current) => {
+                const next = new Set(current);
+                next.delete(node.path);
+                return next;
+              });
+            }}
+            className="tap-target flex h-6 w-6 items-center justify-center rounded-md bg-surface text-faint transition hover:text-ink"
+          >
+            <Icon name="plus" size={12} />
+          </button>
+          {node.total === 0 && node.children.length === 0 && explicitFolders.has(node.path) ? (
+            <button
+              type="button"
+              aria-label={`Remover pasta ${node.name}`}
+              onClick={() => {
+                void actions.removeFolder(node.path);
+                if (filters.folder === node.path) setFilter({ ...EMPTY_FILTERS, query: filters.query });
+              }}
+              className="tap-target flex h-6 w-6 items-center justify-center rounded-md bg-surface text-faint transition hover:text-danger"
+            >
+              <Icon name="x" size={12} />
+            </button>
+          ) : null}
+        </span>
+      </div>
+    );
+  };
+
   /** One compact picker in the list's filter bar. */
   const FilterSelect = ({
     label,
@@ -583,8 +737,29 @@ export function VaultScreen() {
       ) : null}
 
       <div>
-        <div className="mb-1 flex items-center justify-between pr-1.5">
-          <p className="px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Pastas</p>
+        <div
+          className={`mb-1 flex items-center justify-between rounded-lg pr-1.5 transition ${
+            draggingFolder ? 'ring-1 ring-line ring-dashed' : ''
+          } ${dropTarget === 'folder-root' ? 'bg-accent/20 ring-2 ring-accent' : ''}`}
+          data-drop-target="folder-root"
+          onDragOver={(event) => {
+            if (!draggingFolder) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDropTarget('folder-root');
+          }}
+          onDragLeave={() => setDropTarget((current) => (current === 'folder-root' ? null : current))}
+          onDrop={(event) => {
+            const folder = event.dataTransfer.getData('application/x-keeper-folder');
+            if (!folder) return;
+            event.preventDefault();
+            // Dropping on the heading is how a folder leaves its parent.
+            dropFolderInto(folder, '');
+          }}
+        >
+          <p className="px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">
+            {draggingFolder ? 'Pastas — solte aqui para tirar de dentro' : 'Pastas'}
+          </p>
           <button
             type="button"
             aria-label="Nova pasta"
@@ -621,29 +796,32 @@ export function VaultScreen() {
           </div>
         ) : null}
         <div className="space-y-0.5">
-          {folders.map(({ folder, count }) => (
-            <div key={folder} className="group/folder relative">
-              <NavItem
-                icon="folder"
-                label={folder}
-                count={count}
-                activeState={filters.folder === folder}
-                onClick={() => setFilter({ ...EMPTY_FILTERS, folder, query: filters.query })}
-                dropKey={`folder:${folder}`}
-                onDropItem={(itemId) => dropOnto(itemId, { folder }, `“${folder}”`)}
-              />
-              {count === 0 && explicitFolders.has(folder) ? (
-                <button
-                  type="button"
-                  aria-label={`Remover pasta ${folder}`}
-                  onClick={() => {
-                    void actions.removeFolder(folder);
-                    if (filters.folder === folder) setFilter({ ...EMPTY_FILTERS, query: filters.query });
-                  }}
-                  className="tap-target absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-surface text-faint opacity-0 transition group-hover/folder:opacity-100 hover:text-danger focus-visible:opacity-100 pointer-coarse:opacity-100"
-                >
-                  <Icon name="x" size={12} />
-                </button>
+          {visibleFolders.map((node) => (
+            <div key={node.path}>
+              <FolderRow node={node} />
+              {addingChildOf === node.path ? (
+                <div className="px-1 py-1" style={{ paddingLeft: (node.depth + 1) * 14 + 4 }}>
+                  <TextInput
+                    autoFocus
+                    value={newFolder}
+                    onChange={(event) => setNewFolder(event.target.value)}
+                    placeholder={`Subpasta de ${node.name}`}
+                    onBlur={() => setAddingChildOf(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        const child = normalizeFolderPath(`${node.path}/${newFolder}`);
+                        if (child !== node.path) void actions.saveFolder(child);
+                        setAddingChildOf(null);
+                        setNewFolder('');
+                      } else if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        setAddingChildOf(null);
+                        setNewFolder('');
+                      }
+                    }}
+                  />
+                </div>
               ) : null}
             </div>
           ))}
@@ -1135,11 +1313,7 @@ export function VaultScreen() {
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
-      <datalist id="keeper-folders">
-        {folders.map(({ folder }) => (
-          <option key={folder} value={folder} />
-        ))}
-      </datalist>
+
     </div>
   );
 }

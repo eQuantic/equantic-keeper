@@ -2,6 +2,7 @@
 import { DEFAULT_WARNING_DAYS, expiryOf } from './expiry';
 import { getFamily, getType, isSecretKind, type VaultItem } from './model';
 import { originByCode } from './documents';
+import { isWithinFolder } from './folders';
 
 export interface Filters {
   query: string;
@@ -117,7 +118,7 @@ export function applyFilters(
     if (filters.category && getType(item.type).category !== filters.category) return false;
     if (filters.holderId && item.holderId !== filters.holderId) return false;
     if (filters.tag && !item.tags.includes(filters.tag)) return false;
-    if (filters.folder && item.folder !== filters.folder) return false;
+    if (filters.folder && !isWithinFolder(item.folder, filters.folder)) return false;
     if (filters.favoritesOnly && !item.favorite) return false;
     if (filters.expiry && expiryOf(item, warningDays)?.status !== filters.expiry) return false;
     return matches(item, filters.query, holderNames.get(item.holderId) ?? '');

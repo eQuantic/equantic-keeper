@@ -17,7 +17,7 @@ import { DOCUMENT_ORIGINS } from '../lib/documents';
 import { allCountries, countryName } from '../lib/countries';
 import { pushRecentType } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
-import { activePeople } from '../lib/vault';
+import { activeFolders, activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
 import { Button, ComboInput, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
@@ -192,6 +192,13 @@ export function ItemEditor({
   const [newPerson, setNewPerson] = useState('');
   const { payload, actions } = useKeeper();
   const people = activePeople(payload?.people ?? []);
+  /** Existing folder paths, so filing into a subfolder is a pick, not a typo. */
+  const folderPaths = [
+    ...new Set([
+      ...activeFolders(payload?.folders ?? []).map((folder) => folder.name),
+      ...(payload?.items ?? []).map((entry) => entry.folder).filter(Boolean),
+    ]),
+  ].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const isNew = !item;
   const type = getType(draft.type);
   /**
@@ -338,12 +345,15 @@ export function ItemEditor({
               autoFocus
             />
           </Field>
-          <Field label="Pasta / projeto" hint="Opcional. Agrupa segredos na barra lateral.">
-            <TextInput
+          <Field
+            label="Pasta / projeto"
+            hint="Opcional. Use / para subpastas: Documentos/Portugal."
+          >
+            <ComboInput
               value={draft.folder}
-              onChange={(event) => patch({ folder: event.target.value })}
+              onChange={(value) => patch({ folder: value })}
+              options={folderPaths}
               placeholder={isDoc ? 'Documentos' : 'Infra'}
-              list="keeper-folders"
             />
           </Field>
         </div>

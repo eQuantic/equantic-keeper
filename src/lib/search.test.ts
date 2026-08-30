@@ -89,6 +89,16 @@ describe('matches', () => {
   });
 });
 
+describe('filtro por pasta', () => {
+  it('inclui o que está nas subpastas', () => {
+    const parent = make({ id: 'p', name: 'Na pasta', folder: 'Documentos' });
+    const child = make({ id: 'c', name: 'Na subpasta', folder: 'Documentos/Portugal' });
+    const other = make({ id: 'o', name: 'Fora', folder: 'Documentos-antigos' });
+    const filtered = applyFilters([parent, child, other], { ...EMPTY_FILTERS, folder: 'Documentos' }, 'name');
+    expect(filtered.map((item) => item.id).sort()).toEqual(['c', 'p']);
+  });
+});
+
 describe('filtro por país', () => {
   it('separa o mesmo tipo de documento por país emissor', () => {
     const br = make({ id: 'br', type: 'passaporte', name: 'Passaporte BR', country: 'BR' });

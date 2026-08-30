@@ -830,9 +830,56 @@ const run = async () => {
   await page.keyboard.press('Enter');
   await page.waitForSelector('nav button:has-text("Fiscal")', { timeout: 5000 });
   await check('pasta criada na barra lateral aparece vazia', async () =>
-    (await page.locator('nav button:has-text("Fiscal")').innerText()).includes('0'));
+    // Uma pasta sem itens não exibe contagem: "0" ao lado de cada pasta é ruído.
+    !/\d/.test(await page.locator('nav [data-folder-row="Fiscal"]').innerText()));
 
-  await page.click('nav button:has-text("Fiscal")');
+  // 11d-bis. Folders nest: a subfolder is created from its parent's row, the
+  // parent counts what is below it, and both can be dragged in and out.
+  await page.click('nav button[aria-label="Nova subpasta em Fiscal"]');
+  await page.fill('input[placeholder="Subpasta de Fiscal"]', '2026');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('nav [data-folder-row="Fiscal/2026"]', { timeout: 5000 });
+  await check('subpasta aparece indentada sob a pasta mãe', async () => {
+    const parent = await page.locator('nav [data-folder-row="Fiscal"]').boundingBox();
+    const child = await page.locator('nav [data-folder-row="Fiscal/2026"]').boundingBox();
+    return !!parent && !!child && child.x > parent.x;
+  });
+  await page.click('nav button[aria-label="Recolher Fiscal"]');
+  await page.waitForTimeout(200);
+  await check('recolher a pasta mãe esconde a subpasta', async () =>
+    (await page.locator('nav [data-folder-row="Fiscal/2026"]').count()) === 0);
+  await page.click('nav button[aria-label="Expandir Fiscal"]');
+  await page.waitForTimeout(200);
+
+  // Dragging folders: same real DragEvents as the item rows (a headless
+  // browser never runs its native drag loop), with the folder's own mime type.
+  const dragFolder = (from, targetSelector) =>
+    page.evaluate(
+      ([path, selector]) => {
+        const row = document.querySelector(`nav [data-folder-row="${path}"]`);
+        const target = document.querySelector(selector);
+        if (!row || !target) return false;
+        const dataTransfer = new DataTransfer();
+        row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+        target.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer }));
+        target.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }));
+        row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+        return true;
+      },
+      [from, targetSelector],
+    );
+
+  await dragFolder('Fiscal/2026', 'nav [data-drop-target="folder-root"]');
+  await page.waitForTimeout(500);
+  await check('arrastar para o cabeçalho tira a subpasta de dentro', async () =>
+    (await page.locator('nav [data-folder-row="2026"]').count()) === 1 &&
+    (await page.locator('nav [data-folder-row="Fiscal/2026"]').count()) === 0);
+  await dragFolder('2026', 'nav [data-drop-target="folder:Fiscal"]');
+  await page.waitForTimeout(500);
+  await check('arrastar sobre outra pasta faz dela uma subpasta', async () =>
+    (await page.locator('nav [data-folder-row="Fiscal/2026"]').count()) === 1);
+
+  await page.click('nav [data-folder-row="Fiscal"]');
   await page.waitForTimeout(300);
   await check('filtrar pela pasta vazia mostra 0 itens', async () =>
     (await page.locator('main li').count()) === 0);
@@ -840,6 +887,12 @@ const run = async () => {
   await page.waitForTimeout(300);
 
   await page.hover('nav button:has-text("Fiscal")');
+  // A pasta mãe só pode sair depois da subpasta: apagar uma pasta com filhos
+  // levaria a subárvore junto sem dizer.
+  await check('pasta com subpasta não oferece remover', async () =>
+    (await page.locator('button[aria-label="Remover pasta Fiscal"]').count()) === 0);
+  await page.click('nav button[aria-label="Remover pasta 2026"]');
+  await page.waitForTimeout(300);
   await page.click('button[aria-label="Remover pasta Fiscal"]');
   await page.waitForSelector('nav button:has-text("Fiscal")', { state: 'detached', timeout: 5000 });
   await check('remover a pasta vazia tira a entrada da barra lateral', async () => true);
