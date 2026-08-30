@@ -656,7 +656,29 @@ const run = async () => {
   await page.fill('input[type="search"]', '');
   await page.keyboard.press('Escape');
 
-  // 11c. Folders created straight in the sidebar, before any item uses them.
+  // 11c. Sharing without a share sheet (headless desktop): copy + mailto
+  // fallback, secret fields unticked and therefore missing from the mailto.
+  await page.click('text=Painel DigitalOcean');
+  await page.waitForSelector('aside button[aria-label="Compartilhar"]', { timeout: 5000 });
+  await page.click('aside button[aria-label="Compartilhar"]');
+  await page.waitForSelector('[role="dialog"] >> text=texto puro', { timeout: 5000 });
+  await check('sem folha nativa, oferece copiar e enviar por e-mail', async () =>
+    (await page.locator('[role="dialog"] a[href^="mailto:"]').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Copiar")').count()) === 1);
+  await check('campo secreto começa desmarcado', async () =>
+    (await page.locator('[role="dialog"] label:has-text("Senha") input[type="checkbox"]').first().isChecked()) === false);
+  await check('o mailto leva os campos marcados e não leva a senha', async () => {
+    const href = await page.locator('[role="dialog"] a[href^="mailto:"]').getAttribute('href');
+    if (!href) return false;
+    const decoded = decodeURIComponent(href);
+    return decoded.includes('edgar@equantic.tech') && !decoded.includes('senha-exemplo-do-painel');
+  });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
+  // 11d. Folders created straight in the sidebar, before any item uses them.
   await page.click('button[aria-label="Nova pasta"]');
   await page.fill('input[placeholder="Nome da pasta"]', 'Fiscal');
   await page.keyboard.press('Enter');
@@ -961,6 +983,27 @@ const run = async () => {
   await dragSheetDown();
   await phone.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
   await check('confirmar descarta as alterações e fecha', async () => true);
+
+  // 13c. Sharing: the system sheet gets exactly the ticked fields, in plain text.
+  await phone.evaluate(() => {
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: (data) => {
+        window.__keeperShared = data;
+        return Promise.resolve();
+      },
+    });
+  });
+  await phone.click('aside button[aria-label="Compartilhar"]');
+  await phone.waitForSelector('[role="dialog"] >> text=texto puro', { timeout: 5000 });
+  await check('diálogo de compartilhar avisa do texto puro', async () => true);
+  await phone.click('[role="dialog"] button:has-text("Compartilhar")');
+  await check('a folha de compartilhamento recebe os campos escolhidos', async () => {
+    const data = await phone.evaluate(() => window.__keeperShared);
+    return !!data && data.text.includes('12345678 9 ZZ1') && data.title.includes('Cartão de Cidadão');
+  });
+  await phone.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+
   await phone.goBack();
   await phone.waitForTimeout(300);
 

@@ -47,6 +47,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
 | CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
 | Search | Never indexes secret values — only name, description, tags and non-sensitive fields |
+| Sharing | Explicit per-field dialog, out through the OS share sheet or `mailto:` only — never an https link carrying the secret (that would park it in browser history); TOTP seeds are never shareable |
 
 **What this model does not protect against:** a compromised device (keylogger, malware,
 malicious extension) sees the open vault the same way you do. And if you forget the master
@@ -104,6 +105,11 @@ wraps the vault's master bits into a record kept in `localStorage`.
   `otpauth://` URI (RFC 6238, SHA-1/256/512).
 - **Password and passphrase generator** using `crypto.getRandomValues` with bias-free
   sampling.
+- **Sharing, on purpose**: a per-field dialog sends an item out through the phone's share
+  sheet (WhatsApp, Gmail, Signal — as text, or an attachment as the decrypted file) and
+  falls back to `mailto:`/clipboard on desktop. Secret fields start unticked, TOTP seeds
+  are never offered, and the dialog says plainly that whatever leaves, leaves in plain
+  text.
 - **Biometric unlock** (optional, per device): a platform passkey with the WebAuthn PRF
   extension stands in for the master passphrase — Face ID or a fingerprint instead of
   retyping it on a phone keyboard. The passphrase remains the canonical key.
