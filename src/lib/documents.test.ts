@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DOCUMENT_TYPES } from './documents';
+import { DOCUMENT_ORIGINS, DOCUMENT_TYPES, GENERAL_GROUP } from './documents';
 import { FALLBACK_TYPE, SECRET_TYPES, getType, isSecretKind } from './model';
 
-const DOC_GROUPS = ['Portugal', 'Brasil', 'Geral'];
+// The wizard's origin step is the registry: a group outside it would be
+// unreachable, so the whitelist derives from it instead of rotting apart.
+const DOC_GROUPS = [GENERAL_GROUP, ...DOCUMENT_ORIGINS.map((origin) => origin.group)];
 
 describe('catálogo de tipos', () => {
   it('não repete ids entre documentos e tipos de desenvolvimento', () => {
@@ -44,13 +46,15 @@ describe('catálogo de tipos', () => {
 
   /**
    * Documentos são consultados, não rotacionados: marcá-los como segredo os
-   * esconderia da busca e exigiria um clique para ler o próprio NIF.
+   * esconderia da busca e exigiria um clique para ler o próprio NIF. As
+   * exceções são deliberadas — dados que CONCEDEM acesso em vez de apenas
+   * identificar: o código de acesso da certidão online e o SSN americano.
    */
-  it('não marca dado de documento como segredo', () => {
+  it('só marca como segredo os dados de documento que concedem acesso', () => {
     const secret = DOCUMENT_TYPES.flatMap((type) =>
       type.fields.filter((field) => isSecretKind(field.kind)).map((field) => `${type.id}.${field.id}`),
     );
-    expect(secret).toEqual([]);
+    expect(secret.sort()).toEqual(['pt-certidao.codigoAcesso', 'us-ssn.ssn']);
   });
 
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {
