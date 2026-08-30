@@ -62,6 +62,9 @@ describe('catálogo de tipos', () => {
       'cartao-credito.pin',
       'declaracao.codigoValidacao',
       'pt-certidao.codigoAcesso',
+      'pt-irs.codigoValidacao',
+      'pt-situacao-contributiva.codigoValidacao',
+      'pt-situacao-tributaria.codigoValidacao',
       'us-ssn.ssn',
     ]);
   });

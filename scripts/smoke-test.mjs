@@ -398,8 +398,11 @@ const run = async () => {
   await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
   await check('Geral inclui o cartão de crédito', async () =>
     (await page.locator('[role="dialog"] button:has-text("Cartão de crédito")').count()) === 1);
-  await check('Geral inclui a declaração genérica', async () =>
-    (await page.locator('[role="dialog"] button:has-text("Declaração")').count()) === 1);
+  await check('Geral traz as declarações específicas e a genérica de resto', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Declaração de nado vivo")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Declaração de crédito pessoal")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Declaração de crédito hipotecário")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Declaração")').count()) === 4);
   await page.click('button[aria-label="Voltar"]');
   await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Portugal")');
@@ -407,6 +410,10 @@ const run = async () => {
   await check('Portugal ganhou os tipos novos', async () =>
     (await page.locator('[role="dialog"] button:has-text("Carta de Condução")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Certidão (registo civil)")').count()) === 1);
+  await check('Portugal traz IRS e as situações contributiva e tributária', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Declaração de IRS")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Situação contributiva")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Situação tributária")').count()) === 1);
   await page.fill('input[placeholder*="Filtrar tipos"]', 'residência');
   await page.waitForTimeout(200);
   await check('filtro do seletor de tipos reduz a lista', async () => {
@@ -458,6 +465,13 @@ const run = async () => {
   await page.waitForTimeout(300);
   await check('busca pelo nome do titular encontra o documento', async () =>
     (await page.locator('main li').count()) === 1);
+
+  // Search must reach a document through its TYPE too — "banco de dados"
+  // appears nowhere in the item's own name or fields.
+  await page.fill('input[type="search"]', 'banco de dados');
+  await page.waitForTimeout(300);
+  await check('busca pelo rótulo do tipo encontra o item', async () =>
+    (await page.locator('main li:has-text("Postgres — staging")').count()) === 1);
   await page.fill('input[type="search"]', '');
 
   // 8e. Attachments: encrypt, store, and read the file back in the app.
