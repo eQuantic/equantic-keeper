@@ -85,6 +85,14 @@ describe('catálogo de tipos', () => {
     expect(type?.keywords).toEqual(expect.arrayContaining(['nado-vivo', 'nato vivo', 'DNV']));
   });
 
+  it('dá a cada tipo um exemplo de nome do próprio assunto', () => {
+    for (const type of DOCUMENT_TYPES) {
+      // Um formulário de declaração não pode sugerir "GitHub PAT".
+      expect(type.namePlaceholder, `sem exemplo de nome em ${type.id}`).toBeTruthy();
+      expect(type.namePlaceholder).not.toMatch(/GitHub|token/i);
+    }
+  });
+
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {
     const ids = DOCUMENT_TYPES.map((type) => type.id);
     expect(ids).toEqual(

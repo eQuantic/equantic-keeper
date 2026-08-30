@@ -69,6 +69,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Portugal -----------------------------------------------------------
   {
     id: 'pt-residencia',
+    namePlaceholder: 'Título de residência — Maria',
     label: 'Título de residência',
     keywords: ['AIMA', 'SEF', 'autorização de residência', 'imigração', 'residência'],
     group: 'Portugal',
@@ -88,6 +89,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-cartao-cidadao',
+    namePlaceholder: 'Cartão de Cidadão — Maria',
     label: 'Cartão de Cidadão',
     keywords: ['CC', 'cartão do cidadão', 'identidade', 'documento de identidade'],
     group: 'Portugal',
@@ -106,6 +108,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-nif',
+    namePlaceholder: 'NIF — Maria',
     label: 'NIF',
     keywords: ['contribuinte', 'número de contribuinte', 'número fiscal', 'finanças', 'AT'],
     group: 'Portugal',
@@ -122,6 +125,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-niss',
+    namePlaceholder: 'NISS — Maria',
     label: 'NISS',
     keywords: ['segurança social', 'número de segurança social'],
     group: 'Portugal',
@@ -136,6 +140,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-utente',
+    namePlaceholder: 'Nº de utente — Maria',
     label: 'Nº de utente (SNS)',
     keywords: ['SNS', 'saúde', 'centro de saúde', 'número de utente'],
     group: 'Portugal',
@@ -151,6 +156,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-registo-criminal',
+    namePlaceholder: 'Registo criminal — nacionalidade',
     label: 'Registo criminal',
     keywords: ['antecedentes criminais', 'certidão negativa', 'nada consta'],
     group: 'Portugal',
@@ -167,6 +173,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-morada',
+    namePlaceholder: 'Comprovativo de morada — 2026',
     label: 'Comprovativo de morada',
     keywords: ['comprovante de endereço', 'atestado de residência', 'junta de freguesia'],
     group: 'Portugal',
@@ -183,6 +190,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-arrendamento',
+    namePlaceholder: 'Arrendamento — Rua das Flores',
     label: 'Contrato de arrendamento',
     keywords: ['aluguel', 'aluguer', 'senhorio', 'inquilino', 'renda'],
     group: 'Portugal',
@@ -203,6 +211,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Brasil -------------------------------------------------------------
   {
     id: 'br-cpf',
+    namePlaceholder: 'CPF — Maria',
     label: 'CPF',
     keywords: ['receita federal', 'cadastro de pessoa física', 'número fiscal', 'contribuinte'],
     group: 'Brasil',
@@ -218,6 +227,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-rg',
+    namePlaceholder: 'RG — Maria',
     label: 'RG',
     keywords: ['identidade', 'carteira de identidade', 'documento de identidade'],
     group: 'Brasil',
@@ -234,6 +244,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-cnh',
+    namePlaceholder: 'CNH — Maria',
     label: 'CNH',
     keywords: ['carteira de motorista', 'habilitação', 'carta de condução', 'detran'],
     group: 'Brasil',
@@ -252,6 +263,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-titulo-eleitor',
+    namePlaceholder: 'Título de eleitor — Maria',
     label: 'Título de eleitor',
     keywords: ['justiça eleitoral', 'zona', 'seção', 'eleitoral'],
     group: 'Brasil',
@@ -269,6 +281,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-certidao',
+    namePlaceholder: 'Certidão de nascimento — Helena',
     label: 'Certidão de registo civil',
     keywords: ['certidão de nascimento', 'certidão de casamento', 'cartório'],
     group: 'Brasil',
@@ -289,6 +302,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-antecedentes',
+    namePlaceholder: 'Antecedentes — visto de trabalho',
     label: 'Certidão de antecedentes',
     keywords: ['nada consta', 'antecedentes criminais', 'polícia federal', 'registo criminal'],
     group: 'Brasil',
@@ -306,6 +320,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'br-ctps',
+    namePlaceholder: 'Carteira de trabalho — Maria',
     label: 'Carteira de trabalho',
     keywords: ['CTPS', 'carteira assinada', 'carteira profissional'],
     group: 'Brasil',
@@ -324,6 +339,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Geral --------------------------------------------------------------
   {
     id: 'passaporte',
+    namePlaceholder: 'Passaporte — Maria',
     label: 'Passaporte',
     keywords: ['passport', 'viagem'],
     group: 'Geral',
@@ -343,6 +359,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'visto',
+    namePlaceholder: 'Visto D7 — Portugal',
     label: 'Visto',
     keywords: ['visa', 'imigração', 'residência'],
     group: 'Geral',
@@ -361,6 +378,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-nado-vivo',
+    namePlaceholder: 'Nascido vivo — Helena',
     family: 'declaracoes',
     label: 'Declaração de nascido vivo',
     keywords: [
@@ -381,6 +399,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-credito-pessoal',
+    namePlaceholder: 'Crédito pessoal — banco',
     family: 'declaracoes',
     label: 'Declaração de crédito pessoal',
     keywords: ['empréstimo', 'financiamento', 'dívida'],
@@ -401,6 +420,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-credito-hipotecario',
+    namePlaceholder: 'Crédito habitação — banco',
     family: 'declaracoes',
     label: 'Declaração de crédito hipotecário',
     keywords: ['crédito habitação', 'financiamento imobiliário', 'hipoteca', 'dívida'],
@@ -422,6 +442,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'recibo-vencimento',
+    namePlaceholder: 'Recibo — agosto/2026',
     label: 'Recibo de vencimento',
     keywords: ['holerite', 'contracheque', 'folha de pagamento', 'salário', 'payslip'],
     group: 'Geral',
@@ -438,6 +459,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'contrato-trabalho',
+    namePlaceholder: 'Contrato de trabalho — 2026',
     label: 'Contrato de trabalho',
     keywords: ['CLT', 'emprego', 'empregador', 'employment'],
     group: 'Geral',
@@ -459,6 +481,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     // kind (see the types above). This one exists so an unforeseen declaration
     // still gets structured fields instead of a loose file.
     id: 'declaracao',
+    namePlaceholder: 'Declaração — para que serve',
     family: 'declaracoes',
     label: 'Declaração',
     keywords: ['comprovativo', 'comprovante', 'certidão'],
@@ -479,6 +502,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'diploma',
+    namePlaceholder: 'Licenciatura — Engenharia',
     label: 'Habilitações',
     keywords: ['diploma', 'certificado', 'faculdade', 'universidade', 'graduação', 'licenciatura'],
     group: 'Geral',
@@ -496,6 +520,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'vacinacao',
+    namePlaceholder: 'Vacinação — Helena',
     label: 'Vacinação',
     keywords: ['carteira de vacinação', 'boletim de vacinas', 'vacina', 'imunização'],
     group: 'Geral',
@@ -512,6 +537,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'seguro-saude',
+    namePlaceholder: 'Seguro de saúde — apólice 2026',
     label: 'Seguro / saúde',
     keywords: ['plano de saúde', 'convênio', 'apólice'],
     group: 'Geral',
@@ -529,6 +555,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'cartao-credito',
+    namePlaceholder: 'Cartão principal',
     label: 'Cartão de crédito',
     keywords: ['cartão de débito', 'multibanco'],
     group: 'Geral',
@@ -557,6 +584,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'documento',
+    namePlaceholder: 'Outro documento — 2026',
     label: 'Outro documento',
     group: 'Geral',
     category: 'doc',
@@ -575,6 +603,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Portugal (expansion) ----
   {
     id: 'pt-carta-conducao',
+    namePlaceholder: 'Carta de condução — Maria',
     label: 'Carta de Condução',
     keywords: ['carteira de motorista', 'CNH', 'habilitação', 'IMT'],
     group: 'Portugal',
@@ -592,6 +621,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-certidao',
+    namePlaceholder: 'Certidão de nascimento — Helena',
     label: 'Certidão (registo civil)',
     keywords: ['certidão de nascimento', 'certidão de casamento', 'conservatória'],
     group: 'Portugal',
@@ -610,6 +640,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-irs',
+    namePlaceholder: 'IRS 2025',
     family: 'declaracoes',
     label: 'Declaração de IRS',
     keywords: ['imposto de renda', 'IRPF', 'modelo 3', 'finanças', 'fisco', 'AT'],
@@ -628,6 +659,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-situacao-contributiva',
+    namePlaceholder: 'Situação contributiva — 2026',
     family: 'declaracoes',
     label: 'Situação contributiva',
     keywords: ['certidão negativa', 'não dívida', 'segurança social', 'INSS'],
@@ -648,6 +680,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-situacao-tributaria',
+    namePlaceholder: 'Situação tributária — 2026',
     family: 'declaracoes',
     label: 'Situação tributária',
     keywords: ['certidão negativa', 'não dívida', 'finanças', 'fisco', 'AT'],
@@ -668,6 +701,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-imi',
+    namePlaceholder: 'IMI 2026 — Rua das Flores',
     label: 'IMI',
     keywords: ['IPTU', 'imposto municipal', 'imóvel', 'habitação'],
     group: 'Portugal',
@@ -689,6 +723,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Espanha ----
   {
     id: 'es-dni',
+    namePlaceholder: 'DNI — Maria',
     label: 'DNI',
     keywords: ['identidade', 'documento de identidade'],
     group: 'Espanha',
@@ -704,6 +739,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'es-nie',
+    namePlaceholder: 'NIE — Maria',
     label: 'NIE / TIE',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'Espanha',
@@ -720,6 +756,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'es-nss',
+    namePlaceholder: 'Seguridad Social — Maria',
     label: 'Seguridad Social',
     keywords: ['segurança social'],
     group: 'Espanha',
@@ -731,6 +768,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'es-conducir',
+    namePlaceholder: 'Permiso de conducir — Maria',
     label: 'Permiso de Conducir',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'Espanha',
@@ -749,6 +787,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Estados Unidos ----
   {
     id: 'us-ssn',
+    namePlaceholder: 'SSN — Maria',
     label: 'Social Security Number',
     keywords: ['social security', 'número fiscal'],
     group: 'Estados Unidos',
@@ -760,6 +799,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'us-green-card',
+    namePlaceholder: 'Green Card — Maria',
     label: 'Green Card',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'Estados Unidos',
@@ -777,6 +817,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'us-driver-license',
+    namePlaceholder: 'Driver’s License — Maria',
     label: 'Driver’s License',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'Estados Unidos',
@@ -796,6 +837,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- França ----
   {
     id: 'fr-cni',
+    namePlaceholder: 'CNI — Maria',
     label: 'Carte d’Identité',
     keywords: ['identidade', 'documento de identidade'],
     group: 'França',
@@ -811,6 +853,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'fr-titre-sejour',
+    namePlaceholder: 'Titre de séjour — Maria',
     label: 'Titre de Séjour',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'França',
@@ -827,6 +870,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'fr-secu',
+    namePlaceholder: 'Sécurité Sociale — Maria',
     label: 'Sécurité Sociale',
     keywords: ['segurança social'],
     group: 'França',
@@ -838,6 +882,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'fr-permis',
+    namePlaceholder: 'Permis — Maria',
     label: 'Permis de Conduire',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'França',
@@ -856,6 +901,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Alemanha ----
   {
     id: 'de-personalausweis',
+    namePlaceholder: 'Personalausweis — Maria',
     label: 'Personalausweis',
     keywords: ['identidade', 'documento de identidade'],
     group: 'Alemanha',
@@ -871,6 +917,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'de-aufenthaltstitel',
+    namePlaceholder: 'Aufenthaltstitel — Maria',
     label: 'Aufenthaltstitel',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'Alemanha',
@@ -887,6 +934,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'de-steuer-id',
+    namePlaceholder: 'Steuer-ID — Maria',
     label: 'Steuer-ID',
     keywords: ['número fiscal', 'contribuinte'],
     group: 'Alemanha',
@@ -898,6 +946,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'de-fuehrerschein',
+    namePlaceholder: 'Führerschein — Maria',
     label: 'Führerschein',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'Alemanha',
@@ -916,6 +965,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Itália ----
   {
     id: 'it-carta-identita',
+    namePlaceholder: 'Carta d’identità — Maria',
     label: 'Carta d’Identità',
     keywords: ['identidade', 'documento de identidade'],
     group: 'Itália',
@@ -931,6 +981,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'it-codice-fiscale',
+    namePlaceholder: 'Codice fiscale — Maria',
     label: 'Codice Fiscale',
     keywords: ['número fiscal', 'contribuinte'],
     group: 'Itália',
@@ -942,6 +993,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'it-permesso',
+    namePlaceholder: 'Permesso — Maria',
     label: 'Permesso di Soggiorno',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'Itália',
@@ -958,6 +1010,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'it-patente',
+    namePlaceholder: 'Patente — Maria',
     label: 'Patente di Guida',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'Itália',
@@ -976,6 +1029,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Reino Unido ----
   {
     id: 'gb-ni-number',
+    namePlaceholder: 'NI Number — Maria',
     label: 'National Insurance Number',
     keywords: ['segurança social', 'número fiscal'],
     group: 'Reino Unido',
@@ -987,6 +1041,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'gb-brp',
+    namePlaceholder: 'BRP — Maria',
     label: 'BRP / eVisa',
     keywords: ['residência', 'imigração', 'autorização de residência'],
     group: 'Reino Unido',
@@ -1003,6 +1058,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'gb-driving-licence',
+    namePlaceholder: 'Driving Licence — Maria',
     label: 'Driving Licence',
     keywords: ['carteira de motorista', 'carta de condução', 'habilitação'],
     group: 'Reino Unido',

@@ -38,6 +38,11 @@ export interface SecretTypeDef {
   /** CSS color token used for the type badge. */
   accent: string;
   /**
+   * Example name for THIS kind of item — a declaration form must not suggest
+   * "GitHub PAT". Falls back to the label when a type does not set one.
+   */
+  namePlaceholder?: string;
+  /**
    * Family this type belongs to (see TYPE_FAMILIES): the list shows the family
    * once, and the form picks the member. Absent for types that stand alone.
    */
@@ -108,6 +113,7 @@ type BaseTypeDef = Omit<SecretTypeDef, 'category' | 'group'>;
 const DEV_TYPE_LIST: BaseTypeDef[] = [
   {
     id: 'api-token',
+    namePlaceholder: 'GitHub PAT — CI eQuantic',
     label: 'API Token',
     description: 'Tokens de acesso pessoal: GitHub PAT, GitLab, npm, Vercel, Slack…',
     icon: 'key',
@@ -123,6 +129,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'oauth-client',
+    namePlaceholder: 'OAuth — app de faturação',
     label: 'API Client / Secret',
     description: 'Aplicações OAuth e service principals: client id + client secret.',
     icon: 'app',
@@ -140,6 +147,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'login',
+    namePlaceholder: 'Portal das Finanças — Maria',
     label: 'Usuário e senha',
     description: 'Acesso a painéis e serviços, com suporte a 2FA (TOTP).',
     icon: 'user',
@@ -154,6 +162,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'registry',
+    namePlaceholder: 'Azure Container Registry — equantic',
     label: 'Container Registry',
     description: 'Azure CR, DigitalOcean, ECR, GHCR, Docker Hub, Harbor…',
     icon: 'container',
@@ -168,6 +177,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'cloud',
+    namePlaceholder: 'AWS — conta de produção',
     label: 'Cloud / Provider',
     description: 'Chaves de acesso de AWS, Azure, DigitalOcean, GCP, Cloudflare…',
     icon: 'cloud',
@@ -183,6 +193,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'ssh',
+    namePlaceholder: 'Chave SSH — servidor de deploy',
     label: 'Chave SSH',
     description: 'Acesso remoto a servidores: chave privada, passphrase e host.',
     icon: 'terminal',
@@ -199,6 +210,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'database',
+    namePlaceholder: 'Postgres — staging',
     label: 'Banco de dados',
     description: 'Strings de conexão e credenciais de bancos.',
     icon: 'database',
@@ -215,6 +227,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'env',
+    namePlaceholder: '.env — API de checkout',
     label: 'Variáveis / .env',
     description: 'Blocos inteiros de variáveis de ambiente por projeto.',
     icon: 'file',
@@ -227,6 +240,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'certificate',
+    namePlaceholder: 'Certificado TLS — equantic.tech',
     label: 'Certificado',
     description: 'Certificados TLS, chaves privadas e cadeias.',
     icon: 'shield',
@@ -242,6 +256,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'webhook',
+    namePlaceholder: 'Webhook — Stripe',
     label: 'Webhook',
     description: 'URLs de webhook e segredos de assinatura.',
     icon: 'link',
@@ -255,6 +270,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'license',
+    namePlaceholder: 'Licença — JetBrains',
     label: 'Licença',
     description: 'Chaves de licença de ferramentas e IDEs.',
     icon: 'badge',
@@ -268,6 +284,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
   },
   {
     id: 'note',
+    namePlaceholder: 'Nota — recuperação da conta',
     label: 'Nota segura',
     description: 'Qualquer anotação sensível em texto livre.',
     icon: 'note',
