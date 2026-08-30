@@ -399,13 +399,27 @@ const run = async () => {
   await check('Geral inclui o cartão de crédito', async () =>
     (await page.locator('[role="dialog"] button:has-text("Cartão de crédito")').count()) === 1);
   await check('Geral traz as declarações específicas e a genérica de resto', async () =>
-    (await page.locator('[role="dialog"] button:has-text("Declaração de nado vivo")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Declaração de nascido vivo")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Declaração de crédito pessoal")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Declaração de crédito hipotecário")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Declaração")').count()) === 4);
   await check('Geral traz recibo de vencimento e contrato de trabalho', async () =>
     (await page.locator('[role="dialog"] button:has-text("Recibo de vencimento")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Contrato de trabalho")').count()) === 1);
+  // The person types the name they use; the form is called something else.
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'holerite');
+  await page.waitForTimeout(200);
+  await check('filtro do assistente encontra o recibo por "holerite"', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    return labels.length === 1 && labels[0] === 'Recibo de vencimento';
+  });
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'nato vivo');
+  await page.waitForTimeout(200);
+  await check('filtro do assistente encontra a declaração por "nato vivo"', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    return labels.length === 1 && labels[0] === 'Declaração de nascido vivo';
+  });
+  await page.fill('input[placeholder*="Filtrar tipos"]', '');
   await page.click('button[aria-label="Voltar"]');
   await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Portugal")');
@@ -425,7 +439,17 @@ const run = async () => {
   await page.waitForTimeout(200);
   await check('filtro do seletor de tipos reduz a lista', async () => {
     const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
-    return labels.length > 0 && labels.every((label) => /resid/i.test(label));
+    // Not every label has to read "resid" any more: the filter also matches
+    // keywords, so "residência" legitimately surfaces the comprovativo de
+    // morada (atestado de residência). What matters is that it narrows.
+    const total = await page.evaluate(() => document.querySelectorAll('[role="dialog"] button .font-medium').length);
+    return labels.length > 0 && labels.length < 5 && labels.includes('Título de residência') && total === labels.length;
+  });
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'residencia');
+  await page.waitForTimeout(200);
+  await check('filtro do assistente ignora acentos', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    return labels.includes('Título de residência');
   });
   await page.screenshot({ path: `${OUT}/06-tipos-documento.png` });
 
@@ -479,6 +503,11 @@ const run = async () => {
   await page.waitForTimeout(300);
   await check('busca pelo rótulo do tipo encontra o item', async () =>
     (await page.locator('main li:has-text("Postgres — staging")').count()) === 1);
+  // Aliases: "SEF" is nowhere in the item — it lives in the type's keywords.
+  await page.fill('input[type="search"]', 'SEF');
+  await page.waitForTimeout(300);
+  await check('busca por apelido do tipo (SEF) encontra o título de residência', async () =>
+    (await page.locator('main li:has-text("Título de residência — Maria")').count()) === 1);
   await page.fill('input[type="search"]', '');
 
   // 8e. Attachments: encrypt, store, and read the file back in the app.
