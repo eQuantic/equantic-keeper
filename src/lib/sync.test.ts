@@ -4,7 +4,7 @@ import type { DriveApi, DriveFileMeta, RemoteVault } from './drive';
 import { VAULT_FILE_NAME } from './drive';
 import type { VaultItem } from './model';
 import { createVault, emptyPayload, openVault, sealVault, type VaultFile, type VaultPayload } from './vault';
-import { VaultPasswordMismatchError, pullVault, syncVault } from './sync';
+import { RETRY_BASE_MS, VaultPasswordMismatchError, pullVault, retryDelay, syncVault } from './sync';
 
 const iterations = MIN_ITERATIONS;
 
@@ -120,6 +120,17 @@ async function setup(password = 'senha-mestra-de-teste') {
 async function readStored(drive: FakeDrive, fileId: string, derived: DerivedKey): Promise<VaultPayload> {
   return openVault(drive.stored(fileId), derived);
 }
+
+describe('espera entre tentativas', () => {
+  it('cresce enquanto falha e para de crescer', () => {
+    expect(retryDelay(0)).toBe(RETRY_BASE_MS);
+    expect(retryDelay(1)).toBe(RETRY_BASE_MS * 2);
+    expect(retryDelay(4)).toBe(RETRY_BASE_MS * 16);
+    // Teto: uma semana offline não pode virar uma espera de horas.
+    expect(retryDelay(50)).toBe(RETRY_BASE_MS * 16);
+    expect(retryDelay(-3)).toBe(RETRY_BASE_MS);
+  });
+});
 
 describe('syncVault', () => {
   it('creates the vault file when Drive has none', async () => {

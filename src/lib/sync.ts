@@ -35,6 +35,18 @@ export interface SyncResult {
  * password (e.g. changed on another device). Merging is impossible without
  * that password, so the user has to choose a side.
  */
+/** First retry after a failed sync; doubles up to 16x (about eight minutes). */
+export const RETRY_BASE_MS = 30_000;
+
+/**
+ * How long to wait before chasing a pending sync again. Grows while it keeps
+ * failing — a week offline should not mean a request every thirty seconds —
+ * and is capped so it always comes back on its own.
+ */
+export function retryDelay(attempt: number): number {
+  return RETRY_BASE_MS * 2 ** Math.min(Math.max(attempt, 0), 4);
+}
+
 export class VaultPasswordMismatchError extends Error {
   constructor(readonly remote: VaultFile) {
     super('O cofre no Drive foi cifrado com outra senha mestra.');
