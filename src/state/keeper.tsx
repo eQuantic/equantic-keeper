@@ -56,6 +56,7 @@ import {
   type VaultPreferences,
 } from '../lib/vault';
 import * as storage from '../lib/storage';
+import { clearDerivedKey, loadDerivedKey, saveDerivedKey } from '../lib/keystore';
 import { pullVault, syncVault, VaultPasswordMismatchError } from '../lib/sync';
 import { parseBundle, readBackup, referencedAttachments } from '../lib/backup';
 import { clearClipboard } from '../lib/clipboard';
@@ -168,6 +169,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     },
     [patch],
   );
+
+  /** "Never lock" keeps the derived key on-device; anything else removes it. */
+  const syncKeystore = useCallback((derived: DerivedKey | null, minutes: number) => {
+    if (minutes === 0 && derived) void saveDerivedKey(derived);
+    else void clearDerivedKey();
+  }, []);
+
 
   const biometricAvailableRef = useRef(false);
   /** Recomputes the biometric flags from storage and the vault currently loaded. */
@@ -454,12 +462,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         derivedRef.current = derived;
         setPayload(payload);
         patch({ phase: 'unlocked', busy: false });
+        syncKeystore(derived, payload.preferences.autoLockMinutes);
         await pullAfterUnlock(derived, payload);
       } catch (error) {
         fail(error, 'Não foi possível desbloquear o cofre.');
       }
     },
-    [fail, patch, pullAfterUnlock, setPayload],
+    [fail, patch, pullAfterUnlock, setPayload, syncKeystore],
   );
 
   const unlockWithBiometrics = useCallback(async () => {
@@ -494,6 +503,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       derivedRef.current = derived;
       setPayload(payload);
       patch({ phase: 'unlocked', busy: false });
+      syncKeystore(derived, payload.preferences.autoLockMinutes);
       await pullAfterUnlock(derived, payload);
     } catch (error) {
       // Dismissing the Face ID / fingerprint sheet is not a failure to report.
@@ -549,6 +559,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(syncTimerRef.current);
     derivedRef.current = null;
     payloadRef.current = null;
+    // A deliberate lock always demands a credential next, whatever the
+    // auto-lock preference says.
+    void clearDerivedKey();
     void clearClipboard();
     setState((current) => ({
       ...current,
@@ -708,9 +721,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   );
 
   const updatePreferences = useCallback(
-    (prefs: Partial<VaultPreferences>) =>
-      mutate((payload) => ({ ...payload, preferences: { ...payload.preferences, ...prefs } })),
-    [mutate],
+    async (prefs: Partial<VaultPreferences>) => {
+      await mutate((payload) => ({ ...payload, preferences: { ...payload.preferences, ...prefs } }));
+      if ('autoLockMinutes' in prefs) {
+        syncKeystore(derivedRef.current, prefs.autoLockMinutes ?? DEFAULT_PREFERENCES.autoLockMinutes);
+      }
+    },
+    [mutate, syncKeystore],
   );
 
   const syncNow = useCallback(
@@ -737,6 +754,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         const { derived, file: rebuilt } = await buildVault(next, payload);
         derivedRef.current = derived;
         fileRef.current = rebuilt;
+        syncKeystore(derived, payload.preferences.autoLockMinutes);
         storage.saveCachedVault({
           file: rebuilt,
           ...(driveIdRef.current ? { driveFileId: driveIdRef.current } : {}),
@@ -863,6 +881,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
   const wipeDevice = useCallback(() => {
     storage.wipeLocalData();
+    void clearDerivedKey();
     derivedRef.current = null;
     payloadRef.current = null;
     fileRef.current = null;
@@ -918,7 +937,24 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     const cached = storage.loadCachedVault();
     if (cached) {
       adoptVaultFile(cached.file, cached.driveFileId, cached.driveRevision);
-      patch({ phase: 'locked' });
+      // With "never lock", a non-extractable copy of the key lives on the
+      // device: a discarded tab or an app update must not cost the password.
+      void (async () => {
+        const derived = await loadDerivedKey();
+        if (derived) {
+          try {
+            const { payload } = await unlockVaultWithDerived(cached.file, derived);
+            derivedRef.current = derived;
+            setPayload(payload);
+            patch({ phase: 'unlocked' });
+            await pullAfterUnlock(derived, payload);
+            return;
+          } catch {
+            await clearDerivedKey();
+          }
+        }
+        patch({ phase: 'locked' });
+      })();
       void connectGoogle(false);
     } else {
       patch({ phase: 'signin' });

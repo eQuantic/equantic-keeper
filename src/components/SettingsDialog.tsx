@@ -290,7 +290,11 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           <label className="flex items-center justify-between gap-4 py-2 text-sm text-ink">
             <span>
               Bloquear automaticamente
-              <span className="mt-0.5 block text-xs text-muted">A chave é apagada da memória após inatividade.</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                {prefs.autoLockMinutes === 0
+                  ? 'O cofre reabre sem senha neste dispositivo até você bloquear manualmente.'
+                  : 'A chave é apagada da memória após inatividade.'}
+              </span>
             </span>
             <select
               className={selectClass}

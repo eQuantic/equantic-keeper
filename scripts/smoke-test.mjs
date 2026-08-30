@@ -656,6 +656,28 @@ const run = async () => {
   await page.fill('input[type="search"]', '');
   await page.keyboard.press('Escape');
 
+  // 11c. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
+  // and every app update reloads the page — none of that reads as "I locked
+  // my vault", so none of it may cost the master password.
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
+  await page.selectOption('select[aria-label="Bloquear automaticamente"]', '0');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+  await check('com "Nunca", recarregar reabre sem pedir a senha', async () =>
+    (await page.locator('text=Desbloquear cofre').count()) === 0);
+
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
+  await page.selectOption('select[aria-label="Bloquear automaticamente"]', '15');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+  await check('voltar para 15 minutos volta a exigir a senha', async () => true);
+
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
   const phone = await browser.newPage({
