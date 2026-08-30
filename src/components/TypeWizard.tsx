@@ -6,8 +6,8 @@
  * types skip the steps entirely.
  */
 import { useMemo, useState } from 'react';
-import { getAllTypes, getType, type SecretTypeDef } from '../lib/model';
-import { DOCUMENT_ORIGINS, GENERAL_GROUP } from '../lib/documents';
+import { getAllTypes, getFamily, getType, type SecretTypeDef } from '../lib/model';
+import { DOCUMENT_ORIGINS, GENERAL_GROUP, type TypeFamily } from '../lib/documents';
 import { normalizeSearchText } from '../lib/search';
 import { loadRecentTypes } from '../lib/storage';
 import { TypeBuilder } from './TypeBuilder';
@@ -23,6 +23,84 @@ function matches(type: SecretTypeDef, needle: string): boolean {
   // "holerite", and the form is called "Recibo de vencimento".
   const hay = [type.label, type.description, type.group, ...(type.keywords ?? [])].join(' ');
   return normalizeSearchText(hay).includes(needle);
+}
+
+type Entry = { kind: 'type'; type: SecretTypeDef } | { kind: 'family'; family: TypeFamily; members: SecretTypeDef[] };
+
+/**
+ * One row per family instead of one per member — "Declarações" rather than
+ * seven near-identical tiles. Two escapes keep it from hiding anything: a
+ * family with a single member in this group renders as that member, and a
+ * filter that names a specific member ("IRS") lists the members themselves,
+ * so typing what you want still lands straight on its form.
+ */
+function collapseFamilies(types: SecretTypeDef[], needle: string): Entry[] {
+  const entries: Entry[] = [];
+  const done = new Set<string>();
+  for (const type of types) {
+    const family = getFamily(type.family);
+    if (!family) {
+      if (matches(type, needle)) entries.push({ kind: 'type', type });
+      continue;
+    }
+    if (done.has(family.id)) continue;
+    done.add(family.id);
+    const members = types.filter((candidate) => candidate.family === family.id);
+    const named = needle ? members.filter((member) => matches(member, needle)) : [];
+    if (members.length < 2 || (needle && named.length > 0 && named.length < members.length)) {
+      for (const member of members.length < 2 ? members : named) {
+        if (!needle || matches(member, needle)) entries.push({ kind: 'type', type: member });
+      }
+      continue;
+    }
+    const familyHay = normalizeSearchText(`${family.label} ${family.description}`);
+    if (!needle || familyHay.includes(needle) || named.length > 0) {
+      entries.push({ kind: 'family', family, members });
+    }
+  }
+  return entries;
+}
+
+function FamilyRow({ family, count, onPick }: { family: TypeFamily; count: number; onPick: (typeId: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(family.defaultTypeId)}
+      className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-raised"
+    >
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]"
+        style={{ color: family.accent, backgroundColor: `color-mix(in srgb, ${family.accent} 13%, transparent)` }}
+      >
+        <Icon name={family.icon} size={18} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-ink pointer-coarse:text-base">
+          {family.label}
+        </span>
+        <span className="block truncate text-xs leading-snug text-muted pointer-coarse:text-[13px]">
+          {family.description}
+        </span>
+      </span>
+      <span className="shrink-0 rounded-md bg-raised px-1.5 py-0.5 text-[11px] text-faint tabular-nums">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function EntryRows({ entries, onPick }: { entries: Entry[]; onPick: (typeId: string) => void }) {
+  return (
+    <>
+      {entries.map((entry) =>
+        entry.kind === 'family' ? (
+          <FamilyRow key={entry.family.id} family={entry.family} count={entry.members.length} onPick={onPick} />
+        ) : (
+          <TypeRow key={entry.type.id} type={entry.type} onPick={onPick} />
+        ),
+      )}
+    </>
+  );
 }
 
 function TypeRow({ type, onPick }: { type: SecretTypeDef; onPick: (typeId: string) => void }) {
@@ -170,16 +248,14 @@ export function TypeWizard({
 
   let body = null;
   if (step.kind === 'dev') {
-    const types = devTypes.filter((type) => matches(type, needle));
+    const entries = collapseFamilies(devTypes, needle);
     body = (
       <>
         {search('Filtrar tipos: token, ssh, registry…')}
         <div className="grid gap-1 sm:grid-cols-2">
-          {types.map((type) => (
-            <TypeRow key={type.id} type={type} onPick={onPick} />
-          ))}
+          <EntryRows entries={entries} onPick={onPick} />
         </div>
-        {types.length === 0 ? (
+        {entries.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
         ) : null}
         {customEntry('Não encontrou? Crie um tipo de desenvolvimento', 'Desenvolvimento')}
@@ -263,16 +339,17 @@ export function TypeWizard({
     );
   } else if (step.kind === 'types') {
     const group = step.group;
-    const types = docTypes.filter((type) => type.group === group && matches(type, needle));
+    const entries = collapseFamilies(
+      docTypes.filter((type) => type.group === group),
+      needle,
+    );
     body = (
       <>
         {search('Filtrar tipos: residência, CPF, passaporte…')}
         <div className="grid gap-1 sm:grid-cols-2">
-          {types.map((type) => (
-            <TypeRow key={type.id} type={type} onPick={onPick} />
-          ))}
+          <EntryRows entries={entries} onPick={onPick} />
         </div>
-        {types.length === 0 ? (
+        {entries.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
         ) : null}
         {customEntry(`Não encontrou? Crie um tipo para ${group}`, group)}

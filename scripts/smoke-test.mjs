@@ -398,11 +398,13 @@ const run = async () => {
   await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
   await check('Geral inclui o cartão de crédito', async () =>
     (await page.locator('[role="dialog"] button:has-text("Cartão de crédito")').count()) === 1);
-  await check('Geral traz as declarações específicas e a genérica de resto', async () =>
-    (await page.locator('[role="dialog"] button:has-text("Declaração de nascido vivo")').count()) === 1 &&
-    (await page.locator('[role="dialog"] button:has-text("Declaração de crédito pessoal")').count()) === 1 &&
-    (await page.locator('[role="dialog"] button:has-text("Declaração de crédito hipotecário")').count()) === 1 &&
-    (await page.locator('[role="dialog"] button:has-text("Declaração")').count()) === 4);
+  // Declarations are a FAMILY: one entry in the list, the specific kind picked
+  // inside the form. Seven tiles for "uma declaração" is what this replaces.
+  await check('declarações aparecem como uma entrada só', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    const declarations = labels.filter((label) => /declara/i.test(label));
+    return declarations.length === 1 && declarations[0] === 'Declarações';
+  });
   await check('Geral traz recibo de vencimento e contrato de trabalho', async () =>
     (await page.locator('[role="dialog"] button:has-text("Recibo de vencimento")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Contrato de trabalho")').count()) === 1);
@@ -413,9 +415,11 @@ const run = async () => {
     const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
     return labels.length === 1 && labels[0] === 'Recibo de vencimento';
   });
+  // Naming a specific member opens the family up, so typing what you want
+  // still lands straight on its own form instead of on the family entry.
   await page.fill('input[placeholder*="Filtrar tipos"]', 'nato vivo');
   await page.waitForTimeout(200);
-  await check('filtro do assistente encontra a declaração por "nato vivo"', async () => {
+  await check('filtrar por "nato vivo" revela o membro específico da família', async () => {
     const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
     return labels.length === 1 && labels[0] === 'Declaração de nascido vivo';
   });
@@ -427,10 +431,17 @@ const run = async () => {
   await check('Portugal ganhou os tipos novos', async () =>
     (await page.locator('[role="dialog"] button:has-text("Carta de Condução")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Certidão (registo civil)")').count()) === 1);
-  await check('Portugal traz IRS e as situações contributiva e tributária', async () =>
-    (await page.locator('[role="dialog"] button:has-text("Declaração de IRS")').count()) === 1 &&
-    (await page.locator('[role="dialog"] button:has-text("Situação contributiva")').count()) === 1 &&
-    (await page.locator('[role="dialog"] button:has-text("Situação tributária")').count()) === 1);
+  await check('as declarações de Portugal também vêm dobradas na família', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    return labels.includes('Declarações') && !labels.includes('Declaração de IRS');
+  });
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'IRS');
+  await page.waitForTimeout(200);
+  await check('filtrar por IRS abre a família e mostra o formulário próprio', async () => {
+    const labels = await page.locator('[role="dialog"] button .font-medium').allTextContents();
+    return labels.includes('Declaração de IRS');
+  });
+  await page.fill('input[placeholder*="Filtrar tipos"]', '');
   await check('Portugal traz o IMI', async () =>
     // Exact match on the label element: has-text is a substring and "IMI"
     // also lives inside "imigração" in another type's description.
@@ -911,6 +922,44 @@ const run = async () => {
   await page.waitForTimeout(400);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
+
+  // 11c-bis. The family flow end to end: one entry in the list, the specific
+  // form chosen inside the item — and the fields typed before the choice survive it.
+  await page.locator('header button:has-text("Novo")').click();
+  await page.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Documento pessoal")');
+  await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
+  await page.click('[role="dialog"] button:has-text("Declarações")');
+  await page.waitForSelector('select[aria-label="Tipo de declaração"]', { timeout: 5000 });
+  await check('a família abre o formulário com o seletor de tipo', async () => {
+    const options = await page.locator('select[aria-label="Tipo de declaração"] option').allTextContents();
+    return options.includes('Declaração de IRS') && options.includes('Declaração de nascido vivo');
+  });
+  await page.fill('input[placeholder="GitHub PAT — CI eQuantic"]', 'IRS 2025');
+  await page.selectOption('select[aria-label="Tipo de declaração"]', 'pt-irs');
+  await page.waitForTimeout(200);
+  await check('escolher IRS troca os campos do formulário', async () =>
+    (await page.locator('[role="dialog"] label:has-text("Ano fiscal")').count()) === 1 &&
+    (await page.locator('[role="dialog"] label:has-text("Nº da declaração")').count()) === 1);
+  await check('o nome já digitado sobrevive à troca de tipo', async () =>
+    (await page.locator('input[placeholder="GitHub PAT — CI eQuantic"]').inputValue()) === 'IRS 2025');
+  await page.locator('label:has-text("Ano fiscal") input').first().fill('2025');
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("IRS 2025")', { timeout: 5000 });
+  await check('o item guarda o tipo específico, não o genérico', async () =>
+    (await page.locator('aside:has(h2) >> text=Declaração de IRS').count()) > 0 &&
+    (await page.locator('aside:has(h2) >> text=2025').count()) > 0);
+  await check('a barra lateral mostra a família como uma entrada só', async () => {
+    const entries = await page.locator('nav button').filter({ hasText: /Declara/ }).allTextContents();
+    return entries.length === 1 && /Declarações/.test(entries[0]);
+  });
+  await page.locator('nav button').filter({ hasText: /Declarações/ }).click();
+  await page.waitForTimeout(300);
+  await check('filtrar pela família lista as declarações', async () =>
+    (await page.locator('main li:has-text("IRS 2025")').count()) === 1);
+  await page.locator('nav button:has-text("Tudo")').first().click();
+  await page.waitForTimeout(300);
 
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked

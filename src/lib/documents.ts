@@ -34,6 +34,37 @@ export const DOCUMENT_ORIGINS: DocumentOrigin[] = [
   { group: 'Reino Unido', code: 'GB', accent: '#7c9cff', hint: 'NI Number, BRP/eVisa, Driving Licence…' },
 ];
 
+/**
+ * A family collapses near-identical paperwork into ONE entry in the type list,
+ * with the specific kind chosen inside the form — declarations are the case
+ * that forced it: seven separate tiles for what a person thinks of as "uma
+ * declaração". The specific forms stay specific (that is the whole product
+ * promise); only the way you reach them is folded.
+ */
+export interface TypeFamily {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  accent: string;
+  /** Label of the picker rendered inside the form. */
+  pickerLabel: string;
+  /** Member used when the family is picked before the specific kind is known. */
+  defaultTypeId: string;
+}
+
+export const TYPE_FAMILIES: TypeFamily[] = [
+  {
+    id: 'declaracoes',
+    label: 'Declarações',
+    description: 'IRS, nado vivo, crédito, situação contributiva… escolhe-se no formulário.',
+    icon: 'file',
+    accent: '#e8b45a',
+    pickerLabel: 'Tipo de declaração',
+    defaultTypeId: 'declaracao',
+  },
+];
+
 export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Portugal -----------------------------------------------------------
   {
@@ -330,6 +361,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-nado-vivo',
+    family: 'declaracoes',
     label: 'Declaração de nascido vivo',
     keywords: [
       'nado vivo', 'nado-vivo', 'nato vivo', 'nascido vivo', 'DNV', 'declaração de nascimento', 'maternidade'
@@ -349,6 +381,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-credito-pessoal',
+    family: 'declaracoes',
     label: 'Declaração de crédito pessoal',
     keywords: ['empréstimo', 'financiamento', 'dívida'],
     group: 'Geral',
@@ -368,6 +401,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'declaracao-credito-hipotecario',
+    family: 'declaracoes',
     label: 'Declaração de crédito hipotecário',
     keywords: ['crédito habitação', 'financiamento imobiliário', 'hipoteca', 'dívida'],
     group: 'Geral',
@@ -425,6 +459,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     // kind (see the types above). This one exists so an unforeseen declaration
     // still gets structured fields instead of a loose file.
     id: 'declaracao',
+    family: 'declaracoes',
     label: 'Declaração',
     keywords: ['comprovativo', 'comprovante', 'certidão'],
     group: 'Geral',
@@ -575,6 +610,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-irs',
+    family: 'declaracoes',
     label: 'Declaração de IRS',
     keywords: ['imposto de renda', 'IRPF', 'modelo 3', 'finanças', 'fisco', 'AT'],
     group: 'Portugal',
@@ -592,6 +628,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-situacao-contributiva',
+    family: 'declaracoes',
     label: 'Situação contributiva',
     keywords: ['certidão negativa', 'não dívida', 'segurança social', 'INSS'],
     group: 'Portugal',
@@ -611,6 +648,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
   },
   {
     id: 'pt-situacao-tributaria',
+    family: 'declaracoes',
     label: 'Situação tributária',
     keywords: ['certidão negativa', 'não dívida', 'finanças', 'fisco', 'AT'],
     group: 'Portugal',
