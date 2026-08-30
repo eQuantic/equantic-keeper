@@ -1,6 +1,6 @@
 /** Domain model: what a "secret" is, and the field schema of each kind. */
 import type { WrappedKey } from './crypto';
-import { DOCUMENT_TYPES } from './documents';
+import { DOCUMENT_TYPES, TYPE_FAMILIES, type TypeFamily } from './documents';
 
 export type FieldKind =
   | 'text'
@@ -37,6 +37,11 @@ export interface SecretTypeDef {
   icon: string;
   /** CSS color token used for the type badge. */
   accent: string;
+  /**
+   * Family this type belongs to (see TYPE_FAMILIES): the list shows the family
+   * once, and the form picks the member. Absent for types that stand alone.
+   */
+  family?: string;
   /**
    * Extra search terms for this type: the other country's name for the same
    * paper (holerite/recibo de vencimento, IPTU/IMI), the colloquial spelling
@@ -342,6 +347,17 @@ export function registerCustomTypes(customs: CustomTypeDef[]): void {
 /** Built-in types plus the registered custom ones, in that order. */
 export function getAllTypes(): SecretTypeDef[] {
   return [...SECRET_TYPES, ...CUSTOM_INDEX.values()];
+}
+
+const FAMILY_INDEX = new Map(TYPE_FAMILIES.map((family) => [family.id, family]));
+
+export function getFamily(id: string | undefined): TypeFamily | undefined {
+  return id ? FAMILY_INDEX.get(id) : undefined;
+}
+
+/** Every type in the family, custom types included, in catalogue order. */
+export function familyMembers(familyId: string): SecretTypeDef[] {
+  return getAllTypes().filter((type) => type.family === familyId);
 }
 
 export const FALLBACK_TYPE: SecretTypeDef = {

@@ -1,9 +1,10 @@
 /** The unlocked application: sidebar, list and detail pane. */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getAllTypes, getType, isSecretKind, type VaultItem } from '../lib/model';
+import { getAllTypes, getFamily, getType, isSecretKind, type SecretTypeDef, type VaultItem } from '../lib/model';
 import { DEFAULT_WARNING_DAYS, collectExpiring, describeExpiry } from '../lib/expiry';
 import { EMPTY_FILTERS, applyFilters, collectFolders, collectTags, type Filters, type SortMode } from '../lib/search';
 import { activeFolders, activeItems, activePeople, trashedItems } from '../lib/vault';
+import type { TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
 import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
@@ -16,6 +17,11 @@ import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
 import { useCloseOnBack } from '../components/use-close-on-back';
+
+/** A sidebar row: one type in use, or a whole family of them. */
+type SidebarEntry =
+  | { kind: 'type'; type: SecretTypeDef; count: number }
+  | { kind: 'family'; family: TypeFamily; count: number };
 
 function relativeTime(value: string): string {
   const diff = Date.now() - Date.parse(value);
@@ -151,14 +157,32 @@ export function VaultScreen() {
     return counts;
   }, [active]);
 
-  /** Only types actually in use, bucketed by origin so the sidebar stays short. */
+  /**
+   * Only types actually in use, bucketed by origin so the sidebar stays short —
+   * and a family (every declaration, say) counts as ONE entry, filed under the
+   * group of its default member however many countries its members span.
+   */
   const typeGroups = useMemo(() => {
     const order = ['Portugal', 'Brasil', 'Geral', 'Desenvolvimento'];
-    const buckets = new Map<string, ReturnType<typeof getAllTypes>>();
+    const buckets = new Map<string, SidebarEntry[]>();
+    const familyCounts = new Map<string, number>();
+    const push = (heading: string, entry: SidebarEntry) =>
+      buckets.set(heading, [...(buckets.get(heading) ?? []), entry]);
+
     for (const type of getAllTypes()) {
-      if (!typeCounts.get(type.id)) continue;
-      const heading = type.category === 'dev' ? 'Desenvolvimento' : type.group;
-      buckets.set(heading, [...(buckets.get(heading) ?? []), type]);
+      const count = typeCounts.get(type.id);
+      if (!count) continue;
+      if (type.family) {
+        familyCounts.set(type.family, (familyCounts.get(type.family) ?? 0) + count);
+        continue;
+      }
+      push(type.category === 'dev' ? 'Desenvolvimento' : type.group, { kind: 'type', type, count });
+    }
+    for (const [familyId, count] of familyCounts) {
+      const family = getFamily(familyId);
+      if (!family) continue;
+      const home = getType(family.defaultTypeId);
+      push(home.category === 'dev' ? 'Desenvolvimento' : home.group, { kind: 'family', family, count });
     }
     return [...buckets.entries()].sort(
       ([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99),
@@ -396,21 +420,37 @@ export function VaultScreen() {
         </div>
       ) : null}
 
-      {typeGroups.map(([heading, types]) => (
+      {typeGroups.map(([heading, entries]) => (
         <div key={heading}>
           <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">{heading}</p>
           <div className="space-y-0.5">
-            {types.map((type) => (
-              <NavItem
-                key={type.id}
-                icon={type.icon}
-                accent={type.accent}
-                label={type.label}
-                count={typeCounts.get(type.id)}
-                activeState={filters.type === type.id}
-                onClick={() => setFilter({ ...EMPTY_FILTERS, type: type.id, query: filters.query })}
-              />
-            ))}
+            {entries.map((entry) =>
+              entry.kind === 'family' ? (
+                <NavItem
+                  key={entry.family.id}
+                  icon={entry.family.icon}
+                  accent={entry.family.accent}
+                  label={entry.family.label}
+                  count={entry.count}
+                  activeState={filters.family === entry.family.id}
+                  onClick={() =>
+                    setFilter({ ...EMPTY_FILTERS, family: entry.family.id, query: filters.query })
+                  }
+                />
+              ) : (
+                <NavItem
+                  key={entry.type.id}
+                  icon={entry.type.icon}
+                  accent={entry.type.accent}
+                  label={entry.type.label}
+                  count={entry.count}
+                  activeState={filters.type === entry.type.id}
+                  onClick={() =>
+                    setFilter({ ...EMPTY_FILTERS, type: entry.type.id, query: filters.query })
+                  }
+                />
+              ),
+            )}
           </div>
         </div>
       ))}

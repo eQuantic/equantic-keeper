@@ -3,6 +3,8 @@ import { useRef, useState, type FormEvent } from 'react';
 import {
   createItem,
   createPerson,
+  familyMembers,
+  getFamily,
   getType,
   isMultilineKind,
   isSecretKind,
@@ -186,6 +188,28 @@ export function ItemEditor({
     setDraft((current) => ({ ...current, ...changes }));
   };
 
+  /**
+   * Families are picked here, not in the type list: "Declarações" is one entry
+   * out there, and the specific form is chosen inside the item. Switching
+   * keeps every field the new form also has, so correcting the kind after
+   * typing does not cost the typing.
+   */
+  const family = getFamily(type.family);
+  const members = family ? familyMembers(family.id) : [];
+  const memberGroups = [...new Map(members.map((member) => [member.group, [] as typeof members])).entries()].map(
+    ([groupName]) => [groupName, members.filter((member) => member.group === groupName)] as const,
+  );
+  const switchType = (typeId: string) => {
+    if (typeId === draft.type) return;
+    const kept: Record<string, string> = {};
+    for (const field of getType(typeId).fields) {
+      const value = draft.fields[field.id];
+      if (value) kept[field.id] = value;
+    }
+    patch({ type: typeId, fields: kept });
+    pushRecentType(typeId);
+  };
+
   /** Adds a holder without leaving the form, and selects them right away. */
   const commitNewPerson = () => {
     const name = newPerson.trim();
@@ -251,6 +275,29 @@ export function ItemEditor({
       }
     >
       <form onSubmit={submit} className="space-y-4">
+        {family ? (
+          <Field
+            label={family.pickerLabel}
+            hint="Muda os campos deste formulário. O que já preencheu é mantido."
+          >
+            <select
+              aria-label={family.pickerLabel}
+              value={draft.type}
+              onChange={(event) => switchType(event.target.value)}
+              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
+            >
+              {memberGroups.map(([groupName, groupMembers]) => (
+                <optgroup key={groupName} label={groupName}>
+                  {groupMembers.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </Field>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome">
             <TextInput

@@ -1,6 +1,6 @@
 /** Filtering and ranking for the item list. */
 import { DEFAULT_WARNING_DAYS, expiryOf } from './expiry';
-import { getType, isSecretKind, type VaultItem } from './model';
+import { getFamily, getType, isSecretKind, type VaultItem } from './model';
 
 export interface Filters {
   query: string;
@@ -9,6 +9,8 @@ export interface Filters {
   folder: string | null;
   /** `Person.id`, or null for "anyone". */
   holderId: string | null;
+  /** One family of near-identical paperwork, e.g. every declaration. */
+  family: string | null;
   /** Restricts the list to one half of the catalogue. */
   category: 'dev' | 'doc' | null;
   /** Only what is past its validity date, or approaching it. */
@@ -23,6 +25,7 @@ export const EMPTY_FILTERS: Filters = {
   tag: null,
   folder: null,
   holderId: null,
+  family: null,
   category: null,
   expiry: null,
   favoritesOnly: false,
@@ -51,6 +54,8 @@ function haystack(item: VaultItem, holderName = ''): string {
     item.folder,
     type.label,
     type.group,
+    // "declarações" must reach every one of them, whatever its own label says.
+    getFamily(type.family)?.label ?? '',
     holderName,
     ...item.tags,
     // Aliases: "holerite" must find a recibo de vencimento, "nato vivo" the
@@ -101,6 +106,7 @@ export function applyFilters(
   const filtered = items.filter((item) => {
     if (wantTrash !== !!item.deletedAt) return false;
     if (filters.type && item.type !== filters.type) return false;
+    if (filters.family && getType(item.type).family !== filters.family) return false;
     if (filters.category && getType(item.type).category !== filters.category) return false;
     if (filters.holderId && item.holderId !== filters.holderId) return false;
     if (filters.tag && !item.tags.includes(filters.tag)) return false;
