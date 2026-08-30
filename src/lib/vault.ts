@@ -18,6 +18,7 @@ import {
   timingSafeEqual,
 } from './crypto';
 import { DEFAULT_WARNING_DAYS } from './expiry';
+import { DOCUMENT_ORIGINS } from './documents';
 import type { AttachmentRef, CustomTypeDef, FieldDef, FieldKind, Folder, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
@@ -311,6 +312,26 @@ function isItemLike(value: unknown): value is VaultItem {
   return !!value && typeof value === 'object' && typeof (value as VaultItem).id === 'string';
 }
 
+/**
+ * The country used to be a per-type text field ("País" on a passport); it is
+ * an item attribute now. A stored country wins; otherwise a legacy field whose
+ * value names a country we know is promoted, and only then dropped — anything
+ * we cannot map is left exactly where the person typed it.
+ */
+function countryOf(item: VaultItem): string {
+  if (typeof item.country === 'string' && item.country) return item.country;
+  const legacy = (item.fields?.pais ?? '').trim().toLocaleLowerCase('pt-BR');
+  return DOCUMENT_ORIGINS.find((origin) => origin.group.toLocaleLowerCase('pt-BR') === legacy)?.code ?? '';
+}
+
+function withoutMigratedCountry(item: VaultItem): Record<string, string> {
+  const fields = item.fields && typeof item.fields === 'object' ? item.fields : {};
+  if (!fields.pais || (typeof item.country === 'string' && item.country)) return fields;
+  if (!countryOf(item)) return fields;
+  const { pais: _promoted, ...rest } = fields;
+  return rest;
+}
+
 function normalizeItem(item: VaultItem): VaultItem {
   const now = new Date().toISOString();
   return {
@@ -320,9 +341,9 @@ function normalizeItem(item: VaultItem): VaultItem {
     description: typeof item.description === 'string' ? item.description : '',
     folder: typeof item.folder === 'string' ? item.folder : '',
     holderId: typeof item.holderId === 'string' ? item.holderId : '',
-    country: typeof item.country === 'string' ? item.country : '',
+    country: countryOf(item),
     tags: Array.isArray(item.tags) ? item.tags.filter((t) => typeof t === 'string') : [],
-    fields: item.fields && typeof item.fields === 'object' ? item.fields : {},
+    fields: withoutMigratedCountry(item),
     customFields: Array.isArray(item.customFields) ? item.customFields : [],
     attachments: Array.isArray(item.attachments) ? item.attachments.filter(isAttachmentLike) : [],
     favorite: Boolean(item.favorite),

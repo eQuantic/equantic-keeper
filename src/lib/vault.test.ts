@@ -192,6 +192,22 @@ describe('país do item', () => {
   });
 });
 
+describe('migração do país', () => {
+  it('promove o campo "pais" antigo para o atributo do item', () => {
+    const legacy = item('9', '2026-01-01T00:00:00.000Z', { type: 'passaporte', fields: { pais: 'Brasil' } });
+    const [migrated] = normalizePayload({ items: [legacy] }).items;
+    expect(migrated?.country).toBe('BR');
+    expect(migrated?.fields.pais).toBeUndefined();
+  });
+
+  it('não mexe no que não sabe mapear', () => {
+    const odd = item('10', '2026-01-01T00:00:00.000Z', { type: 'passaporte', fields: { pais: 'Brasileiro' } });
+    const [kept] = normalizePayload({ items: [odd] }).items;
+    expect(kept?.country).toBe('');
+    expect(kept?.fields.pais).toBe('Brasileiro');
+  });
+});
+
 describe('mergePayloads', () => {
   const base = emptyPayload();
   // Relative timestamps: absolute dates would eventually drift past the

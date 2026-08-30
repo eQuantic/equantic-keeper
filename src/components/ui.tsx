@@ -133,6 +133,127 @@ export function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLI
   return <input className={`${inputClass} ${className}`} {...rest} />;
 }
 
+/**
+ * Editable select: the values people actually type are a short closed list
+ * ("Temporária · Permanente · CPLP"), but never *only* that list — a document
+ * from an unforeseen category must still go in. So the options are suggestions
+ * on a plain text field: click (or the chevron) opens them, typing filters
+ * them, and anything typed is kept whether it is on the list or not.
+ */
+export function ComboInput({
+  value,
+  onChange,
+  options,
+  className = '',
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const normalize = (input: string) =>
+    input.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  // An exact match means "this is the chosen one" — keep the whole list open
+  // so the next option is one click away, instead of a list of one.
+  const needle = normalize(value.trim());
+  const shown =
+    !needle || options.some((option) => normalize(option) === needle)
+      ? options
+      : options.filter((option) => normalize(option).includes(needle));
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  const commit = (option: string) => {
+    onChange(option);
+    setOpen(false);
+    setActive(-1);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        {...rest}
+        value={value}
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        autoComplete="off"
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+          setActive(-1);
+        }}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!open) return setOpen(true);
+            const delta = event.key === 'ArrowDown' ? 1 : -1;
+            setActive((current) => (current + delta + shown.length) % Math.max(shown.length, 1));
+          } else if (event.key === 'Enter' && open && active >= 0 && shown[active]) {
+            event.preventDefault();
+            commit(shown[active]);
+          } else if (event.key === 'Escape' && open) {
+            event.stopPropagation();
+            setOpen(false);
+          }
+        }}
+        className={`${inputClass} pr-9 ${className}`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={open ? 'Fechar sugestões' : 'Ver sugestões'}
+        onClick={() => setOpen((current) => !current)}
+        className="tap-target absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-faint transition hover:text-ink"
+      >
+        <Icon name="chevron" size={13} className={open ? '-rotate-90' : 'rotate-90'} />
+      </button>
+      {open && shown.length > 0 ? (
+        <ul
+          role="listbox"
+          className="animate-in absolute top-full right-0 left-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-xl"
+        >
+          {shown.map((option, index) => (
+            <li key={option}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={option === value}
+                // pointerdown, not click: the input's blur must not close the
+                // list before the choice lands.
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  commit(option);
+                }}
+                onMouseEnter={() => setActive(index)}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition pointer-coarse:py-2.5 ${
+                  index === active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised hover:text-ink'
+                }`}
+              >
+                <span className="min-w-0 truncate">{option}</span>
+                {option === value ? <Icon name="check" size={13} className="shrink-0 text-accent" /> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function TextArea({ className = '', rows = 4, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea rows={rows} className={`${inputClass} resize-y font-mono text-[13px] ${className}`} {...rest} />;
 }

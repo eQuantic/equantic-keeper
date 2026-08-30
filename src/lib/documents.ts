@@ -53,6 +53,56 @@ export interface TypeFamily {
   defaultTypeId: string;
 }
 
+/**
+ * Value lists shared by several types — the same paperwork exists in every
+ * country, and a licence category or a Brazilian state does not change with
+ * the document that carries it. Fields using these render as editable selects
+ * (see ComboInput): the list covers what people actually type, and anything
+ * outside it can still be typed.
+ */
+const EU_LICENCE_CATEGORIES = [
+  'AM', 'A1', 'A2', 'A', 'B1', 'B', 'BE', 'C1', 'C1E', 'C', 'CE', 'D1', 'D1E', 'D', 'DE', 'T',
+];
+
+const UF_BRASIL = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR',
+  'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+];
+
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
+  'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM',
+  'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA',
+  'WV', 'WI', 'WY',
+];
+
+/** What a certificate, declaration or standing certificate is asked for. */
+const FINALIDADES = [
+  'Crédito habitação',
+  'Crédito pessoal',
+  'Emprego',
+  'Concurso público',
+  'Nacionalidade',
+  'Renovação de residência',
+  'Reagrupamento familiar',
+  'Matrícula escolar',
+  'Candidatura a apoios',
+  'Processo judicial',
+];
+
+const ENTIDADES_DECLARACAO = [
+  'Autoridade Tributária (AT)',
+  'Segurança Social',
+  'Banco',
+  'Hospital / maternidade',
+  'Câmara Municipal',
+  'Junta de freguesia',
+  'Empregador',
+  'Universidade / escola',
+  'Receita Federal',
+  'INSS',
+];
+
 /** The origin behind a stored country code, if it is one we know. */
 export function originByCode(code: string): DocumentOrigin | undefined {
   return DOCUMENT_ORIGINS.find((origin) => origin.code === code);
@@ -84,8 +134,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'documentNumber', label: 'Número do título', kind: 'text' },
-      { id: 'tipoAutorizacao', label: 'Tipo de autorização', kind: 'text', placeholder: 'Temporária · Permanente · CPLP' },
-      { id: 'entidade', label: 'Entidade emissora', kind: 'text', placeholder: 'AIMA' },
+      { id: 'tipoAutorizacao', label: 'Tipo de autorização', kind: 'text', placeholder: 'Temporária · Permanente · CPLP', options: ['Temporária', 'Permanente', 'CPLP', 'Estudante', 'Trabalho subordinado', 'Trabalho independente', 'Reagrupamento familiar', 'Investimento (ARI)', 'Procura de trabalho', 'Estatuto de proteção temporária'] },
+      { id: 'entidade', label: 'Entidade emissora', kind: 'text', placeholder: 'AIMA', options: ['AIMA', 'SEF'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
       { id: 'processo', label: 'Número do processo', kind: 'text' },
@@ -171,7 +221,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#c084fc',
     fields: [
       { id: 'documentNumber', label: 'Nº do certificado', kind: 'text' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Nacionalidade · Emprego' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Nacionalidade · Emprego', options: FINALIDADES },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -187,7 +237,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'home',
     accent: '#7c9cff',
     fields: [
-      { id: 'tipoComprovativo', label: 'Tipo', kind: 'text', placeholder: 'Atestado de residência · Fatura' },
+      { id: 'tipoComprovativo', label: 'Tipo', kind: 'text', placeholder: 'Atestado de residência · Fatura', options: ['Atestado de residência (junta de freguesia)', 'Fatura de água', 'Fatura de eletricidade', 'Fatura de gás', 'Contrato de arrendamento', 'Extrato bancário', 'Declaração da AT', 'Recibo de renda'] },
       { id: 'morada', label: 'Morada', kind: 'multiline' },
       { id: 'entidade', label: 'Emitido por', kind: 'text' },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
@@ -226,7 +276,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'cpf', label: 'CPF', kind: 'text', placeholder: '000.000.000-00', numeric: true },
-      { id: 'situacao', label: 'Situação cadastral', kind: 'text', placeholder: 'Regular' },
+      { id: 'situacao', label: 'Situação cadastral', kind: 'text', placeholder: 'Regular', options: ['Regular', 'Pendente de regularização', 'Suspensa', 'Cancelada', 'Nula', 'Titular falecido'] },
       { id: 'issuedAt', label: 'Inscrição em', kind: 'date' },
     ],
   },
@@ -242,8 +292,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'rgNumber', label: 'Número', kind: 'text' },
-      { id: 'orgaoEmissor', label: 'Órgão emissor', kind: 'text', placeholder: 'SSP' },
-      { id: 'uf', label: 'UF', kind: 'text', placeholder: 'RJ' },
+      { id: 'orgaoEmissor', label: 'Órgão emissor', kind: 'text', placeholder: 'SSP', options: ['SSP', 'Detran', 'IFP', 'IIRGD', 'Polícia Civil', 'Polícia Militar', 'Marinha', 'Exército', 'Aeronáutica', 'CTPS', 'OAB', 'CRM'] },
+      { id: 'uf', label: 'UF', kind: 'text', placeholder: 'RJ', options: UF_BRASIL },
       { id: 'issuedAt', label: 'Data de expedição', kind: 'date' },
     ],
   },
@@ -260,7 +310,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'registro', label: 'Nº de registro', kind: 'text', numeric: true },
       { id: 'numeroEspelho', label: 'Nº do espelho', kind: 'text', numeric: true },
-      { id: 'categoria', label: 'Categoria', kind: 'text', placeholder: 'AB' },
+      { id: 'categoria', label: 'Categoria', kind: 'text', placeholder: 'AB', options: ['A', 'B', 'AB', 'C', 'AC', 'D', 'AD', 'E', 'AE'] },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'primeiraHabilitacao', label: 'Primeira habilitação', kind: 'date' },
@@ -295,14 +345,14 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#c084fc',
     fields: [
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento · Óbito' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento · Óbito', options: ['Nascimento', 'Casamento', 'Óbito', 'Averbação', 'Inteiro teor'] },
       { id: 'matricula', label: 'Matrícula', kind: 'text', hint: '32 dígitos das certidões novas', numeric: true },
       { id: 'cartorio', label: 'Cartório', kind: 'text' },
       { id: 'livro', label: 'Livro', kind: 'text' },
       { id: 'folha', label: 'Folha', kind: 'text' },
       { id: 'termo', label: 'Termo', kind: 'text' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
-      { id: 'apostilada', label: 'Apostila de Haia', kind: 'text', placeholder: 'Sim · Não · Nº da apostila' },
+      { id: 'apostilada', label: 'Apostila de Haia', kind: 'text', placeholder: 'Sim · Não · Nº da apostila', options: ['Sim', 'Não'] },
     ],
   },
   {
@@ -316,7 +366,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'scale',
     accent: '#f87171',
     fields: [
-      { id: 'orgao', label: 'Órgão', kind: 'text', placeholder: 'Polícia Federal · Polícia Civil' },
+      { id: 'orgao', label: 'Órgão', kind: 'text', placeholder: 'Polícia Federal · Polícia Civil', options: ['Polícia Federal', 'Polícia Civil', 'Justiça Estadual', 'Justiça Federal', 'Justiça Militar', 'Justiça Eleitoral'] },
       { id: 'numero', label: 'Nº de controle', kind: 'text', numeric: true },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
@@ -353,9 +403,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'passport',
     accent: '#5b8cff',
     fields: [
-      { id: 'pais', label: 'País emissor', kind: 'text', placeholder: 'Brasil · Portugal' },
       { id: 'numero', label: 'Número', kind: 'text' },
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Comum · Oficial' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Comum · Oficial', options: ['Comum', 'Oficial', 'Diplomático', 'De emergência', 'Para estrangeiro'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
       { id: 'autoridade', label: 'Autoridade emissora', kind: 'text' },
@@ -373,10 +422,9 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#22d3ee',
     fields: [
-      { id: 'pais', label: 'País', kind: 'text' },
-      { id: 'tipo', label: 'Tipo de visto', kind: 'text', placeholder: 'D7 · Schengen · Trabalho' },
+      { id: 'tipo', label: 'Tipo de visto', kind: 'text', placeholder: 'D7 · Schengen · Trabalho', options: ['Schengen (C)', 'D1 — trabalho subordinado', 'D2 — empreendedor', 'D3 — altamente qualificado', 'D4 — estudo', 'D6 — reagrupamento familiar', 'D7 — rendimentos próprios', 'D8 — nómada digital', 'Estada temporária', 'Trânsito', 'Turismo', 'Trabalho', 'Estudante'] },
       { id: 'numero', label: 'Número', kind: 'text' },
-      { id: 'entradas', label: 'Entradas', kind: 'text', placeholder: 'Múltiplas' },
+      { id: 'entradas', label: 'Entradas', kind: 'text', placeholder: 'Múltiplas', options: ['Única', 'Duas', 'Múltiplas'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -420,7 +468,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'prestacao', label: 'Prestação mensal', kind: 'text' },
       { id: 'taxa', label: 'Taxa (TAN / TAEG)', kind: 'text' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', options: FINALIDADES },
     ],
   },
   {
@@ -442,7 +490,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'prestacao', label: 'Prestação mensal', kind: 'text' },
       { id: 'taxa', label: 'Taxa (TAN / TAEG)', kind: 'text' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', options: FINALIDADES },
     ],
   },
   {
@@ -475,7 +523,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'empregador', label: 'Empregador', kind: 'text' },
       { id: 'funcao', label: 'Função / cargo', kind: 'text' },
-      { id: 'tipoContrato', label: 'Tipo de contrato', kind: 'text', placeholder: 'Sem termo · Termo certo · Recibos verdes' },
+      { id: 'tipoContrato', label: 'Tipo de contrato', kind: 'text', placeholder: 'Sem termo · Termo certo · Recibos verdes', options: ['Sem termo', 'Termo certo', 'Termo incerto', 'Muito curta duração', 'Recibos verdes (prestação de serviços)', 'Estágio', 'Part-time', 'CLT', 'PJ', 'Temporário', 'Intermitente', 'Aprendiz'] },
       { id: 'inicio', label: 'Início', kind: 'date' },
       { id: 'expiresAt', label: 'Termina em', kind: 'date', hint: 'Vazio para contratos sem termo' },
       { id: 'vencimento', label: 'Vencimento acordado', kind: 'text' },
@@ -496,13 +544,13 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#e8b45a',
     fields: [
-      { id: 'tipo', label: 'Tipo de declaração', kind: 'text' },
-      { id: 'entidade', label: 'Entidade emissora', kind: 'text', placeholder: 'AT · Segurança Social · Banco · Hospital' },
+      { id: 'tipo', label: 'Tipo de declaração', kind: 'text', options: ['IRS / imposto de renda', 'Situação contributiva', 'Situação tributária', 'Nascido vivo', 'Rendimentos', 'Residência fiscal', 'Agregado familiar', 'IBAN / titularidade', 'Crédito pessoal', 'Crédito habitação', 'Frequência escolar', 'Trabalho / vínculo'] },
+      { id: 'entidade', label: 'Entidade emissora', kind: 'text', placeholder: 'AT · Segurança Social · Banco · Hospital', options: ENTIDADES_DECLARACAO },
       { id: 'numero', label: 'Número / referência', kind: 'text' },
       { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret', hint: 'Recupera o documento online, quando existir' },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date', hint: 'Vazio se não expira' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Crédito habitação · Matrícula · Concurso' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Crédito habitação · Matrícula · Concurso', options: FINALIDADES },
     ],
   },
   {
@@ -518,7 +566,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'instituicao', label: 'Instituição', kind: 'text' },
       { id: 'curso', label: 'Curso', kind: 'text' },
-      { id: 'grau', label: 'Grau', kind: 'text', placeholder: 'Licenciatura · Mestrado' },
+      { id: 'grau', label: 'Grau', kind: 'text', placeholder: 'Licenciatura · Mestrado', options: ['Ensino secundário', 'Curso técnico', 'Bacharelado', 'Licenciatura', 'Pós-graduação', 'MBA', 'Mestrado', 'Doutoramento', 'Pós-doutoramento'] },
       { id: 'conclusao', label: 'Concluído em', kind: 'date' },
       { id: 'reconhecimento', label: 'Reconhecimento / equivalência', kind: 'text' },
     ],
@@ -534,7 +582,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'health',
     accent: '#34d399',
     fields: [
-      { id: 'vacina', label: 'Vacina', kind: 'text' },
+      { id: 'vacina', label: 'Vacina', kind: 'text', options: ['COVID-19', 'Gripe (influenza)', 'Febre amarela', 'Hepatite A', 'Hepatite B', 'Tétano', 'Tríplice viral (sarampo, papeira, rubéola)', 'Poliomielite', 'HPV', 'Meningocócica', 'Pneumocócica', 'Raiva', 'BCG', 'Dengue'] },
       { id: 'doses', label: 'Doses', kind: 'multiline', placeholder: '1ª dose 10/01/2024 — lote ABC' },
       { id: 'entidade', label: 'Emitido por', kind: 'text' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
@@ -553,7 +601,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'seguradora', label: 'Seguradora / operadora', kind: 'text' },
       { id: 'apolice', label: 'Apólice / nº de adesão', kind: 'text' },
-      { id: 'cobertura', label: 'Cobertura', kind: 'text' },
+      { id: 'cobertura', label: 'Cobertura', kind: 'text', options: ['Ambulatório', 'Internamento', 'Estomatologia', 'Medicamentos', 'Parto', 'Assistência em viagem', 'Completa'] },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
       { id: 'contactoUrgencia', label: 'Contacto de urgência', kind: 'text' },
     ],
@@ -571,7 +619,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'holder', label: 'Nome no cartão', kind: 'text' },
       { id: 'number', label: 'Número do cartão', kind: 'secret', numeric: true },
-      { id: 'brand', label: 'Bandeira', kind: 'text', placeholder: 'Visa · Mastercard · Amex' },
+      { id: 'brand', label: 'Bandeira', kind: 'text', placeholder: 'Visa · Mastercard · Amex', options: ['Visa', 'Mastercard', 'American Express', 'Elo', 'Hipercard', 'Diners Club', 'Discover', 'UnionPay'] },
       {
         id: 'expiresAt',
         label: 'Válido até (fim do mês)',
@@ -597,7 +645,6 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#94a3b8',
     fields: [
-      { id: 'pais', label: 'País', kind: 'text' },
       { id: 'numero', label: 'Número', kind: 'text' },
       { id: 'entidade', label: 'Emitido por', kind: 'text' },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
@@ -618,7 +665,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Nº da carta', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B · A1' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B · A1', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'entidade', label: 'Entidade', kind: 'text', placeholder: 'IMT' },
@@ -635,7 +682,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#c084fc',
     fields: [
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento', options: ['Nascimento', 'Casamento', 'Óbito', 'Nascimento (narrativa)', 'Cópia integral'] },
       { id: 'conservatoria', label: 'Conservatória', kind: 'text' },
       { id: 'assento', label: 'Nº do assento', kind: 'text', numeric: true },
       { id: 'ano', label: 'Ano', kind: 'text', numeric: true },
@@ -658,7 +705,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'ano', label: 'Ano fiscal', kind: 'text', numeric: true, placeholder: '2025' },
       { id: 'numeroDeclaracao', label: 'Nº da declaração', kind: 'text' },
       { id: 'dataEntrega', label: 'Entregue em', kind: 'date' },
-      { id: 'resultado', label: 'Resultado', kind: 'text', placeholder: 'Reembolso 512 € · A pagar 210 €' },
+      { id: 'resultado', label: 'Resultado', kind: 'text', placeholder: 'Reembolso 512 € · A pagar 210 €', options: ['Reembolso', 'A pagar', 'Nulo'] },
       { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret', hint: 'Do comprovativo de entrega' },
     ],
   },
@@ -676,11 +723,11 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
       { id: 'numero', label: 'Nº / referência', kind: 'text' },
-      { id: 'situacao', label: 'Situação', kind: 'text', placeholder: 'Regularizada' },
+      { id: 'situacao', label: 'Situação', kind: 'text', placeholder: 'Regularizada', options: ['Regularizada', 'Com dívida', 'Dívida em plano prestacional'] },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Crédito habitação · Concurso' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', placeholder: 'Crédito habitação · Concurso', options: FINALIDADES },
     ],
   },
   {
@@ -697,11 +744,11 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'nif', label: 'NIF', kind: 'text', numeric: true },
       { id: 'numero', label: 'Nº / referência', kind: 'text' },
-      { id: 'situacao', label: 'Situação', kind: 'text', placeholder: 'Regularizada' },
+      { id: 'situacao', label: 'Situação', kind: 'text', placeholder: 'Regularizada', options: ['Regularizada', 'Com dívida', 'Dívida em plano prestacional'] },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
       { id: 'codigoValidacao', label: 'Código de validação', kind: 'secret' },
-      { id: 'finalidade', label: 'Finalidade', kind: 'text' },
+      { id: 'finalidade', label: 'Finalidade', kind: 'text', options: FINALIDADES },
     ],
   },
   {
@@ -719,7 +766,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
       { id: 'imovel', label: 'Imóvel', kind: 'text', placeholder: 'Morada · artigo matricial' },
       { id: 'vpt', label: 'Valor patrimonial (VPT)', kind: 'text' },
       { id: 'valor', label: 'Valor do imposto', kind: 'text' },
-      { id: 'prestacoes', label: 'Prestações', kind: 'text', placeholder: 'Maio · Agosto · Novembro' },
+      { id: 'prestacoes', label: 'Prestações', kind: 'text', placeholder: 'Maio · Agosto · Novembro', options: ['Prestação única (maio)', 'Duas prestações (maio · novembro)', 'Três prestações (maio · agosto · novembro)'] },
       { id: 'expiresAt', label: 'Pagar até', kind: 'date', hint: 'Prazo da próxima prestação — alimenta os alertas' },
       { id: 'referencia', label: 'Referência de pagamento', kind: 'text' },
     ],
@@ -754,7 +801,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'nie', label: 'NIE', kind: 'text', placeholder: 'X1234567Z' },
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'TIE · Certificado UE' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'TIE · Certificado UE', options: ['TIE', 'Certificado UE', 'NIE (sin residencia)', 'Residencia larga duración'] },
       { id: 'issuedAt', label: 'Expedido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -783,7 +830,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Expedido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -815,7 +862,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     fields: [
       { id: 'aNumber', label: 'A-Number', kind: 'text', placeholder: 'A123456789' },
       { id: 'cardNumber', label: 'Card number', kind: 'text' },
-      { id: 'category', label: 'Categoria', kind: 'text', placeholder: 'IR1 · EB2' },
+      { id: 'category', label: 'Categoria', kind: 'text', placeholder: 'IR1 · EB2', options: ['IR1 / CR1', 'EB-1', 'EB-2', 'EB-3', 'EB-5', 'DV (lottery)', 'F1', 'F2A', 'Asylum / refugee'] },
       { id: 'issuedAt', label: 'Resident since', kind: 'date' },
       { id: 'expiresAt', label: 'Card expires', kind: 'date' },
     ],
@@ -832,8 +879,8 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#f472b6',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'estado', label: 'Estado', kind: 'text', placeholder: 'CA' },
-      { id: 'classe', label: 'Classe', kind: 'text', placeholder: 'C' },
+      { id: 'estado', label: 'Estado', kind: 'text', placeholder: 'CA', options: US_STATES },
+      { id: 'classe', label: 'Classe', kind: 'text', placeholder: 'C', options: ['A', 'B', 'C', 'M'] },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Expira em', kind: 'date' },
     ],
@@ -868,7 +915,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Vie privée · Salarié · Passeport talent' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Vie privée · Salarié · Passeport talent', options: ['Vie privée et familiale', 'Salarié', 'Passeport talent', 'Étudiant', 'Visiteur', 'Carte de résident (10 ans)', 'UE — longue durée'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -897,7 +944,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -932,7 +979,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Blaue Karte · Niederlassungserlaubnis' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Blaue Karte · Niederlassungserlaubnis', options: ['Blaue Karte EU', 'Aufenthaltserlaubnis', 'Niederlassungserlaubnis', 'Daueraufenthalt-EU', 'Visum'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -961,7 +1008,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
     ],
@@ -1008,7 +1055,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'motivo', label: 'Motivo', kind: 'text', placeholder: 'Lavoro · Famiglia · Studio' },
+      { id: 'motivo', label: 'Motivo', kind: 'text', placeholder: 'Lavoro · Famiglia · Studio', options: ['Lavoro subordinato', 'Lavoro autonomo', 'Famiglia', 'Studio', 'Attesa occupazione', 'Soggiornante di lungo periodo', 'Motivi religiosi'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -1025,7 +1072,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
     ],
@@ -1056,7 +1103,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#34d399',
     fields: [
       { id: 'documentNumber', label: 'Número / share code', kind: 'text' },
-      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'BRP · eVisa' },
+      { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'BRP · eVisa', options: ['BRP', 'eVisa', 'Pre-settled status', 'Settled status', 'Skilled Worker', 'Student', 'Family visa'] },
       { id: 'issuedAt', label: 'Emitido em', kind: 'date' },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
     ],
@@ -1073,7 +1120,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#38bdf8',
     fields: [
       { id: 'documentNumber', label: 'Número', kind: 'text' },
-      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B' },
+      { id: 'categorias', label: 'Categorias', kind: 'text', placeholder: 'B', options: EU_LICENCE_CATEGORIES },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },
       { id: 'expiresAt', label: 'Válida até', kind: 'date' },
     ],
