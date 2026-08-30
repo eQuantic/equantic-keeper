@@ -851,8 +851,23 @@ const run = async () => {
   await page.click('[role="dialog"] button:has-text("Nota")');
   await page.waitForSelector('[data-note-editor="edit"]', { timeout: 5000 });
   await page.fill('input[aria-label="Nome"]', 'Mudança para Lisboa');
-  await page.click('[data-note-editor="edit"]');
+  // The pane is a page: it fills the dialog and shows what to do, with no box
+  // around it — and a click on the blank space below lands the caret in the text.
+  await check('a folha ocupa a altura do painel e diz como começar', async () => {
+    const sheet = await page.locator('[data-note-editor="edit"]').boundingBox();
+    // O texto-guia é conteúdo de CSS (::before), invisível a innerText: o que
+    // se verifica é o atributo que o desenha.
+    const hint = await page
+      .locator('[data-note-editor="edit"] p[data-placeholder]')
+      .first()
+      .getAttribute('data-placeholder');
+    return !!sheet && sheet.height > 300 && /digite \//.test(hint ?? '');
+  });
+  const sheet = await page.locator('[data-note-editor="edit"]').boundingBox();
+  await page.mouse.click(sheet.x + sheet.width / 2, sheet.y + sheet.height - 30);
   await page.keyboard.type('Pendências da semana');
+  await check('clicar no fim da folha escreve na última linha', async () =>
+    (await page.locator('[data-note-editor="edit"]').innerText()).includes('Pendências da semana'));
   await page.keyboard.press('Enter');
   // The slash menu is how a block becomes something else.
   await page.keyboard.type('/lista');

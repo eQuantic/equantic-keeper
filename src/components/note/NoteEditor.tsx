@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo } from 'react';
 import { EditorContent, ReactNodeViewRenderer, useEditor } from '@tiptap/react';
+import { Placeholder } from '@tiptap/extensions';
 import { toEditorInput, type Block } from '../../lib/blocks';
 import { blocksToDoc } from '../../lib/editor/blocks-to-pm';
 import { docToBlocks } from '../../lib/editor/pm-to-blocks';
@@ -57,7 +58,15 @@ export function NoteEditor({
   const editor = useEditor(
     {
       editable,
-      extensions: [...buildDocExtensions({ nodeViews: NODE_VIEWS }), ...(editable ? [SlashCommand] : [])],
+      extensions: [
+        ...buildDocExtensions({ nodeViews: NODE_VIEWS }),
+        ...(editable
+          ? [
+              SlashCommand,
+              Placeholder.configure({ placeholder: 'Escreva, ou digite / para inserir um bloco' }),
+            ]
+          : []),
+      ],
       content: initial,
       editorProps: {
         attributes: {
@@ -84,9 +93,21 @@ export function NoteEditor({
   if (!editor) return null;
 
   return (
-    <div className="min-w-0">
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      // The pane is a sheet of paper: a click on the blank space under the last
+      // line puts the caret at the end, instead of doing nothing because the
+      // pointer missed the text node by a few pixels.
+      onMouseDown={(event) => {
+        if (!editable) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('.keeper-note')) return;
+        event.preventDefault();
+        editor.commands.focus('end');
+      }}
+    >
       {editable ? <BubbleToolbar editor={editor} /> : null}
-      <EditorContent editor={editor} />
+      <EditorContent editor={editor} className="flex min-h-0 flex-1 flex-col" />
     </div>
   );
 }

@@ -284,9 +284,24 @@ input[type='date'] {
   color: var(--color-faint);
   text-decoration: line-through;
 }
+/*
+ * A note is a page, not a form control: no focus ring around it, and the
+ * writing surface grows to fill its pane so clicking anywhere below the last
+ * line lands the caret in the text instead of missing it.
+ */
+.keeper-note:focus,
+.keeper-note:focus-visible {
+  outline: none;
+}
+.keeper-note[data-note-editor='edit'] {
+  flex: 1;
+  min-height: 8rem;
+}
+
 /* The empty first line says how to start, the way a blank page should. */
-.keeper-note[data-note-editor='edit'] p.is-editor-empty:first-child::before {
-  content: 'Escreva, ou digite / para inserir um bloco';
+.keeper-note p.is-empty:first-child::before,
+.keeper-note p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
   color: var(--color-faint);
   float: left;
   height: 0;
