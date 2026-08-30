@@ -470,6 +470,22 @@ const run = async () => {
   await page.fill('input[placeholder="Nome da pessoa"]', 'Maria Teste');
   // Exact match: the same dialog also offers "Adicionar campo personalizado".
   await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
+  // Closed-set fields are editable selects: the list opens on click, choosing
+  // fills the field, and free text is still accepted for the odd case.
+  await page.locator('label:has-text("Tipo de autorização") input').first().click();
+  await page.waitForSelector('[role="listbox"]', { timeout: 5000 });
+  await check('campo de conjunto fechado abre a lista ao clicar', async () =>
+    (await page.locator('[role="listbox"] [role="option"]').count()) >= 5);
+  await page.locator('[role="listbox"] [role="option"]:has-text("Permanente")').first().click();
+  await check('escolher da lista preenche o campo', async () =>
+    (await page.locator('label:has-text("Tipo de autorização") input').first().inputValue()) === 'Permanente');
+  await page.locator('label:has-text("Tipo de autorização") input').first().fill('Caso especial');
+  await page.locator('label:has-text("Número do título") input').first().click();
+  await check('texto fora da lista continua sendo aceito', async () =>
+    (await page.locator('label:has-text("Tipo de autorização") input').first().inputValue()) === 'Caso especial');
+  await page.locator('label:has-text("Tipo de autorização") input').first().fill('Temporária');
+  await page.keyboard.press('Escape');
+
   await check('tipo de Portugal chega com o país já preenchido', async () =>
     (await page.locator('select[aria-label="País emissor"]').inputValue()) === 'PT');
   await check('titular criado sem sair do formulário', async () => {

@@ -18,7 +18,7 @@ import { pushRecentType } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
-import { Button, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
+import { Button, ComboInput, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
 import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
@@ -98,7 +98,16 @@ function FieldInput({
     );
   }
 
-  const control = isMultilineKind(field.kind) ? (
+  const control = field.options?.length ? (
+    <ComboInput
+      value={value}
+      onChange={onChange}
+      options={field.options}
+      placeholder={field.placeholder ?? ''}
+      spellCheck={false}
+      inputMode={field.numeric ? 'numeric' : undefined}
+    />
+  ) : isMultilineKind(field.kind) ? (
     <TextArea
       value={value}
       onChange={(event) => onChange(event.target.value)}

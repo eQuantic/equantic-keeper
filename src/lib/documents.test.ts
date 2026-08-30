@@ -101,6 +101,39 @@ describe('catálogo de tipos', () => {
     expect(countryForType('api-token')).toBe('');
   });
 
+  it('dá lista de opções a todo campo cujo exemplo enumera valores', () => {
+    // Um exemplo com "·" anuncia um conjunto fechado — e conjunto fechado é
+    // select editável, não texto livre. As exceções são exemplos de formato,
+    // não de valores: uma data com hora e uma morada com artigo matricial.
+    const formatExamples = new Set(['nascimento', 'imovel']);
+    for (const type of DOCUMENT_TYPES) {
+      for (const field of type.fields) {
+        if (field.kind !== 'text' || !field.placeholder?.includes('·')) continue;
+        if (formatExamples.has(field.id)) continue;
+        expect(field.options?.length, `${type.id}.${field.id} enumera sem lista`).toBeTruthy();
+      }
+    }
+  });
+
+  it('mantém as listas de opções limpas', () => {
+    for (const type of DOCUMENT_TYPES) {
+      for (const field of type.fields) {
+        const options = field.options;
+        if (!options) continue;
+        expect(options.length, `${type.id}.${field.id} com lista vazia`).toBeGreaterThan(1);
+        expect(new Set(options).size, `${type.id}.${field.id} com opções repetidas`).toBe(options.length);
+        expect(options.every((option) => option.trim() === option && option.length > 0)).toBe(true);
+      }
+    }
+  });
+
+  it('deixou o país só no item, sem campo duplicado nos tipos', () => {
+    const withCountryField = DOCUMENT_TYPES.filter((type) =>
+      type.fields.some((field) => field.id === 'pais'),
+    );
+    expect(withCountryField.map((type) => type.id)).toEqual([]);
+  });
+
   it('cobre os documentos de migração que motivaram a funcionalidade', () => {
     const ids = DOCUMENT_TYPES.map((type) => type.id);
     expect(ids).toEqual(

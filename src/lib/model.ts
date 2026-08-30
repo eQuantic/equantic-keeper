@@ -21,6 +21,12 @@ export interface FieldDef {
   hint?: string;
   /** Set on digits-only fields so phones open the numeric keypad. */
   numeric?: boolean;
+  /**
+   * Closed-ish list of values for this field. Rendered as an editable select:
+   * the options are what people almost always type, and anything else can
+   * still be typed — see ComboInput.
+   */
+  options?: string[];
 }
 
 export type TypeCategory = 'dev' | 'doc';
@@ -125,7 +131,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     icon: 'key',
     accent: '#7c9cff',
     fields: [
-      { id: 'service', label: 'Serviço', kind: 'text', placeholder: 'GitHub' },
+      { id: 'service', label: 'Serviço', kind: 'text', placeholder: 'GitHub', options: ['GitHub', 'GitLab', 'Bitbucket', 'npm', 'PyPI', 'Docker Hub', 'Vercel', 'Netlify', 'Cloudflare', 'Slack', 'Stripe', 'OpenAI', 'Anthropic', 'Azure DevOps'] },
       { id: 'token', label: 'Token', kind: 'secret', placeholder: 'ghp_…' },
       { id: 'username', label: 'Usuário / dono', kind: 'username', placeholder: 'edgar' },
       { id: 'scopes', label: 'Escopos', kind: 'text', placeholder: 'repo, read:org, write:packages' },
@@ -141,7 +147,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     icon: 'app',
     accent: '#c084fc',
     fields: [
-      { id: 'provider', label: 'Provedor', kind: 'text', placeholder: 'Azure AD / Google Cloud / Auth0' },
+      { id: 'provider', label: 'Provedor', kind: 'text', placeholder: 'Azure AD / Google Cloud / Auth0', options: ['Azure AD / Entra ID', 'Google Cloud', 'Auth0', 'Okta', 'Keycloak', 'AWS Cognito', 'GitHub OAuth', 'Apple'] },
       { id: 'clientId', label: 'Client ID', kind: 'text' },
       { id: 'clientSecret', label: 'Client Secret', kind: 'secret' },
       { id: 'tenantId', label: 'Tenant / Directory ID', kind: 'text' },
@@ -189,7 +195,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     icon: 'cloud',
     accent: '#fbbf24',
     fields: [
-      { id: 'provider', label: 'Provedor', kind: 'text', placeholder: 'DigitalOcean' },
+      { id: 'provider', label: 'Provedor', kind: 'text', placeholder: 'DigitalOcean', options: ['AWS', 'Azure', 'Google Cloud', 'DigitalOcean', 'Cloudflare', 'Vercel', 'Netlify', 'Hetzner', 'Linode', 'Oracle Cloud'] },
       { id: 'account', label: 'Conta / Subscription / Project', kind: 'text' },
       { id: 'accessKeyId', label: 'Access Key ID', kind: 'text' },
       { id: 'secretKey', label: 'Secret Access Key', kind: 'secret' },
@@ -222,7 +228,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     icon: 'database',
     accent: '#22d3ee',
     fields: [
-      { id: 'engine', label: 'Engine', kind: 'text', placeholder: 'PostgreSQL' },
+      { id: 'engine', label: 'Engine', kind: 'text', placeholder: 'PostgreSQL', options: ['PostgreSQL', 'MySQL', 'MariaDB', 'MongoDB', 'Redis', 'SQL Server', 'SQLite', 'Oracle', 'Elasticsearch', 'ClickHouse', 'DynamoDB'] },
       { id: 'host', label: 'Host', kind: 'text' },
       { id: 'port', label: 'Porta', kind: 'text', placeholder: '5432', numeric: true },
       { id: 'database', label: 'Database', kind: 'text' },
@@ -240,7 +246,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     accent: '#a3e635',
     fields: [
       { id: 'project', label: 'Projeto', kind: 'text' },
-      { id: 'environment', label: 'Ambiente', kind: 'text', placeholder: 'production' },
+      { id: 'environment', label: 'Ambiente', kind: 'text', placeholder: 'production', options: ['production', 'staging', 'development', 'test', 'preview', 'local'] },
       { id: 'content', label: 'Conteúdo', kind: 'multilineSecret', placeholder: 'DATABASE_URL=…\nAPI_KEY=…' },
     ],
   },
@@ -268,7 +274,7 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
     icon: 'link',
     accent: '#818cf8',
     fields: [
-      { id: 'service', label: 'Serviço', kind: 'text', placeholder: 'Stripe' },
+      { id: 'service', label: 'Serviço', kind: 'text', placeholder: 'Stripe', options: ['Stripe', 'GitHub', 'GitLab', 'Slack', 'Twilio', 'SendGrid', 'Shopify', 'PayPal', 'Mailgun'] },
       { id: 'url', label: 'URL', kind: 'secret', placeholder: 'https://hooks.slack.com/services/…' },
       { id: 'signingSecret', label: 'Signing secret', kind: 'secret' },
       { id: 'events', label: 'Eventos', kind: 'text' },
