@@ -110,6 +110,11 @@ wraps the vault's master bits into a record kept in `localStorage`.
   `otpauth://` URI (RFC 6238, SHA-1/256/512).
 - **Password and passphrase generator** using `crypto.getRandomValues` with bias-free
   sampling.
+- **Custom types**: build your own form in the new-item wizard — name, an existing
+  category (or a new one), color, icon and the fields, from the same palette the built-in
+  types use; a field named "Data de validade" feeds the expiry alerts. Definitions travel
+  encrypted in the vault, sync to every device with tombstoned merging, and are managed
+  (edit/remove) in Settings; items of a removed type stay readable.
 - **Sharing, on purpose**: a per-field dialog sends an item out through the phone's share
   sheet (WhatsApp, Gmail, Signal — as text, or an attachment as the decrypted file) and
   falls back to `mailto:`/clipboard on desktop. Secret fields start unticked, TOTP seeds
@@ -283,9 +288,10 @@ envelope:
 - **Payload** (encrypted) = `{ "items": [...], "people": [...], "preferences": {...} }`
 - **Version 2** added `people` (holders) and `item.holderId`; **version 3** added
   `item.attachments`; **version 4** added `folders` (folders created in the sidebar, which
-  may hold no items yet — the ones items reference are derived). Old vaults open normally;
-  it is the old client that refuses to open a newer vault, instead of discarding what it
-  does not understand.
+  may hold no items yet — the ones items reference are derived); **version 5** added
+  `customTypes` (user-defined type schemas built in the wizard's form builder). Old vaults
+  open normally; it is the old client that refuses to open a newer vault, instead of
+  discarding what it does not understand.
 
 ### Attachments
 

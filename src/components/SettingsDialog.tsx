@@ -5,9 +5,10 @@ import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
 import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
-import { createPerson, type Person } from '../lib/model';
+import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
-import { TOMBSTONE_TTL_DAYS, activePeople } from '../lib/vault';
+import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
+import { TypeBuilder } from './TypeBuilder';
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -148,6 +149,7 @@ const selectClass =
   'rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3 pointer-coarse:py-2.5';
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
   const { actions, account, connected, payload, sync, busy, biometricAvailable, biometricEnrolled } =
     useKeeper();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -579,6 +581,54 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </div>
         ) : null}
       </Section>
+
+      {activeCustomTypes(payload?.customTypes ?? []).length > 0 ? (
+        <Section
+          title="Tipos personalizados"
+          description="Criados no assistente de novo item. Remover um tipo não apaga os itens — eles continuam legíveis."
+        >
+          <div className="space-y-2">
+            {activeCustomTypes(payload?.customTypes ?? []).map((custom) => (
+              <div key={custom.id} className="flex items-center gap-3 rounded-lg border border-line-soft px-3 py-2">
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                  style={{ color: custom.accent, backgroundColor: `color-mix(in srgb, ${custom.accent} 13%, transparent)` }}
+                >
+                  <Icon name={getType(custom.id).icon} size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-ink">{custom.label}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {custom.group} · {custom.fields.length} campo(s)
+                  </span>
+                </span>
+                <IconButton icon="pencil" label={`Editar tipo ${custom.label}`} onClick={() => setEditingType(custom)} />
+                <IconButton
+                  icon="trash"
+                  label={`Remover tipo ${custom.label}`}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Remover o tipo "${custom.label}"? Itens existentes continuam legíveis e mantêm os dados.`,
+                      )
+                    ) {
+                      void actions.removeCustomType(custom.id);
+                    }
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {editingType ? (
+        <TypeBuilder
+          existing={editingType}
+          onSaved={() => setEditingType(null)}
+          onClose={() => setEditingType(null)}
+        />
+      ) : null}
 
       <Section title="Avançado">
         <p className="mb-2 text-xs text-muted">

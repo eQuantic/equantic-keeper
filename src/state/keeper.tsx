@@ -33,7 +33,8 @@ import {
 } from '../lib/biometric';
 import { DriveClient } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
-import { createFolder } from '../lib/model';
+import { createFolder, registerCustomTypes } from '../lib/model';
+import type { CustomTypeDef } from '../lib/model';
 import type { AttachmentRef, Person, VaultItem } from '../lib/model';
 import {
   cacheAttachment,
@@ -101,6 +102,8 @@ export interface KeeperActions {
   toggleFavorite(id: string): Promise<void>;
   savePerson(person: Person): Promise<void>;
   saveFolder(name: string): Promise<void>;
+  saveCustomType(def: CustomTypeDef): Promise<void>;
+  removeCustomType(id: string): Promise<void>;
   removeFolder(name: string): Promise<void>;
   removePerson(id: string): Promise<void>;
   prepareAttachment(file: File): Promise<AttachmentRef>;
@@ -168,6 +171,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const setPayload = useCallback(
     (payload: VaultPayload | null) => {
       payloadRef.current = payload;
+      // Synchronously, not in an effect: a type saved a moment ago must
+      // resolve through getType() before the next render (the builder opens
+      // the editor for the brand-new type right away).
+      registerCustomTypes(payload?.customTypes ?? []);
       patch({ payload });
     },
     [patch],
@@ -660,6 +667,39 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [patchItem],
   );
 
+  const saveCustomType = useCallback(
+    (def: CustomTypeDef) =>
+      mutate((payload) => {
+        const stamp = new Date().toISOString();
+        const next = { ...def, label: def.label.trim(), group: def.group.trim(), updatedAt: stamp };
+        const exists = payload.customTypes.some((candidate) => candidate.id === def.id);
+        return {
+          ...payload,
+          customTypes: exists
+            ? payload.customTypes.map((candidate) => (candidate.id === def.id ? next : candidate))
+            : [...payload.customTypes, next],
+        };
+      }),
+    [mutate],
+  );
+
+  /** Items of the removed type keep their data and render via the fallback. */
+  const removeCustomType = useCallback(
+    (id: string) =>
+      mutate((payload) => {
+        const stamp = new Date().toISOString();
+        return {
+          ...payload,
+          customTypes: payload.customTypes.map((candidate) =>
+            candidate.id === id && !candidate.deletedAt
+              ? { ...candidate, updatedAt: stamp, deletedAt: stamp }
+              : candidate,
+          ),
+        };
+      }),
+    [mutate],
+  );
+
   const saveFolder = useCallback(
     (name: string) =>
       mutate((payload) => {
@@ -1067,6 +1107,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       saveFolder,
       removeFolder,
+      saveCustomType,
+      removeCustomType,
       savePerson,
       removePerson,
       prepareAttachment,
@@ -1109,6 +1151,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       restoreItem,
       saveFolder,
       removeFolder,
+      saveCustomType,
+      removeCustomType,
       savePerson,
       saveItem,
       setClientId,

@@ -18,18 +18,18 @@ import {
   timingSafeEqual,
 } from './crypto';
 import { DEFAULT_WARNING_DAYS } from './expiry';
-import type { AttachmentRef, Folder, Person, VaultItem } from './model';
+import type { AttachmentRef, CustomTypeDef, FieldDef, FieldKind, Folder, Person, VaultItem } from './model';
 
 export const VAULT_FORMAT = 'equantic-keeper.vault';
 /**
- * v2 added `people` and `holderId`; v3 added `item.attachments`; v4 adds
- * explicitly created `folders`. Each bump matters: a client that predates one
- * would silently drop what it does not understand on its next save, so
- * refusing to open a newer vault (which `unlockVault` already does) is the
- * safe failure. Older vaults still open — `normalizePayload` fills in what is
- * missing.
+ * v2 added `people` and `holderId`; v3 added `item.attachments`; v4 added
+ * explicitly created `folders`; v5 adds user-defined `customTypes`. Each bump
+ * matters: a client that predates one would silently drop what it does not
+ * understand on its next save, so refusing to open a newer vault (which
+ * `unlockVault` already does) is the safe failure. Older vaults still open —
+ * `normalizePayload` fills in what is missing.
  */
-export const VAULT_VERSION = 4;
+export const VAULT_VERSION = 5;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -52,6 +52,8 @@ export interface VaultPayload {
   people: Person[];
   /** Folders created in the sidebar; the ones items reference are derived. */
   folders: Folder[];
+  /** User-defined types, built in the wizard's form builder. */
+  customTypes: CustomTypeDef[];
   /** Preferences that follow the vault across devices. */
   preferences: VaultPreferences;
 }
@@ -74,7 +76,7 @@ export const DEFAULT_PREFERENCES: VaultPreferences = {
 };
 
 export function emptyPayload(): VaultPayload {
-  return { items: [], people: [], folders: [], preferences: { ...DEFAULT_PREFERENCES } };
+  return { items: [], people: [], folders: [], customTypes: [], preferences: { ...DEFAULT_PREFERENCES } };
 }
 
 /** Header bytes bound to the ciphertext through AES-GCM additional data. */
@@ -171,12 +173,75 @@ export function normalizePayload(raw: unknown): VaultPayload {
   const folders = Array.isArray(source.folders)
     ? dedupeFolders(source.folders.filter(isFolderLike).map(normalizeFolder))
     : [];
+  const customTypes = Array.isArray(source.customTypes)
+    ? dedupeById(source.customTypes.filter(isCustomTypeLike).map(normalizeCustomType))
+    : [];
   return {
     items,
     people,
     folders,
+    customTypes,
     preferences: { ...DEFAULT_PREFERENCES, ...(source.preferences ?? {}) },
   };
+}
+
+const FIELD_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>([
+  'text',
+  'secret',
+  'multiline',
+  'multilineSecret',
+  'url',
+  'username',
+  'password',
+  'totp',
+  'date',
+]);
+
+function isCustomTypeLike(value: unknown): value is CustomTypeDef {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as CustomTypeDef).id === 'string' &&
+    typeof (value as CustomTypeDef).label === 'string'
+  );
+}
+
+/** A field from a newer client keeps its data but degrades to plain text. */
+function normalizeCustomField(field: FieldDef, index: number): FieldDef {
+  return {
+    id: typeof field.id === 'string' && field.id ? field.id : `c${index + 1}`,
+    label: typeof field.label === 'string' ? field.label : `Campo ${index + 1}`,
+    kind: FIELD_KINDS.has(field.kind) ? field.kind : 'text',
+    ...(field.numeric ? { numeric: true } : {}),
+  };
+}
+
+function normalizeCustomType(custom: CustomTypeDef): CustomTypeDef {
+  const now = new Date().toISOString();
+  return {
+    id: custom.id,
+    label: custom.label.trim(),
+    group: typeof custom.group === 'string' && custom.group.trim() ? custom.group.trim() : 'Geral',
+    icon: typeof custom.icon === 'string' && custom.icon ? custom.icon : 'file',
+    accent: typeof custom.accent === 'string' && custom.accent ? custom.accent : '#5b8cff',
+    fields: Array.isArray(custom.fields) ? custom.fields.filter((f) => !!f && typeof f === 'object').map(normalizeCustomField) : [],
+    createdAt: custom.createdAt ?? now,
+    updatedAt: custom.updatedAt ?? custom.createdAt ?? now,
+    ...(custom.deletedAt ? { deletedAt: custom.deletedAt } : {}),
+  };
+}
+
+function dedupeById(customs: CustomTypeDef[]): CustomTypeDef[] {
+  const byId = new Map<string, CustomTypeDef>();
+  for (const custom of customs) {
+    const current = byId.get(custom.id);
+    if (!current || Date.parse(custom.updatedAt) >= Date.parse(current.updatedAt)) byId.set(custom.id, custom);
+  }
+  return [...byId.values()];
+}
+
+export function activeCustomTypes(customs: CustomTypeDef[]): CustomTypeDef[] {
+  return customs.filter((custom) => !custom.deletedAt);
 }
 
 function isFolderLike(value: unknown): value is Folder {
@@ -293,6 +358,15 @@ export function mergePayloads(local: VaultPayload, remote: VaultPayload): VaultP
     }
   }
 
+  const customById = new Map<string, CustomTypeDef>();
+  for (const custom of remote.customTypes) customById.set(custom.id, custom);
+  for (const custom of local.customTypes) {
+    const other = customById.get(custom.id);
+    if (!other || Date.parse(custom.updatedAt) >= Date.parse(other.updatedAt)) {
+      customById.set(custom.id, custom);
+    }
+  }
+
   const localNewer = Date.parse(lastTouch(local)) >= Date.parse(lastTouch(remote));
   return {
     items: purgeTombstones([...byId.values()]),
@@ -300,6 +374,7 @@ export function mergePayloads(local: VaultPayload, remote: VaultPayload): VaultP
     // third device still holding the live record would otherwise resurrect it.
     people: purgeTombstones([...peopleById.values()]),
     folders: purgeTombstones([...foldersByName.values()]),
+    customTypes: purgeTombstones([...customById.values()]),
     preferences: localNewer ? local.preferences : remote.preferences,
   };
 }

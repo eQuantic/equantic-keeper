@@ -259,12 +259,14 @@ describe('mergePayloads', () => {
       items: [item('a', daysAgo(1))],
       people: [],
       folders: [],
+      customTypes: [],
       preferences: { ...base.preferences, autoLockMinutes: 1 },
     };
     const remote = {
       items: [item('b', daysAgo(20))],
       people: [],
       folders: [],
+      customTypes: [],
       preferences: { ...base.preferences, autoLockMinutes: 60 },
     };
     expect(mergePayloads(local, remote).preferences.autoLockMinutes).toBe(1);

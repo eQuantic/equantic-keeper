@@ -6,9 +6,10 @@
  * types skip the steps entirely.
  */
 import { useMemo, useState } from 'react';
-import { SECRET_TYPES, getType, type SecretTypeDef } from '../lib/model';
+import { getAllTypes, getType, type SecretTypeDef } from '../lib/model';
 import { DOCUMENT_ORIGINS, GENERAL_GROUP } from '../lib/documents';
 import { loadRecentTypes } from '../lib/storage';
+import { TypeBuilder } from './TypeBuilder';
 import { Icon } from './icons';
 import { IconButton, Modal, TextInput } from './ui';
 import { useCloseOnBack } from './use-close-on-back';
@@ -91,9 +92,13 @@ export function TypeWizard({
 }) {
   const [step, setStep] = useState<Step>({ kind: 'root' });
   const [query, setQuery] = useState('');
+  /** When set, the form builder covers the wizard; closing it comes back here. */
+  const [builder, setBuilder] = useState<{ group?: string } | null>(null);
 
-  const devTypes = useMemo(() => SECRET_TYPES.filter((type) => type.category === 'dev'), []);
-  const docTypes = useMemo(() => SECRET_TYPES.filter((type) => type.category === 'doc'), []);
+  // Snapshot at mount: the wizard is short-lived and the registry is current
+  // (the keeper registers custom types synchronously on every payload change).
+  const devTypes = useMemo(() => getAllTypes().filter((type) => type.category === 'dev'), []);
+  const docTypes = useMemo(() => getAllTypes().filter((type) => type.category === 'doc'), []);
   const recents = useMemo(
     () => loadRecentTypes().map((id) => getType(id)).filter((type) => type.label).slice(0, 3),
     [],
@@ -116,6 +121,27 @@ export function TypeWizard({
   useCloseOnBack(step.kind === 'types', goBack);
 
   const needle = query.trim().toLocaleLowerCase('pt-BR');
+
+  if (builder) {
+    return (
+      <TypeBuilder
+        initialGroup={builder.group}
+        onSaved={(typeId) => onPick(typeId)}
+        onClose={() => setBuilder(null)}
+      />
+    );
+  }
+
+  const customEntry = (label: string, group?: string) => (
+    <button
+      type="button"
+      onClick={() => setBuilder(group === undefined ? {} : { group })}
+      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line px-3 py-3 text-sm font-medium text-muted transition hover:bg-raised hover:text-ink"
+    >
+      <Icon name="plus" size={15} />
+      {label}
+    </button>
+  );
 
   const search = (placeholder: string) => (
     <TextInput
@@ -152,14 +178,26 @@ export function TypeWizard({
         {types.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
         ) : null}
+        {customEntry('Não encontrou? Crie um tipo de desenvolvimento', 'Desenvolvimento')}
       </>
     );
   } else if (step.kind === 'origin') {
     const general = docTypes.filter((type) => type.group === GENERAL_GROUP);
-    const origins = DOCUMENT_ORIGINS.map((origin) => ({
-      ...origin,
-      count: docTypes.filter((type) => type.group === origin.group).length,
-    })).filter((origin) => origin.count > 0 && (!needle || origin.group.toLocaleLowerCase('pt-BR').includes(needle)));
+    const knownGroups = new Set([GENERAL_GROUP, ...DOCUMENT_ORIGINS.map((origin) => origin.group)]);
+    const customOrigins = [...new Set(docTypes.map((type) => type.group))]
+      .filter((group) => !knownGroups.has(group))
+      .map((group) => ({
+        group,
+        code: group.slice(0, 2).toLocaleUpperCase('pt-BR'),
+        accent: '#94a3b8',
+        hint: 'Tipos personalizados',
+      }));
+    const origins = [...DOCUMENT_ORIGINS, ...customOrigins]
+      .map((origin) => ({
+        ...origin,
+        count: docTypes.filter((type) => type.group === origin.group).length,
+      }))
+      .filter((origin) => origin.count > 0 && (!needle || origin.group.toLocaleLowerCase('pt-BR').includes(needle)));
     const generalVisible = !needle || GENERAL_GROUP.toLocaleLowerCase('pt-BR').includes(needle);
     body = (
       <>
@@ -233,6 +271,7 @@ export function TypeWizard({
         {types.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhum tipo corresponde a “{query}”.</p>
         ) : null}
+        {customEntry(`Não encontrou? Crie um tipo para ${group}`, group)}
       </>
     );
   } else {
@@ -273,6 +312,23 @@ export function TypeWizard({
           count={docTypes.length}
           onClick={() => goTo({ kind: 'origin' })}
         />
+
+        <button
+          type="button"
+          onClick={() => setBuilder({})}
+          className="flex w-full items-center gap-3.5 rounded-2xl border border-dashed border-line p-4 text-left transition hover:bg-raised"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line text-muted">
+            <Icon name="plus" size={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-ink">Criar tipo personalizado</span>
+            <span className="mt-0.5 block text-xs leading-snug text-muted">
+              Monte o formulário com os campos que quiser.
+            </span>
+          </span>
+          <Icon name="chevron" size={14} className="shrink-0 text-faint" />
+        </button>
       </div>
     );
   }
