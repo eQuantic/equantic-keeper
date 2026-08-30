@@ -12,6 +12,22 @@
  */
 import type { SecretTypeDef } from './model';
 
+/** Where a document group comes from; drives the wizard's origin step. */
+export interface DocumentOrigin {
+  group: string;
+  /** Two-letter tile shown in place of a flag (emoji stay out of the UI). */
+  code: string;
+  accent: string;
+  hint: string;
+}
+
+export const GENERAL_GROUP = 'Geral';
+
+export const DOCUMENT_ORIGINS: DocumentOrigin[] = [
+  { group: 'Portugal', code: 'PT', accent: '#34d399', hint: 'Título de residência, CC, NIF, NISS…' },
+  { group: 'Brasil', code: 'BR', accent: '#fbbf24', hint: 'CPF, RG, CNH, título de eleitor, certidões…' },
+];
+
 export const DOCUMENT_TYPES: SecretTypeDef[] = [
   // ---- Portugal -----------------------------------------------------------
   {

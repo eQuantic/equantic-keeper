@@ -12,6 +12,7 @@ const KEY_CLIENT_ID = 'keeper.google.clientId';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
+const KEY_RECENT_TYPES = 'keeper.recentTypes.v1';
 
 export interface CachedVault {
   file: VaultFile;
@@ -127,6 +128,28 @@ export function saveBiometricRecord(record: BiometricRecord): boolean {
 
 export function clearBiometricRecord(): void {
   safeRemove(KEY_BIOMETRIC);
+}
+
+/**
+ * Device-local convenience for the new-item wizard: the last used TYPE IDS,
+ * never values. Losing it costs two taps.
+ */
+export function loadRecentTypes(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY_RECENT_TYPES) ?? '[]') as unknown;
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string').slice(0, 4) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function pushRecentType(id: string): void {
+  try {
+    const next = [id, ...loadRecentTypes().filter((known) => known !== id)].slice(0, 4);
+    localStorage.setItem(KEY_RECENT_TYPES, JSON.stringify(next));
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function loadTheme(): 'dark' | 'light' {

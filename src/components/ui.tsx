@@ -248,6 +248,7 @@ export function Modal({
   onClose,
   title,
   subtitle,
+  leading,
   children,
   footer,
   wide,
@@ -256,6 +257,8 @@ export function Modal({
   onClose: () => void;
   title: string;
   subtitle?: string;
+  /** Slot before the title — a wizard's back button lives here. */
+  leading?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
@@ -347,8 +350,9 @@ export function Modal({
           <div data-sheet-grabber className="flex justify-center pt-2.5 pb-1 sm:hidden" aria-hidden="true">
             <div className="h-1 w-10 rounded-full bg-line"></div>
           </div>
-          <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 pt-2 sm:pt-4">
-            <div className="min-w-0">
+          <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-4 pt-2 sm:pt-4">
+            {leading}
+            <div className="min-w-0 flex-1">
               <h2 className="truncate text-base font-semibold text-ink">{title}</h2>
               {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
             </div>
