@@ -7,6 +7,7 @@
  */
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ROW_SWIPE, clampOffset, resolveSwipe, type SwipeConfig } from '../lib/gestures';
+import { hapticTick } from '../lib/haptics';
 import { Icon } from './icons';
 
 export type SwipeSide = 'left' | 'right';
@@ -61,6 +62,7 @@ export function SwipeableRow({
   const suppressClickRef = useRef(false);
   /** Raw finger travel: the commit thresholds live past the visual clamp. */
   const rawRef = useRef(0);
+  const commitZoneRef = useRef(false);
 
   if (!enabled) return <>{children}</>;
 
@@ -105,6 +107,16 @@ export function SwipeableRow({
     suppressClickRef.current = true;
     rawRef.current = baseOffset + dx;
     setDrag(clampOffset(rawRef.current, config));
+
+    // A tick the moment the drag enters (or leaves) the commit zone, so the
+    // finger knows a full swipe is armed before letting go.
+    const resolution = resolveSwipe(rawRef.current, config);
+    const inCommitZone =
+      (resolution === 'commit-left' && canCopy) || resolution === 'commit-right';
+    if (inCommitZone !== commitZoneRef.current) {
+      commitZoneRef.current = inCommitZone;
+      if (inCommitZone) hapticTick();
+    }
   };
 
   const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -116,6 +128,7 @@ export function SwipeableRow({
 
     const resolution = resolveSwipe(rawRef.current, config);
     rawRef.current = 0;
+    commitZoneRef.current = false;
     if (resolution === 'commit-left' && canCopy) {
       onCopy();
       settle(null);

@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PULL_THRESHOLD, pullArmed, pullDistance } from '../lib/gestures';
+import { hapticTick } from '../lib/haptics';
 import { Icon } from './icons';
 
 const RING = 2 * Math.PI * 10;
@@ -23,6 +24,7 @@ export function PullToSync({
   const scrollRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number | null>(null);
   const distanceRef = useRef(0);
+  const armedRef = useRef(false);
   const syncingRef = useRef(false);
   const onSyncRef = useRef(onSync);
   onSyncRef.current = onSync;
@@ -56,10 +58,17 @@ export function PullToSync({
       // instead of the page rubber-banding.
       event.preventDefault();
       setPull(pullDistance(dy));
+
+      const armed = pullArmed(distanceRef.current);
+      if (armed !== armedRef.current) {
+        armedRef.current = armed;
+        if (armed) hapticTick();
+      }
     };
 
     const onTouchEnd = () => {
       startYRef.current = null;
+      armedRef.current = false;
       if (syncingRef.current) return;
       if (!pullArmed(distanceRef.current)) {
         setPull(0);
@@ -80,6 +89,7 @@ export function PullToSync({
 
     const onTouchCancel = () => {
       startYRef.current = null;
+      armedRef.current = false;
       if (!syncingRef.current) setPull(0);
     };
 

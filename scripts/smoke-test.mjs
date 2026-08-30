@@ -699,9 +699,13 @@ const run = async () => {
     return height >= 62 && height <= 72;
   });
 
-  // The thumb-reach bar carries the primary commands on phones.
+  // The thumb-reach bar carries the primary commands on phones — and the
+  // header must not repeat them (a regression here squeezes the search box).
   await check('barra inferior traz os comandos principais', async () =>
     (await phone.locator('nav[aria-label="Ações rápidas"] button').count()) === 5);
+  await check('header do celular não repete os comandos da barra', async () =>
+    (await phone.locator('header button[aria-label="Gerador"]').filter({ visible: true }).count()) === 0 &&
+    (await phone.locator('header button:has-text("Novo")').filter({ visible: true }).count()) === 0);
   await phone.click('nav[aria-label="Ações rápidas"] button:has-text("Favoritos")');
   await phone.waitForTimeout(300);
   await check('Favoritos na barra filtra a lista', async () => (await phone.locator('main li').count()) === 1);
@@ -815,7 +819,7 @@ const run = async () => {
 
   // Icon buttons: 40px visual on touch, topped up to ~48px by the ::after pad.
   await check('botões de ícone ganham área de toque no celular', async () =>
-    (await phone.locator('button[aria-label="Gerador"]').evaluate((el) => {
+    (await phone.locator('button[aria-label="Menu"]').evaluate((el) => {
       const after = getComputedStyle(el, '::after');
       const box = el.getBoundingClientRect();
       return after.position === 'absolute' && after.top === '-4px' && box.height >= 40;
