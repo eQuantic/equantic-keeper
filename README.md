@@ -217,14 +217,18 @@ npm run smoke      # in-browser integration test (after npm run build)
 ```
 
 `npm run smoke` starts `vite preview`, seeds a vault encrypted by an independent
-implementation of the file format and walks the app with Playwright: first-run setup,
-wrong password, unlock, search, revealing a secret, TOTP, item creation, registering a
-document with a holder, filtering by person, an encrypted attachment opened in the PDF
-viewer, expiry alerts, theme and lock — then repeats the core of it on a phone-sized,
-touch-first viewport (375×812): 16px inputs, the expiry badge and chips on the list,
-enlarged touch targets and the numeric keypad on digits-only fields. The seeded vault is a
-**v1** file, so the migration to v2 is exercised in a real browser as well. It needs the
-browser installed once: `npx playwright install chromium`.
+implementation of the file format and walks the app with Playwright across two viewports.
+The desktop pass covers first-run setup, wrong password, unlock, search, revealing a
+secret, TOTP, item and document creation with a holder, encrypted attachments opened in
+the PDF viewer, expiry alerts, the backup bundle round-trip, the keyboard shortcuts
+(including the typing guard and the `?` cheat sheet), theme and lock. The phone-sized,
+touch-first pass (375×812) covers the 16px/48px control metrics, the bottom command bar,
+expiry chips, row swipes with their commit thresholds, pull-to-sync, bottom-sheet gestures
+with the dirty-form confirmation, tap-to-copy on detail fields, system back navigation,
+and biometric unlock through a virtual PRF authenticator. The seeded vault is a **v1**
+file, so the migration to v2 is exercised in a real browser as well. Playwright installs
+with the dev dependencies; the browser itself is a one-time
+`npx playwright install chromium`.
 
 To test Google sign-in locally, add `http://localhost:5173` to the credential's
 *Authorized JavaScript origins*. Without it the app still works: create the vault, use it

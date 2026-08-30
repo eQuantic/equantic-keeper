@@ -490,17 +490,16 @@ export function VaultScreen() {
         </div>
 
         <SyncBadge />
-        {/* On phones these commands live in the bottom bar, within thumb reach. */}
-        <IconButton icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} className="hidden lg:inline-flex" />
-        <IconButton icon="lock" label="Bloquear (Ctrl+L)" onClick={actions.lock} className="hidden lg:inline-flex" />
-        <Button
-          variant="primary"
-          icon="plus"
-          onClick={() => setEditing({ item: null })}
-          className="hidden shrink-0 lg:inline-flex"
-        >
-          Novo
-        </Button>
+        {/* On phones these commands live in the bottom bar, within thumb reach.
+            The wrapper does the hiding: a `hidden` merged into the buttons' own
+            class list loses to their base `inline-flex` in the cascade. */}
+        <div className="hidden items-center gap-2 lg:flex">
+          <IconButton icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} />
+          <IconButton icon="lock" label="Bloquear (Ctrl+L)" onClick={actions.lock} />
+          <Button variant="primary" icon="plus" onClick={() => setEditing({ item: null })} className="shrink-0">
+            Novo
+          </Button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
