@@ -403,6 +403,9 @@ const run = async () => {
     (await page.locator('[role="dialog"] button:has-text("Declaração de crédito pessoal")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Declaração de crédito hipotecário")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Declaração")').count()) === 4);
+  await check('Geral traz recibo de vencimento e contrato de trabalho', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Recibo de vencimento")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Contrato de trabalho")').count()) === 1);
   await page.click('button[aria-label="Voltar"]');
   await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Portugal")');
@@ -414,6 +417,10 @@ const run = async () => {
     (await page.locator('[role="dialog"] button:has-text("Declaração de IRS")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Situação contributiva")').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Situação tributária")').count()) === 1);
+  await check('Portugal traz o IMI', async () =>
+    // Exact match on the label element: has-text is a substring and "IMI"
+    // also lives inside "imigração" in another type's description.
+    (await page.locator('[role="dialog"] button .font-medium').filter({ hasText: /^IMI$/ }).count()) === 1);
   await page.fill('input[placeholder*="Filtrar tipos"]', 'residência');
   await page.waitForTimeout(200);
   await check('filtro do seletor de tipos reduz a lista', async () => {
