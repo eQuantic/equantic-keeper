@@ -60,6 +60,7 @@ describe('catálogo de tipos', () => {
       'cartao-credito.number',
       'cartao-credito.password',
       'cartao-credito.pin',
+      'declaracao.codigoValidacao',
       'pt-certidao.codigoAcesso',
       'us-ssn.ssn',
     ]);
