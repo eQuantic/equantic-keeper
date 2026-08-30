@@ -146,15 +146,18 @@ function FieldInput({
 
 export function ItemEditor({
   item,
+  preset,
   onSave,
   onClose,
 }: {
   /** `null` starts a new item. */
   item: VaultItem | null;
+  /** Pre-filled fields for a new item — the sidebar filter active at creation. */
+  preset?: Partial<Pick<VaultItem, 'holderId' | 'folder'>>;
   onSave: (item: VaultItem) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState<VaultItem>(() => item ?? createItem('api-token'));
+  const [draft, setDraft] = useState<VaultItem>(() => item ?? { ...createItem('api-token'), ...preset });
   const [typePickerOpen, setTypePickerOpen] = useState(!item);
   const [addingPerson, setAddingPerson] = useState(false);
   const [newPerson, setNewPerson] = useState('');
@@ -223,7 +226,7 @@ export function ItemEditor({
         onClose={onClose}
         onPick={(typeId) => {
           dirtyRef.current = false;
-          setDraft(createItem(typeId));
+          setDraft({ ...createItem(typeId), ...preset });
           setTypePickerOpen(false);
           pushRecentType(typeId);
         }}
