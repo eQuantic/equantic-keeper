@@ -47,13 +47,76 @@ function nextZoom(current: number, direction: 1 | -1): number {
   return ZOOM_STEPS[Math.min(Math.max(target, 0), ZOOM_STEPS.length - 1)] ?? current;
 }
 
+/**
+ * iOS Safari black-screens silently once the live canvas backing stores blow
+ * its budget — far smaller than desktop's, and a multi-page scan at retina
+ * resolution gets there in a few pages (the whole viewer went black on
+ * iPhones). Two defenses: a page paints only while near the viewport and
+ * frees its backing store when it leaves, and no single canvas exceeds this
+ * pixel cap. CSS keeps the layout size, so zoom and the text layer land the
+ * same either way.
+ */
+const MAX_CANVAS_PIXELS =
+  typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+    ? 4_194_304 // ~2048²: phone-class budget
+    : 16_777_216; // 4096²: desktop engines
+
 /** Renders one PDF page onto a canvas, plus the invisible text layer that
  * makes selection and copy work — the whole point of not using an <img>. */
 function PdfPage({ doc, pageNumber, zoom }: { doc: PDFDocumentProxy; pageNumber: number; zoom: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
+  const holderRef = useRef<HTMLDivElement>(null);
+  // Scale-1 page size: the holder keeps this footprint (× zoom) even while
+  // the canvas itself is empty, so freeing pages never jolts the scroll.
+  const [base, setBase] = useState<{ width: number; height: number } | null>(null);
+  const [near, setNear] = useState(pageNumber === 1);
 
   useEffect(() => {
+    let cancelled = false;
+    void doc.getPage(pageNumber).then((page) => {
+      if (cancelled) return;
+      const unit = page.getViewport({ scale: 1 });
+      setBase({ width: unit.width, height: unit.height });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, pageNumber]);
+
+  useEffect(() => {
+    const node = holderRef.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setNear(entry.isIntersecting);
+      },
+      // A screen and a half of lookahead: the next page is ready before the
+      // scroll reaches it, without keeping the whole document alive.
+      { rootMargin: '150% 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const layer = textRef.current;
+    if (!canvas || !layer) return;
+
+    if (!near) {
+      // 0×0 is what actually releases the backing store on WebKit.
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.removeAttribute('style');
+      layer.replaceChildren();
+      return;
+    }
+
     let cancelled = false;
     let task: { cancel: () => void } | null = null;
 
@@ -61,28 +124,27 @@ function PdfPage({ doc, pageNumber, zoom }: { doc: PDFDocumentProxy; pageNumber:
       const page = await doc.getPage(pageNumber);
       if (cancelled) return;
       // Match the device pixel ratio, or a 4x zoom on a retina screen renders
-      // a blurry document — which defeats the purpose of zooming into a scan.
+      // a blurry document — capped so one page never exceeds the pixel budget.
       const ratio = Math.min(globalThis.devicePixelRatio || 1, 2);
-      const viewport = page.getViewport({ scale: zoom * ratio });
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext('2d');
-      if (!canvas || !context) return;
+      const unit = page.getViewport({ scale: 1 });
+      const scale = Math.min(zoom * ratio, Math.sqrt(MAX_CANVAS_PIXELS / (unit.width * unit.height)));
+      const viewport = page.getViewport({ scale });
+      const context = canvas.getContext('2d');
+      if (!context) return;
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width / ratio}px`;
-      canvas.style.height = `${viewport.height / ratio}px`;
+      canvas.style.width = `${unit.width * zoom}px`;
+      canvas.style.height = `${unit.height * zoom}px`;
 
       const render = page.render({ canvas, canvasContext: context, viewport });
       task = render;
       await render.promise.catch(() => undefined);
       if (cancelled) return;
 
-      const layer = textRef.current;
-      if (!layer) return;
       layer.replaceChildren();
-      layer.style.width = `${viewport.width / ratio}px`;
-      layer.style.height = `${viewport.height / ratio}px`;
+      layer.style.width = `${unit.width * zoom}px`;
+      layer.style.height = `${unit.height * zoom}px`;
       // The spans are positioned in per-cent and sized from this variable, so
       // the text stays glued to the glyphs at every zoom step.
       layer.style.setProperty('--total-scale-factor', String(zoom));
@@ -98,10 +160,18 @@ function PdfPage({ doc, pageNumber, zoom }: { doc: PDFDocumentProxy; pageNumber:
       cancelled = true;
       task?.cancel();
     };
-  }, [doc, pageNumber, zoom]);
+  }, [doc, pageNumber, zoom, near]);
 
   return (
-    <div className="relative mx-auto w-fit bg-white shadow-lg">
+    <div
+      ref={holderRef}
+      className="relative mx-auto bg-white shadow-lg"
+      style={
+        base
+          ? { width: base.width * zoom, height: base.height * zoom }
+          : { width: 595 * zoom, height: 842 * zoom }
+      }
+    >
       <canvas ref={canvasRef} className="block" />
       <div ref={textRef} className="keeper-text-layer absolute top-0 left-0 origin-top-left" />
     </div>
