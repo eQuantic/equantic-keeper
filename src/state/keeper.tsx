@@ -31,7 +31,7 @@ import {
   webAuthnPrf,
   wrapMasterBits,
 } from '../lib/biometric';
-import { DriveClient } from '../lib/drive';
+import { DriveClient, driveUsage, type DriveUsage } from '../lib/drive';
 import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import { createFolder, registerCustomTypes } from '../lib/model';
 import {
@@ -125,6 +125,8 @@ export interface KeeperActions {
   importBundle(bytes: Uint8Array, password: string): Promise<{ items: number; attachments: number }>;
   collectAttachments(): Promise<{ bytes: Map<string, Uint8Array>; missing: string[] }>;
   sweepDriveOrphans(): Promise<number>;
+  /** What this vault costs the Drive account, or null when not connected. */
+  driveUsage(): Promise<DriveUsage | null>;
   currentVaultFile(): VaultFile | null;
   signOut(): Promise<void>;
   wipeDevice(): void;
@@ -894,6 +896,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [mutate, syncKeystore],
   );
 
+  const readDriveUsage = useCallback(async (): Promise<DriveUsage | null> => {
+    const drive = driveRef.current;
+    if (!drive || !navigator.onLine) return null;
+    return driveUsage(drive);
+  }, []);
+
   const syncNow = useCallback(
     async (force = false) => {
       if (!authRef.current?.isSignedIn) {
@@ -1268,6 +1276,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       importBundle,
       collectAttachments,
       sweepDriveOrphans,
+      driveUsage: readDriveUsage,
       currentVaultFile,
       signOut,
       wipeDevice,
@@ -1306,6 +1315,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       setClientId,
       signOut,
       sweepDriveOrphans,
+      readDriveUsage,
       syncNow,
       toggleFavorite,
       trashItem,
