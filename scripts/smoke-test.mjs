@@ -646,6 +646,21 @@ const run = async () => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
 
+  // 8f-ter. Where the vault is kept. Without a Google account the section can
+  // only offer the explanation, but it renders — and the move button is not
+  // reachable by accident from a device that has no account attached.
+  // The previous dialog has to be gone, not just closing: a click that lands
+  // mid-animation is swallowed by the overlay and the next one reopens nothing.
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Onde o cofre fica', { timeout: 5000 });
+  await check('configurações dizem onde o cofre fica', async () =>
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para escolher onde o cofre fica').count()) === 1);
+  await check('sem conta conectada não há botão de mover', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Mover para uma pasta do Drive")').count()) === 0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
   // 8g. Validity: what is expired, what is about to be, and what is neither.
   await check('barra lateral separa vencidos de quem vence em breve', async () =>
     (await page.locator('nav button:has-text("Vencidos")').count()) === 1 &&

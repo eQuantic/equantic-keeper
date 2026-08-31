@@ -33,8 +33,15 @@ import {
   webAuthnPrf,
   wrapMasterBits,
 } from '../lib/biometric';
-import { DriveClient, driveUsage, type DriveUsage } from '../lib/drive';
-import { GoogleAuth, GoogleAuthError } from '../lib/google-auth';
+import { DriveClient, driveUsage, KEEPER_FOLDER_NAME, type DriveUsage } from '../lib/drive';
+import {
+  MOVED_MARKER_NAME,
+  discardAppDataCopy,
+  migrateToFolder,
+  readMovedMarker,
+  repointAttachments,
+} from '../lib/drive-migration';
+import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import { createFolder, registerCustomTypes } from '../lib/model';
 import {
   folderLeaf,
@@ -94,6 +101,12 @@ export interface KeeperState {
   biometricEnrolled: boolean;
   /** The record opens the vault currently loaded — show the unlock button. */
   biometricReady: boolean;
+  /** Drive folder holding the vault, or null while it lives in the app folder. */
+  driveFolderId: string | null;
+  /** Live count while files are being copied into the folder. */
+  driveMove: { done: number; total: number } | null;
+  /** The app folder says this vault has moved — this device has not followed. */
+  driveMovedElsewhere: boolean;
 }
 
 export interface KeeperActions {
@@ -129,6 +142,10 @@ export interface KeeperActions {
   importBundle(bytes: Uint8Array, password: string): Promise<{ items: number; attachments: number }>;
   collectAttachments(): Promise<{ bytes: Map<string, Uint8Array>; missing: string[] }>;
   sweepDriveOrphans(): Promise<number>;
+  /** Moves the vault out of the hidden app folder into a folder in My Drive. */
+  moveToDriveFolder(): Promise<void>;
+  /** Deletes the app-folder copy once the new folder is verified complete. */
+  discardOldDriveCopy(): Promise<{ deleted: number; missing: string[] }>;
   /** What this vault costs the Drive account, or null when not connected. */
   driveUsage(): Promise<DriveUsage | null>;
   currentVaultFile(): VaultFile | null;
@@ -159,6 +176,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     biometricAvailable: false,
     biometricEnrolled: !!storage.loadBiometricRecord(),
     biometricReady: false,
+    driveFolderId: storage.loadDriveFolder(),
+    driveMove: null,
+    driveMovedElsewhere: false,
   }));
 
   const authRef = useRef<GoogleAuth | null>(null);
@@ -233,8 +253,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     const clientId = storage.getClientId();
     if (!clientId) throw new Error('Configure o Google OAuth Client ID antes de conectar.');
     if (!authRef.current || authRef.current.clientId !== clientId) {
-      authRef.current = new GoogleAuth(clientId);
-      driveRef.current = new DriveClient(authRef.current);
+      const auth = new GoogleAuth(clientId);
+      const folderId = storage.loadDriveFolder();
+      // A device that already moved has to renew with the wider permission, or
+      // its first request lands in a folder it is no longer allowed to open.
+      if (folderId) auth.include(DRIVE_FILE_SCOPE);
+      authRef.current = auth;
+      driveRef.current = new DriveClient(auth, folderId ? { kind: 'folder', id: folderId } : { kind: 'appdata' });
     }
     return { auth: authRef.current, drive: driveRef.current! };
   }, []);
@@ -473,6 +498,29 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       try {
         const { auth, drive } = services();
         await auth.requestToken(interactive);
+        // The wider permission can be taken back from the Google account page.
+        // If it is gone, the folder is unreachable and every request would fail
+        // in a way nobody could read: fall back to where the vault started.
+        if (drive.space.kind === 'folder' && !auth.hasScope(DRIVE_FILE_SCOPE)) {
+          drive.useSpace({ kind: 'appdata' });
+          storage.clearDriveFolder();
+          patch({
+            driveFolderId: null,
+            notice:
+              `A permissão da pasta "${KEEPER_FOLDER_NAME}" no Drive foi revogada. ` +
+              'O cofre voltou a sincronizar pela pasta oculta do app.',
+          });
+        }
+        // Another device may have moved this vault into a folder. Until this one
+        // is granted the wider permission it cannot even see that folder, so the
+        // app folder is left holding a note saying where everything went.
+        if (drive.space.kind === 'appdata') {
+          const marker = await drive
+            .listFiles(`name = '${MOVED_MARKER_NAME}' and trashed = false`)
+            .catch(() => []);
+          patch({ driveMovedElsewhere: readMovedMarker(marker) });
+        }
+
         const account = await auth.fetchAccount();
         storage.saveAccount(account);
         patch({ account, connected: true, busy: false });
@@ -1147,6 +1195,68 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * uploaded moments ago — before its vault change reached us — is never the
    * one that gets deleted.
    */
+  /**
+   * Copies the vault and every attachment into a folder in My Drive, then
+   * points this device at it.
+   *
+   * Nothing is deleted: the app folder keeps its copy, so an interrupted move
+   * leaves a working vault on both sides and running it again picks up where it
+   * stopped. The attachment ids change (a copy is a new file), so the vault is
+   * rewritten to point at the new ones before anything is synced.
+   */
+  const moveToDriveFolder = useCallback(async () => {
+    const drive = driveRef.current;
+    const auth = authRef.current;
+    if (!drive || !auth) throw new Error('Conecte a conta Google antes de mover o cofre.');
+    if (!payloadRef.current) throw new Error('Abra o cofre antes de mover.');
+
+    patch({ busy: true, error: null, driveMove: { done: 0, total: 0 } });
+    try {
+      await auth.requestScope(DRIVE_FILE_SCOPE);
+      const report = await migrateToFolder(drive, ({ done, total }) => patch({ driveMove: { done, total } }));
+
+      storage.saveDriveFolder(report.folderId);
+      drive.useSpace({ kind: 'folder', id: report.folderId });
+      // The vault's copy is a different file: syncing before this line would
+      // write the migrated vault straight back into the app folder.
+      driveIdRef.current = report.vaultFileId ?? undefined;
+      revisionRef.current = undefined;
+
+      await mutate((payload) => repointAttachments(payload, report.moved).payload);
+      await runSync({ force: true });
+
+      const failed = report.failed.length;
+      patch({
+        busy: false,
+        driveFolderId: report.folderId,
+        driveMove: null,
+        driveMovedElsewhere: false,
+        notice: failed
+          ? `Cofre movido para a pasta "${KEEPER_FOLDER_NAME}", mas ${failed} arquivo(s) não puderam ser ` +
+            'copiados e continuam a ser lidos da pasta oculta. Tente mover de novo mais tarde.'
+          : `Cofre movido para a pasta "${KEEPER_FOLDER_NAME}" no seu Drive. A cópia antiga continua lá, ` +
+            'intacta, até você decidir apagá-la.',
+      });
+    } catch (error) {
+      patch({ driveMove: null });
+      fail(error, 'Não foi possível mover o cofre para uma pasta do Drive.');
+    }
+  }, [fail, mutate, patch, runSync]);
+
+  /**
+   * Deletes the app-folder copy left behind by the move.
+   *
+   * It refuses unless every file is provably in the new folder, so the answer to
+   * "is it all there?" is checked rather than assumed. What it leaves behind is
+   * the marker: other devices still need to be told where the vault went.
+   */
+  const discardOldDriveCopy = useCallback(async () => {
+    const drive = driveRef.current;
+    const folderId = storage.loadDriveFolder();
+    if (!drive || !folderId) throw new Error('O cofre ainda não foi movido para uma pasta do Drive.');
+    return discardAppDataCopy(drive, folderId);
+  }, []);
+
   const sweepDriveOrphans = useCallback(async () => {
     const drive = driveRef.current;
     const payload = payloadRef.current;
@@ -1388,6 +1498,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       importBackup,
       importBundle,
       collectAttachments,
+      moveToDriveFolder,
+      discardOldDriveCopy,
       sweepDriveOrphans,
       driveUsage: readDriveUsage,
       currentVaultFile,
@@ -1427,6 +1539,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       saveItem,
       setClientId,
       signOut,
+      moveToDriveFolder,
+      discardOldDriveCopy,
       sweepDriveOrphans,
       readDriveUsage,
       syncNow,

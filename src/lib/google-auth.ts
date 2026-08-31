@@ -7,11 +7,20 @@
  */
 
 export const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-export const SCOPES = [
+/**
+ * Lets the app create and reach files of its own anywhere in the Drive — and
+ * nothing else: files it did not create stay invisible. Asked for only when the
+ * user moves the vault into a folder they can see and share, never at sign-in,
+ * because a vault that already syncs must not stop syncing over a permission
+ * nobody has needed yet.
+ */
+export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+export const BASE_SCOPES = [
   DRIVE_APPDATA_SCOPE,
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
-].join(' ');
+];
+export const SCOPES = BASE_SCOPES.join(' ');
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 /** Refresh a little before the real expiry to avoid mid-request 401s. */
@@ -62,6 +71,13 @@ export class GoogleAuthError extends Error {
   }
 }
 
+/** Tells "this client may not ask for that" apart from "the user said no". */
+function isScopeRefusal(error: unknown): boolean {
+  if (!(error instanceof GoogleAuthError)) return false;
+  if (error.code === 'popup_closed' || error.code === 'access_denied') return false;
+  return error.code === 'invalid_scope' || /scope/i.test(error.message);
+}
+
 let scriptPromise: Promise<void> | null = null;
 
 function loadGisScript(): Promise<void> {
@@ -92,11 +108,51 @@ export class GoogleAuth {
   private token: string | null = null;
   private expiresAt = 0;
   private pending: Promise<string> | null = null;
+  /** Beyond the base set — asked for only once a feature needs them. */
+  private extra = new Set<string>();
+  private granted = new Set<string>();
 
   constructor(readonly clientId: string) {}
 
   get isSignedIn(): boolean {
     return !!this.token && Date.now() < this.expiresAt;
+  }
+
+  /** What Google actually handed over, which is not always what was asked. */
+  hasScope(scope: string): boolean {
+    return this.granted.has(scope);
+  }
+
+  /**
+   * Adds a scope to every request from here on, without asking for it yet: a
+   * device that was granted it in an earlier session renews silently with the
+   * wider set instead of dropping back to the narrow one.
+   */
+  include(scope: string): void {
+    if (this.extra.has(scope)) return;
+    this.extra.add(scope);
+    this.client = null;
+  }
+
+  /**
+   * Asks for a scope now, with a consent screen. Resolves only if Google came
+   * back with it — the user can untick a permission, and a silent "granted"
+   * would leave the app writing where it cannot.
+   */
+  async requestScope(scope: string): Promise<void> {
+    this.include(scope);
+    this.invalidate();
+    await this.requestToken(true);
+    if (!this.hasScope(scope)) {
+      throw new GoogleAuthError(
+        'A permissão não foi concedida na tela do Google. Nada foi alterado no seu Drive.',
+        'missing_scope',
+      );
+    }
+  }
+
+  private scopeString(): string {
+    return [...BASE_SCOPES, ...this.extra].join(' ');
   }
 
   private async ensureClient(): Promise<TokenClient> {
@@ -107,7 +163,7 @@ export class GoogleAuth {
 
     this.client = oauth2.initTokenClient({
       client_id: this.clientId,
-      scope: SCOPES,
+      scope: this.scopeString(),
       callback: () => {}, // replaced per-request in `requestToken`
     });
     return this.client;
@@ -119,10 +175,30 @@ export class GoogleAuth {
    */
   async requestToken(interactive: boolean, hint?: string): Promise<string> {
     if (this.isSignedIn) return this.token!;
-    this.pending ??= this.doRequest(interactive, hint).finally(() => {
+    this.pending ??= this.withNarrowFallback(interactive, hint).finally(() => {
       this.pending = null;
     });
     return this.pending;
+  }
+
+  /**
+   * Google refuses the whole request when one scope in it is not configured for
+   * the OAuth client. That must not be how a user discovers their vault stopped
+   * syncing, so a request refused over a scope is retried with the base set and
+   * the app carries on where it was — `hasScope` then reports the truth.
+   *
+   * Only over a scope: a closed popup or a refused consent is the user talking,
+   * and answering it with a second popup would be worse than the failure.
+   */
+  private async withNarrowFallback(interactive: boolean, hint?: string): Promise<string> {
+    try {
+      return await this.doRequest(interactive, hint);
+    } catch (error) {
+      if (this.extra.size === 0 || !isScopeRefusal(error)) throw error;
+      this.extra.clear();
+      this.client = null;
+      return this.doRequest(interactive, hint);
+    }
   }
 
   private async doRequest(interactive: boolean, hint?: string): Promise<string> {
@@ -150,6 +226,7 @@ export class GoogleAuth {
           );
           return;
         }
+        this.granted = new Set((response.scope ?? '').split(' ').filter(Boolean));
         const granted = window.google?.accounts.oauth2.hasGrantedAllScopes?.(response, DRIVE_APPDATA_SCOPE);
         if (granted === false) {
           settle(() =>

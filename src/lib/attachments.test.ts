@@ -296,7 +296,7 @@ describe('findOrphans', () => {
   /** Só a fatia do Drive que a varredura usa. */
   const driveWith = (files: { id: string; name: string; modifiedTime: string }[]) => ({
     delete: async () => undefined,
-    listAppData: async () => files,
+    listFiles: async () => files,
   });
 
   const ref = (id: string): AttachmentRef => ({

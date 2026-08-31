@@ -25,7 +25,7 @@ in your browser.
                                               └──► verifier (public)
           │
           ▼
-   { public header + ciphertext }  ──►  Google Drive (appDataFolder)
+   { public header + ciphertext }  ──►  Google Drive (app folder, or your own)
                                    ──►  localStorage (offline cache)
 ```
 
@@ -42,7 +42,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Header integrity | The public header is fed in as *additional authenticated data* — tampering with it invalidates the tag |
 | Key at rest | Non-extractable `CryptoKey`, wiped on manual lock and when the auto-lock window ends. While the window is open (or forever, with auto-lock "Never") a non-extractable copy sits in IndexedDB stamped with the deadline, so tab discards, app updates and reloads reopen the vault without the password; boot deletes an expired record and asks for the password again |
 | Biometric unlock (optional) | Master bits AES-GCM-wrapped under a key derived from a platform passkey's WebAuthn PRF output — per device, gated by Face ID / fingerprint / device PIN, invalidated by a password change |
-| Google scope | Only `drive.appdata` (the app's own hidden folder) + email/profile |
+| Google scope | `drive.appdata` (the app's own hidden folder) + email/profile. `drive.file` — files this app created, and nothing else — is asked for only if you move the vault into a folder of your own |
 | OAuth token | Short-lived access token, held in memory only |
 | Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
 | CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
@@ -52,6 +52,24 @@ is never transmitted, never stored, and cannot be recovered.
 **What this model does not protect against:** a compromised device (keylogger, malware,
 malicious extension) sees the open vault the same way you do. And if you forget the master
 password, the data is unrecoverable — by construction.
+
+### Where the vault lives
+
+By default everything sits in Drive's `appDataFolder`: a per-app folder you never see,
+under the narrowest scope Drive offers. It is also the one place in Drive that **cannot be
+shared** — Google will not give another account access to it, by design.
+
+*Configurações → Onde o cofre fica* moves the vault into a normal folder named
+**eQuantic Keeper** in your My Drive, asking for `drive.file` at that moment and not
+before. Nothing is destroyed: the files are copied, the app folder keeps its copy, and an
+interrupted move leaves a working vault on both sides — running it again picks up where it
+stopped. A second run of *Apagar a cópia antiga* deletes the old copy, but only after
+checking file by file that everything reached the new folder.
+
+A device that has not been granted the wider permission cannot even see the new folder, so
+the move leaves a marker file behind in the app folder. Any device still syncing the old
+way reads it and says so, instead of quietly drifting away from the vault everyone else is
+using.
 
 ### Biometric unlock
 
@@ -158,7 +176,10 @@ wraps the vault's master bits into a record kept in `localStorage`.
    list gets `Error 403: access_denied`.
 4. Under **Data access**, add the scope `https://www.googleapis.com/auth/drive.appdata`.
    If it is not declared there, Google grants only email/profile and the app refuses the
-   login.
+   login. Add `https://www.googleapis.com/auth/drive.file` as well if you want to move the
+   vault into a folder of your own (which is what makes sharing possible later) — the app
+   never asks for it at sign-in, only when you press the button, and it falls back to the
+   app folder if the scope is missing.
 5. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
 6. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
    trailing slash and no path. For the official instance: `https://keeper.equantic.tech`;
@@ -170,8 +191,10 @@ wraps the vault's master bits into a record kept in `localStorage`.
 7. Copy the **Client ID** (something like `1234567890-abc.apps.googleusercontent.com`).
    It is a **public** identifier, not a secret.
 
-> The only scope requested is `drive.appdata`. Google presents it as "See and manage its
-> own configuration data in your Google Drive" — the app cannot see any of your other files.
+> At sign-in the only Drive scope requested is `drive.appdata`. Google presents it as "See
+> and manage its own configuration data in your Google Drive" — the app cannot see any of
+> your other files. `drive.file`, if you enable the folder, adds exactly the files this app
+> creates: still nothing else in your Drive.
 
 #### Common login problems
 
@@ -185,9 +208,9 @@ wraps the vault's master bits into a record kept in `localStorage`.
 > without ticking the Drive one grants identity only, and the app refuses the login instead
 > of creating a vault it could never sync.
 
-**Is publishing worth it?** Every scope used here — `drive.appdata`, `userinfo.email` and
-`userinfo.profile` — is classified by Google as *non-sensitive*, which only requires basic
-verification. Publishing (*Audience → Publish app*) removes the 100-tester cap and the
+**Is publishing worth it?** Every scope used here — `drive.appdata`, `drive.file`,
+`userinfo.email` and `userinfo.profile` — is classified by Google as *non-sensitive*, which
+only requires basic verification. Publishing (*Audience → Publish app*) removes the 100-tester cap and the
 expiring test authorization that forces a fresh interactive consent whenever silent renewal
 fails.
 
@@ -350,7 +373,10 @@ can decrypt the vault without this app. The repository's integration test does e
   than 90 days. The grace period exists because a device that stayed offline may hold the
   only copy of the vault that still points at that file.
 - The `appDataFolder` is invisible in Drive: to take your data elsewhere, use the
-  encrypted vault export.
+  encrypted vault export — or move the vault into a folder of your own, where you can at
+  least see the files (still encrypted).
+- Moving the vault into a folder is per device: each one asks for the wider permission
+  once. Until a device follows, it keeps syncing against the app folder and says so.
 - Drive writes are not atomic. The app merges before writing and detects revision
   divergence, but two edits in the same second on different devices may need one extra
   sync.

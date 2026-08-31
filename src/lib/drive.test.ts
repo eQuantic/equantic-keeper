@@ -4,7 +4,7 @@ import { driveUsage, type DriveClient, type DriveFileMeta } from './drive';
 
 function clientWith(files: DriveFileMeta[], quota: { used: number; limit: number } | null = null): DriveClient {
   return {
-    listAllAppData: async () => files,
+    listAll: async () => files,
     storageQuota: async () => quota,
   } as unknown as DriveClient;
 }

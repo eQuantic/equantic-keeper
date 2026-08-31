@@ -13,6 +13,12 @@ const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
 const KEY_RECENT_TYPES = 'keeper.recentTypes.v1';
+/**
+ * The Drive folder the vault was moved into, when it has been. Its presence is
+ * also what tells the app to keep asking for the wider Drive permission on this
+ * device — a cache of a fact that lives in the Drive, not the fact itself.
+ */
+const KEY_DRIVE_FOLDER = 'keeper.drive.folder.v1';
 
 export interface CachedVault {
   file: VaultFile;
@@ -152,6 +158,18 @@ export function pushRecentType(id: string): void {
   }
 }
 
+export function loadDriveFolder(): string | null {
+  return safeGet(KEY_DRIVE_FOLDER);
+}
+
+export function saveDriveFolder(folderId: string): void {
+  safeSet(KEY_DRIVE_FOLDER, folderId);
+}
+
+export function clearDriveFolder(): void {
+  safeRemove(KEY_DRIVE_FOLDER);
+}
+
 export function loadTheme(): 'dark' | 'light' {
   return safeGet(KEY_THEME) === 'light' ? 'light' : 'dark';
 }
@@ -162,7 +180,7 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 
 /** Wipes every trace of the vault from this device (the Drive copy is untouched). */
 export function wipeLocalData(): void {
-  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC]) safeRemove(key);
+  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC, KEY_DRIVE_FOLDER]) safeRemove(key);
 }
 
 const NOTE_PANES_KEY = 'keeper.note.panes.v1';
