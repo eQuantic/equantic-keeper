@@ -786,7 +786,20 @@ export function ContextMenu({
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
+  // Depending on focus was a mistake here, and an intermittent one: the row
+  // under the pointer takes focus back on some paths, and then Escape went
+  // nowhere. While the menu is open it owns these keys from a capture listener,
+  // whatever has focus — the same shape the select settled on.
+  const keysRef = useRef<(key: string) => void>(() => {});
+
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!['ArrowDown', 'ArrowUp', 'Enter', ' ', 'Escape', 'ArrowLeft'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      keysRef.current(event.key);
+    };
+    window.addEventListener('keydown', onKey, true);
     const timer = window.setTimeout(() => ref.current?.focus(), 0);
     const close = () => closeRef.current();
     window.addEventListener('scroll', close, true);
@@ -800,6 +813,7 @@ export function ContextMenu({
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
       window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, []);
 
@@ -814,6 +828,20 @@ export function ContextMenu({
     setTitle(null);
     setActive(0);
   };
+
+  const handleKey = (key: string) => {
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const delta = key === 'ArrowDown' ? 1 : -1;
+      setActive((index) => (index + delta + current.length) % Math.max(current.length, 1));
+    } else if (key === 'Enter' || key === ' ') {
+      const item = current[active];
+      if (item) pick(item);
+    } else if (key === 'Escape' || key === 'ArrowLeft') {
+      if (stack.length > 1) back();
+      else closeRef.current();
+    }
+  };
+  keysRef.current = handleKey;
 
   const pick = (item: MenuItem) => {
     if (item.children) {
@@ -833,22 +861,6 @@ export function ContextMenu({
       tabIndex={-1}
       aria-label={label ?? 'Ações'}
       data-context-menu
-      onKeyDown={(event) => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-          event.preventDefault();
-          const delta = event.key === 'ArrowDown' ? 1 : -1;
-          setActive((index) => (index + delta + current.length) % Math.max(current.length, 1));
-        } else if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          const item = current[active];
-          if (item) pick(item);
-        } else if (event.key === 'Escape' || event.key === 'ArrowLeft') {
-          event.preventDefault();
-          event.stopPropagation();
-          if (stack.length > 1) back();
-          else onClose();
-        }
-      }}
       style={{ position: 'fixed', top: Math.max(8, top), left: Math.max(8, left), width }}
       className="animate-in card z-[70] max-h-[min(22rem,70dvh)] overflow-y-auto p-1 shadow-xl focus:outline-none"
     >

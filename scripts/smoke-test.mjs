@@ -1243,6 +1243,46 @@ const run = async () => {
     return (await page.locator('main li:has-text("Painel DigitalOcean")').count()) === 1;
   });
 
+  // 11c-sexies-ter. An invite link: the guest opens one thing and the app knows
+  // which vault, which record and which key. What it cannot carry is the Drive's
+  // permission, so the picker still happens once — but nothing is typed and
+  // nothing is sent back.
+  await check('um link de convite é reconhecido ao abrir o app', async () => {
+    const link = await page.evaluate(() => {
+      const payload = {
+        share: 'registo-1',
+        secret: 'c2VncmVkbw==',
+        folderId: 'pasta-1',
+        vaultFileId: 'cofre-1',
+        sharesFileId: 'partilhas-1',
+        folderName: 'eQuantic Keeper',
+      };
+      const base64 = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(payload))))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+      return `${location.origin}/#convite=${base64}`;
+    });
+    // Colado numa aba que já tem o app aberto: só o fragmento muda, e mudar o
+    // fragmento não recarrega nada — é o caso que passava despercebido.
+    await page.goto(link);
+    await page.waitForTimeout(500);
+    const banner = await page.locator('main >> text=Alguém partilhou um cofre com você').count();
+    // E o link sai da barra de endereços: ele carrega uma chave.
+    const url = page.url();
+    return banner === 1 && !url.includes('convite=');
+  });
+  await check('dispensar o convite tira o aviso', async () => {
+    await page.click('main button:has-text("Agora não")');
+    await page.waitForTimeout(300);
+    return (await page.locator('main >> text=Alguém partilhou um cofre com você').count()) === 0;
+  });
+  await check('e não volta ao recarregar', async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    return (await page.locator('main >> text=Alguém partilhou um cofre com você').count()) === 0;
+  });
+
   // 11c-septies-bis. The vault switcher. A person can hold their own vault and
   // any number shared with them, and the way between them is here — including
   // for someone who already has a vault of their own, which is where the guest

@@ -42,8 +42,12 @@ import {
   repointAttachments,
 } from '../lib/drive-migration';
 import {
+  buildInviteLink,
   findOwnShare,
   isSharesFile,
+  readInviteLink,
+  unwrapWithSecret,
+  type InviteLink,
   rewrapShare,
   SHARES_FILE_NAME,
   unwrapWithIdentity,
@@ -51,7 +55,14 @@ import {
 } from '../lib/invites';
 import { ensureIdentity } from '../lib/identity';
 import { pickSharedItems } from '../lib/picker';
-import { grantAccess, readShares, removeAccess, writeShares, type StoredShares } from '../lib/sharing';
+import {
+  grantAccess,
+  grantLinkAccess,
+  readShares,
+  removeAccess,
+  writeShares,
+  type StoredShares,
+} from '../lib/sharing';
 import type { DrivePermission } from '../lib/drive';
 import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import { createFolder, registerCustomTypes } from '../lib/model';
@@ -127,6 +138,8 @@ export interface KeeperState {
   driveMove: { done: number; total: number } | null;
   /** The app folder says this vault has moved — this device has not followed. */
   driveMovedElsewhere: boolean;
+  /** An invite link this browser arrived with, waiting to be opened. */
+  pendingInvite: InviteLink | null;
   /**
    * Set when what is open belongs to someone else: a vault reached through a
    * share record instead of a password. There is no master password here and no
@@ -197,13 +210,23 @@ export interface KeeperActions {
   /** Deletes the app-folder copy once the new folder is verified complete. */
   discardOldDriveCopy(): Promise<{ deleted: number; missing: string[] }>;
   /** Gives one person the folder and a copy of the vault's key. */
-  shareVault(input: { code: string; label: string; email: string; role: 'reader' | 'writer' }): Promise<void>;
+  shareVault(input: { code: string; label: string; email: string; role: 'reader' | 'writer' }): Promise<ShareRecord>;
+  /** The same, as a link to send: the guest generates and sends nothing. */
+  shareVaultByLink(input: {
+    label: string;
+    email: string;
+    role: 'reader' | 'writer';
+  }): Promise<{ link: string; record: ShareRecord }>;
   /** Who the vault is shared with, from both sides: the keys and the Drive. */
   listShares(): Promise<{ shares: ShareRecord[]; permissions: DrivePermission[] }>;
   /** Takes one person's access away and rotates the key so a kept copy dies. */
   revokeShare(recordId: string): Promise<void>;
   /** Opens a vault someone else shared: pick the folder, find our key, read. */
   openSharedVault(): Promise<void>;
+  /** Opens the vault an invite link points at, key and all. */
+  redeemInvite(): Promise<void>;
+  /** Forgets the invite this browser arrived with. */
+  dismissInvite(): void;
   /** Moves between the vaults this device holds open. */
   switchWorkspace(id: string): Promise<void>;
   /** Forgets a shared vault on this device (the owner's copy is untouched). */
@@ -224,6 +247,31 @@ export interface KeeperActions {
 const KeeperContext = createContext<(KeeperState & { actions: KeeperActions }) | null>(null);
 
 const SYNC_DEBOUNCE_MS = 1500;
+const INVITE_STASH = 'keeper.invite.pending';
+
+/**
+ * Takes the invite out of the address bar and keeps it for this browser session.
+ *
+ * Out of the address bar because it carries a key: leaving it there puts it in
+ * the history, in a screenshot, in whatever the person pastes next. Into
+ * sessionStorage because signing in with Google can reload the page, and losing
+ * the invite at that point would leave them with a link they have already used
+ * and nothing to show for it.
+ */
+function takePendingInvite(): InviteLink | null {
+  try {
+    const fromUrl = readInviteLink(window.location.hash);
+    if (fromUrl) {
+      sessionStorage.setItem(INVITE_STASH, JSON.stringify(fromUrl));
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      return fromUrl;
+    }
+    const stashed = sessionStorage.getItem(INVITE_STASH);
+    return stashed ? (JSON.parse(stashed) as InviteLink) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function KeeperProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<KeeperState>(() => ({
@@ -243,6 +291,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     driveFolderId: storage.loadDriveFolder(),
     driveMove: null,
     driveMovedElsewhere: false,
+    pendingInvite: takePendingInvite(),
     guest: null,
     workspaces: [],
     activeWorkspace: OWN_WORKSPACE,
@@ -1456,7 +1505,30 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     async (input: { code: string; label: string; email: string; role: 'reader' | 'writer' }) => {
       const { drive, keys, folderId } = sharingContext();
       await ensureToken();
-      await grantAccess(drive, folderId, keys.data, input);
+      return grantAccess(drive, folderId, keys.data, input);
+    },
+    [ensureToken, sharingContext],
+  );
+
+  const shareVaultByLink = useCallback(
+    async (input: { label: string; email: string; role: 'reader' | 'writer' }) => {
+      const { drive, keys, folderId } = sharingContext();
+      await ensureToken();
+      const { record, secret } = await grantLinkAccess(drive, folderId, keys.data, input);
+
+      // The link points at files by id: Drive answers a get by id immediately,
+      // while a listing of a folder written seconds ago may still be empty.
+      const stored = await drive.readJson(SHARES_FILE_NAME, isSharesFile);
+      const vaultFileId = driveIdRef.current ?? (await drive.findVault())?.id ?? '';
+      const link = buildInviteLink(window.location.origin, {
+        share: record.id,
+        secret,
+        folderId,
+        vaultFileId,
+        sharesFileId: stored?.meta.id ?? '',
+        folderName: KEEPER_FOLDER_NAME,
+      });
+      return { link, record };
     },
     [ensureToken, sharingContext],
   );
@@ -1657,6 +1729,103 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     }
   }, [enterSharedVault, fail, patch, services]);
 
+  /**
+   * Opens the vault an invite link points at.
+   *
+   * The link carries the ids, so nothing has to be searched for — but it cannot
+   * carry the Drive's permission. Under `drive.file` a browser reaches only what
+   * its user pointed at, so the picker still happens once, filtered to the one
+   * folder. After that this device remembers the vault and never asks again.
+   */
+  const redeemInvite = useCallback(async () => {
+    const invite = state.pendingInvite ?? takePendingInvite();
+    if (!invite) return;
+    patch({ busy: true, error: null });
+    try {
+      const { auth, drive } = services();
+      await ensureToken();
+      if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
+      const token = await auth.requestToken(false);
+
+      const picked = await pickSharedItems(token, storage.getPickerApiKey(), invite.folderName || KEEPER_FOLDER_NAME);
+      if (picked.length === 0) {
+        patch({ busy: false });
+        return;
+      }
+
+      const folderId = picked.find((item) => item.isFolder)?.id ?? invite.folderId;
+      const client = folderId ? drive.withSpace({ kind: 'folder', id: folderId }) : drive;
+
+      // By id, not by name: Drive answers a get immediately, while a listing of
+      // a folder written minutes ago can still be empty.
+      const sharesFileId =
+        invite.sharesFileId ||
+        ((await client.listAll().catch(() => [])).find((file) => file.name === SHARES_FILE_NAME)?.id ?? '');
+      if (!sharesFileId) {
+        throw new Error(
+          'O convite abriu, mas não encontrei a lista de partilhas na pasta. Peça um convite novo à pessoa que ' +
+            'tem o cofre.',
+        );
+      }
+
+      const shares = await client.readJsonById(sharesFileId, isSharesFile);
+      const record = shares.shares.find((entry) => entry.id === invite.share);
+      if (!record) {
+        throw new Error('Este convite já não vale — a pessoa que tem o cofre pode tê-lo substituído ou revogado.');
+      }
+
+      const dataKey = await unwrapWithSecret(record, invite.secret);
+      const file = await client.download(invite.vaultFileId);
+      const payload = await openVaultWithDataKey(file, dataKey);
+
+      if (!guestRef.current && payloadRef.current) {
+        ownSessionRef.current = {
+          payload: payloadRef.current,
+          file: fileRef.current,
+          driveFileId: driveIdRef.current,
+          revision: revisionRef.current,
+        };
+      }
+
+      const session: GuestSession = {
+        role: record.role,
+        label: record.label,
+        folderId,
+        vaultFileId: invite.vaultFileId,
+      };
+      guestKeyRef.current = dataKey;
+      guestRef.current = session;
+      fileRef.current = file;
+      driveIdRef.current = invite.vaultFileId;
+      setPayload(payload);
+      storage.rememberSharedVault({
+        folderId,
+        vaultFileId: invite.vaultFileId,
+        label: record.label || invite.folderName,
+      });
+      // Used once and done: the link stays valid until the owner revokes it,
+      // but this browser has no reason to hold it any more.
+      try {
+        sessionStorage.removeItem(INVITE_STASH);
+      } catch {
+        /* private window: nothing was stored anyway */
+      }
+      describeWorkspaces(`shared:${invite.vaultFileId}`);
+      patch({ phase: 'unlocked', busy: false, guest: session, pendingInvite: null, sync: { status: 'idle' } });
+    } catch (error) {
+      fail(error, 'Não foi possível abrir o convite.');
+    }
+  }, [describeWorkspaces, ensureToken, fail, patch, services, setPayload, state.pendingInvite]);
+
+  const dismissInvite = useCallback(() => {
+    try {
+      sessionStorage.removeItem(INVITE_STASH);
+    } catch {
+      /* nothing stored */
+    }
+    patch({ pendingInvite: null });
+  }, [patch]);
+
   /** Back to the person's own vault, which never left memory. */
   const returnToOwnVault = useCallback(() => {
     const own = ownSessionRef.current;
@@ -1853,6 +2022,22 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     }
   }, [adoptVaultFile, patch, refreshBiometric, warmUpGoogle]);
 
+  /**
+   * An invite link that arrives while the app is already open.
+   *
+   * Changing only the fragment does not reload a page, so the state initialiser
+   * never sees it — which is exactly what happens when someone pastes the link
+   * into a tab that already has Keeper in it.
+   */
+  useEffect(() => {
+    const onHash = () => {
+      const invite = takePendingInvite();
+      if (invite) patch({ pendingInvite: invite });
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [patch]);
+
   // ---- connectivity -------------------------------------------------------
   useEffect(() => {
     const update = () => patch({ online: navigator.onLine });
@@ -1991,9 +2176,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       moveToDriveFolder,
       discardOldDriveCopy,
       shareVault,
+      shareVaultByLink,
       listShares,
       revokeShare,
       openSharedVault,
+      redeemInvite,
+      dismissInvite,
       switchWorkspace,
       forgetSharedVault: forgetShared,
       refreshSharedVault,
@@ -2039,9 +2227,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       moveToDriveFolder,
       discardOldDriveCopy,
       shareVault,
+      shareVaultByLink,
       listShares,
       revokeShare,
       openSharedVault,
+      redeemInvite,
+      dismissInvite,
       switchWorkspace,
       forgetShared,
       refreshSharedVault,

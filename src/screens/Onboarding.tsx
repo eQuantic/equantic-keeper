@@ -2,7 +2,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button, Field, PasswordInput, TextInput } from '../components/ui';
 import { Icon, Wordmark } from '../components/icons';
-import { InviteCodeDialog, OpenSharedButton } from '../components/InviteCode';
+import { InviteCodeDialog, OpenSharedButton, ensurePickerKey } from '../components/InviteCode';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
 import { isClientIdOverridden } from '../lib/storage';
@@ -110,7 +110,7 @@ export function ConfigScreen() {
 }
 
 export function SignInScreen() {
-  const { actions, busy, hasLocalVault, online } = useKeeper();
+  const { actions, busy, hasLocalVault, online, pendingInvite } = useKeeper();
   const [invite, setInvite] = useState(false);
 
   return (
@@ -130,6 +130,32 @@ export function SignInScreen() {
       }
     >
       <div className="space-y-3">
+        {/* Arrived through an invite link: that is why they are here, so it
+            goes above the ordinary sign-in rather than below it. */}
+        {pendingInvite ? (
+          <div className="rounded-lg border border-accent/40 bg-accent/10 p-3">
+            <p className="text-sm text-ink">Você foi convidado para um cofre.</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              Entre com a sua conta Google e confirme a pasta{' '}
+              <strong className="font-medium text-ink">{pendingInvite.folderName || 'do cofre'}</strong> uma
+              vez. Depois disso ela fica na sua lista.
+            </p>
+            <Button
+              variant="primary"
+              className="mt-3 w-full"
+              icon="share"
+              loading={busy}
+              disabled={!online}
+              onClick={() => {
+                if (!ensurePickerKey()) return;
+                void actions.redeemInvite();
+              }}
+            >
+              Abrir o cofre partilhado
+            </Button>
+          </div>
+        ) : null}
+
         <Button
           variant="primary"
           className="w-full"

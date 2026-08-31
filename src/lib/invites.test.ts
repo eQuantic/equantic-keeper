@@ -8,8 +8,12 @@ import {
   fingerprint,
   inviteCode,
   isSharesFile,
+  buildInviteLink,
   readInviteCode,
+  readInviteLink,
   rewrapShare,
+  unwrapWithSecret,
+  wrapForLink,
   unwrapWithIdentity,
   wrapForRecipient,
 } from './invites';
@@ -238,5 +242,56 @@ describe('arquivo de partilhas', () => {
     expect(isSharesFile(emptyShares())).toBe(true);
     expect(isSharesFile({ format: 'outra-coisa', shares: [] })).toBe(false);
     expect(isSharesFile(null)).toBe(false);
+  });
+});
+
+describe('convite por link', () => {
+  it('a chave viaja no link e abre o cofre', async () => {
+    const payload = { ...emptyPayload(), items: [itemWith('Passaporte')] };
+    const { file, keys } = await createVault(PASSWORD, payload, iterations);
+
+    const { record, secret } = await wrapForLink(keys.data, { label: 'Francine', role: 'writer' });
+    const dataKey = await unwrapWithSecret(record, secret);
+
+    expect(record.kind).toBe('link');
+    expect((await openVaultWithDataKey(file, dataKey)).items.map((item) => item.name)).toEqual(['Passaporte']);
+  });
+
+  it('outro segredo não abre', async () => {
+    const { keys } = await createVault(PASSWORD, emptyPayload(), iterations);
+    const { record } = await wrapForLink(keys.data, { label: 'Francine', role: 'reader' });
+    const outro = (await wrapForLink(keys.data, { label: 'Outro', role: 'reader' })).secret;
+
+    await expect(unwrapWithSecret(record, outro)).rejects.toThrow();
+  });
+
+  it('o registo continua preso ao seu próprio id', async () => {
+    const { keys } = await createVault(PASSWORD, emptyPayload(), iterations);
+    const { record, secret } = await wrapForLink(keys.data, { label: 'Francine', role: 'reader' });
+
+    await expect(unwrapWithSecret({ ...record, id: crypto.randomUUID() }, secret)).rejects.toThrow();
+  });
+
+  it('o link vai e volta como texto', () => {
+    const invite = {
+      share: 'abc-123',
+      secret: 'c2VncmVkbw==',
+      folderId: 'pasta1',
+      vaultFileId: 'cofre1',
+      sharesFileId: 'partilhas1',
+      folderName: 'eQuantic Keeper',
+    };
+    const link = buildInviteLink('https://keeper.equantic.tech', invite);
+
+    expect(link.startsWith('https://keeper.equantic.tech/#convite=')).toBe(true);
+    // Nada de segredo antes do #: só o fragmento carrega a chave.
+    expect(link.split('#')[0]).toBe('https://keeper.equantic.tech/');
+    expect(readInviteLink(new URL(link).hash)).toEqual(invite);
+  });
+
+  it('ignora um fragmento que não é convite', () => {
+    expect(readInviteLink('#qualquer-coisa')).toBeNull();
+    expect(readInviteLink('')).toBeNull();
+    expect(readInviteLink('#convite=%%%')).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../li
 import type { ShareRecord } from '../lib/invites';
 import { unmatchedPermissions } from '../lib/sharing';
 import { needsGesture } from '../lib/google-auth';
+import { shareSheetAvailable, shareText } from '../lib/share';
 import { InviteCodePanel } from './InviteCode';
 import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
@@ -1074,6 +1075,9 @@ function SharingPane() {
   const [role, setRole] = useState<'reader' | 'writer'>('reader');
   const [code, setCode] = useState('');
   const [inviting, setInviting] = useState(false);
+  /** The link just made, shown until the owner has sent it. */
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -1136,16 +1140,28 @@ function SharingPane() {
     );
   }
 
-  const invite = async () => {
+  /**
+   * The list is updated from what the call returned, not by reading the folder
+   * again. Drive answers a listing from an index that lags a write by seconds,
+   * so re-reading right after granting showed the old list — the person had to
+   * reload the page to see the name they had just added.
+   */
+  const invite = async (byLink: boolean) => {
     setInviting(true);
     setError(null);
     try {
-      await actions.shareVault({ code, label, email, role });
+      if (byLink) {
+        const { link: made, record } = await actions.shareVaultByLink({ label, email, role });
+        setShares((current) => [...current.filter((entry) => entry.id !== record.id), record]);
+        setLink(made);
+      } else {
+        const record = await actions.shareVault({ code, label, email, role });
+        setShares((current) => [...current.filter((entry) => entry.id !== record.id), record]);
+        actions.notify('Acesso concedido. A pessoa já consegue abrir o cofre no aparelho dela.');
+      }
       setCode('');
       setLabel('');
       setEmail('');
-      actions.notify('Acesso concedido. A pessoa já consegue abrir o cofre no aparelho dela.');
-      await load();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Não foi possível dar acesso.');
     } finally {
@@ -1227,9 +1243,8 @@ function SharingPane() {
       <div className="space-y-3 rounded-lg border border-line-soft p-3">
         <p className="text-sm font-medium text-ink">Dar acesso a alguém</p>
         <p className="text-xs leading-relaxed text-muted">
-          O código vem <strong className="font-medium text-ink">dela para você</strong>, não o contrário: peça
-          para abrir o Keeper no aparelho dela, tocar em “Fui convidado por alguém” e enviar o código que
-          aparece. Não é segredo, pode vir por WhatsApp.
+          Preencha o nome e a conta Google da pessoa e gere um link. Ela abre o link, entra com a conta dela e
+          confirma a pasta uma vez — não precisa gerar nem enviar nada.
         </p>
         <Field label="Nome (como você vai reconhecer)">
           <TextInput value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Maria" />
@@ -1240,16 +1255,6 @@ function SharingPane() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="maria@gmail.com"
-          />
-        </Field>
-        <Field label="Código de convite">
-          <textarea
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            rows={3}
-            placeholder="KEEPER1-..."
-            aria-label="Código de convite"
-            className="w-full rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-xs break-all text-ink placeholder:text-faint focus:border-accent focus:outline-none"
           />
         </Field>
         <div className="flex flex-wrap items-center gap-3">
@@ -1268,14 +1273,78 @@ function SharingPane() {
           <Button
             size="sm"
             variant="primary"
-            icon="share"
+            icon="link"
             loading={inviting}
-            disabled={!code.trim() || !email.trim()}
-            onClick={() => void invite()}
+            disabled={!email.trim()}
+            onClick={() => void invite(true)}
           >
-            Dar acesso
+            Gerar link de convite
           </Button>
         </div>
+
+        {link ? (
+          <div className="space-y-2 rounded-lg border border-accent/40 bg-accent/10 p-3">
+            <p className="text-xs leading-relaxed text-ink">
+              Envie este link para a pessoa. Ele carrega a chave do cofre, então mande por onde você falaria
+              com ela e não o publique em lugar nenhum — sozinho ele não abre nada, mas junto com a conta dela
+              abre.
+            </p>
+            <p className="font-mono text-[11px] break-all text-muted">{link}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                icon={copied ? 'check' : 'copy'}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(link).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1800);
+                  });
+                }}
+              >
+                {copied ? 'Copiado' : 'Copiar link'}
+              </Button>
+              {shareSheetAvailable() ? (
+                <Button size="sm" icon="share" onClick={() => void shareText('Convite do Keeper', link)}>
+                  Enviar
+                </Button>
+              ) : null}
+              <Button size="sm" variant="ghost" onClick={() => setLink(null)}>
+                Já enviei
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <details className="rounded-lg border border-line-soft p-3">
+          <summary className="cursor-pointer text-xs text-muted">
+            Prefiro pelo código do aparelho dela (nada secreto viaja)
+          </summary>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs leading-relaxed text-muted">
+              Neste caminho o código vem <strong className="font-medium text-ink">dela para você</strong>: peça
+              para abrir o Keeper no aparelho dela, tocar em “Fui convidado por alguém” e enviar o código.
+            </p>
+            <Field label="Código de convite">
+              <textarea
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                rows={3}
+                placeholder="KEEPER1-..."
+                aria-label="Código de convite"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-xs break-all text-ink placeholder:text-faint focus:border-accent focus:outline-none"
+              />
+            </Field>
+            <Button
+              size="sm"
+              icon="share"
+              loading={inviting}
+              disabled={!code.trim() || !email.trim()}
+              onClick={() => void invite(false)}
+            >
+              Dar acesso com o código
+            </Button>
+          </div>
+        </details>
       </div>
     </div>
   );
