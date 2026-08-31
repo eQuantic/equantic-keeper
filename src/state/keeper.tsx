@@ -457,8 +457,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // A failed sync is a promise to try again, not a dead end: the change
         // is already safe on this device, and the retry loop chases it.
         pendingSyncRef.current = true;
-        patch({ sync: { status: 'error', message } });
-        if (!options.silent) patch({ error: message });
+        // An expired Google session is not a failure to retry — no timer can
+        // fix it, because reconnecting needs a tap. Say that instead of
+        // blinking an error every few minutes.
+        const expired = error instanceof GoogleAuthError && error.code === 'needs_gesture';
+        patch({ sync: { status: expired ? 'pending' : 'error', message } });
+        if (!options.silent && !expired) patch({ error: message });
       }
     },
     [patch, pushPendingAttachments, setPayload],
@@ -556,6 +560,24 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     },
     [patch, refreshBiometric],
   );
+
+  /**
+   * Gets Google's script in place without asking anyone for anything.
+   *
+   * Connecting at boot is what used to happen here, and it was wrong: every
+   * token request opens a window, a window with no click behind it is blocked
+   * or — on a phone — navigates the whole page away, and the person came back
+   * to a blank Google callback instead of their vault. Signing in is a gesture
+   * now, always. This only makes that gesture work first time.
+   */
+  const warmUpGoogle = useCallback(async () => {
+    try {
+      const { auth } = services();
+      await auth.preload();
+    } catch {
+      // No client id configured yet: the setup screen handles that.
+    }
+  }, [services]);
 
   const connectGoogle = useCallback(
     async (interactive = true) => {
@@ -1636,14 +1658,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         }
         patch({ phase: 'locked' });
       })();
-      void connectGoogle(false);
+      void warmUpGoogle();
     } else {
       patch({ phase: 'signin' });
-      void connectGoogle(false).then(() => {
-        // A silent connect that found a vault already moved us to 'locked'.
-      });
+      void warmUpGoogle();
     }
-  }, [adoptVaultFile, connectGoogle, patch, refreshBiometric]);
+  }, [adoptVaultFile, patch, refreshBiometric, warmUpGoogle]);
 
   // ---- connectivity -------------------------------------------------------
   useEffect(() => {
@@ -1700,9 +1720,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    */
   const retrySync = useCallback(async () => {
     if (!pendingSyncRef.current || !payloadRef.current || !navigator.onLine) return;
-    if (!driveRef.current && authRef.current) await connectGoogle(false);
+    // Deliberately no reconnect here: this runs on a timer, and a timer has no
+    // gesture to spend. If the token is gone the sync stays pending and says so.
     await runSync({ silent: true });
-  }, [connectGoogle, runSync]);
+  }, [runSync]);
 
   useEffect(() => {
     if (state.phase !== 'unlocked') return;
