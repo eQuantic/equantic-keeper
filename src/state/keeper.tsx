@@ -630,7 +630,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       patch({ busy: interactive, error: null });
       try {
         const { auth, drive } = services();
-        await auth.requestToken(interactive);
+        // The remembered address goes along as a hint: Google then skips the
+        // account chooser for someone signed into more than one account, which
+        // is most people.
+        await auth.requestToken(interactive, storage.loadAccount()?.email);
         // The wider permission can be taken back from the Google account page.
         // If it is gone, the folder is unreachable and every request would fail
         // in a way nobody could read: fall back to where the vault started.
