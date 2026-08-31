@@ -91,8 +91,15 @@ async function importPublicKey(raw: Uint8Array): Promise<CryptoKey> {
   return subtle().importKey('raw', raw.slice().buffer as ArrayBuffer, { name: 'ECDH', namedCurve: CURVE }, true, []);
 }
 
+/**
+ * Domain-separated from the fingerprint on purpose. Both are digests of the
+ * same key, and taking them from the same one made the checksum come out as the
+ * fingerprint's first six characters — two strings on the same screen, one
+ * looking like a typo of the other. They are unrelated now, as they read.
+ */
 async function checksum(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await subtle().digest('SHA-256', bytes.slice().buffer as ArrayBuffer));
+  const material = new Uint8Array([...utf8('equantic-keeper:invite-checksum:v1|'), ...bytes]);
+  const digest = new Uint8Array(await subtle().digest('SHA-256', material.buffer as ArrayBuffer));
   return toBase64(digest).replace(/[^A-Za-z0-9]/g, '').slice(0, CHECKSUM_CHARS).toUpperCase();
 }
 

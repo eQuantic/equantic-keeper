@@ -616,6 +616,15 @@ const run = async () => {
     return !!box && box.width > 50 && box.height > 50;
   });
   await check('camada de texto permite seleção e cópia', async () => {
+    // pdf.js paints the canvas before it fills the text layer, so waiting for
+    // the canvas is not waiting for the words. Without this the check fails
+    // about one run in three, and always on the fast machine.
+    await page
+      .waitForFunction(
+        () => (document.querySelector('[role="dialog"] .keeper-text-layer')?.textContent ?? '').length > 0,
+        { timeout: 15000 },
+      )
+      .catch(() => undefined);
     const text = await page.locator('[role="dialog"] .keeper-text-layer').first().innerText();
     return text.includes('TITULO DE RESIDENCIA');
   });
@@ -815,6 +824,28 @@ const run = async () => {
   await check('a partilha pede a conta antes de qualquer formulário', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para partilhar').count()) === 1 &&
     (await page.locator('[role="dialog"] textarea[aria-label="Código de convite"]').count()) === 0);
+  // The guest's own code has to work with no account and no vault of theirs.
+  await page.click('[role="dialog"] summary:has-text("Meu código de convite")');
+  await check('o código de convite deste aparelho é gerado e é público', async () => {
+    const code = await page
+      .locator('[role="dialog"] p.font-mono')
+      .first()
+      .textContent({ timeout: 10000 });
+    return !!code && code.startsWith('KEEPER1-') && code.split('-').length === 3;
+  });
+  await check('o código sobrevive a recarregar a página', async () => {
+    const first = await page.locator('[role="dialog"] p.font-mono').first().textContent();
+    await page.keyboard.press('Escape');
+    // A code that changes on reload is a trap: it was already sent to someone.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    await openSettings(page, 'Partilha');
+    await page.click('[role="dialog"] summary:has-text("Meu código de convite")');
+    await page.waitForSelector('[role="dialog"] p.font-mono', { timeout: 10000 });
+    const again = await page.locator('[role="dialog"] p.font-mono').first().textContent();
+    return !!first && first === again;
+  });
+  await page.screenshot({ path: `${OUT}/05c-convite.png` });
 
   await openSettings(page, 'Conta e Drive');
   await page.waitForSelector('[role="dialog"] >> text=Espaço no Google Drive', { timeout: 5000 });

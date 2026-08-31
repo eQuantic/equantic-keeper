@@ -11,6 +11,7 @@ import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vaul
 import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
 import type { ShareRecord } from '../lib/invites';
 import { unmatchedPermissions } from '../lib/sharing';
+import { InviteCodePanel } from './InviteCode';
 import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
 
@@ -1050,12 +1051,29 @@ function SharingPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, driveFolderId]);
 
+  // The code comes first and works with no account and no folder: someone
+  // opening this pane may be the guest, not the host.
+  const myCode = (
+    <details className="rounded-lg border border-line-soft p-3">
+      <summary className="cursor-pointer text-sm text-ink">Meu código de convite</summary>
+      <div className="mt-3">
+        <InviteCodePanel />
+      </div>
+    </details>
+  );
+
   if (!connected) {
-    return <p className="text-xs text-muted">Conecte a conta do Google para partilhar o cofre.</p>;
+    return (
+      <div className="space-y-4">
+        <p className="text-xs text-muted">Conecte a conta do Google para partilhar o cofre com alguém.</p>
+        {myCode}
+      </div>
+    );
   }
 
   if (!driveFolderId) {
     return (
+      <div className="space-y-4">
       <div className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3">
         <Icon name="warning" size={16} className="mt-0.5 shrink-0 text-warn" />
         <div className="min-w-0 text-sm text-ink">
@@ -1065,6 +1083,8 @@ function SharingPane() {
             <strong className="font-medium text-ink">Onde o cofre fica</strong> e volte aqui.
           </p>
         </div>
+      </div>
+      {myCode}
       </div>
     );
   }
@@ -1135,6 +1155,8 @@ function SharingPane() {
         ))}
         {error ? <p className="text-xs text-danger">{error}</p> : null}
       </div>
+
+      {myCode}
 
       <div className="space-y-3 rounded-lg border border-line-soft p-3">
         <p className="text-sm font-medium text-ink">Dar acesso a alguém</p>

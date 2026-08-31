@@ -2,6 +2,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button, Field, PasswordInput, TextInput } from '../components/ui';
 import { Icon, Wordmark } from '../components/icons';
+import { InviteCodeDialog } from '../components/InviteCode';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
 import { isClientIdOverridden } from '../lib/storage';
@@ -110,6 +111,7 @@ export function ConfigScreen() {
 
 export function SignInScreen() {
   const { actions, busy, hasLocalVault, online } = useKeeper();
+  const [invite, setInvite] = useState(false);
 
   return (
     <AuthShell
@@ -148,7 +150,17 @@ export function SignInScreen() {
             Abrir cofre salvo neste dispositivo
           </Button>
         ) : null}
+        {/* Someone invited into another person's vault has nothing to unlock
+            yet, and needs their code before anything else can happen. */}
+        <button
+          type="button"
+          onClick={() => setInvite(true)}
+          className="w-full py-1 text-center text-xs text-muted transition hover:text-ink"
+        >
+          Fui convidado por alguém
+        </button>
       </div>
+      <InviteCodeDialog open={invite} onClose={() => setInvite(false)} />
     </AuthShell>
   );
 }
