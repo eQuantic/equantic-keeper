@@ -8,7 +8,9 @@ import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
-import { KEEPER_FOLDER_NAME, type DriveUsage } from '../lib/drive';
+import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
+import type { ShareRecord } from '../lib/invites';
+import { unmatchedPermissions } from '../lib/sharing';
 import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
 
@@ -1006,6 +1008,190 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
   );
 }
 
+
+/**
+ * Sharing: who can open this vault, and the two halves it takes.
+ *
+ * A person needs BOTH — the Drive has to let them download the bytes, and a key
+ * has to let them read what they downloaded. The e-mail does the first, the
+ * invite code the second, and neither is any use alone. That is why the form
+ * asks for both at once rather than pretending one is enough.
+ */
+function SharingPane() {
+  const { actions, driveFolderId, connected } = useKeeper();
+  const [shares, setShares] = useState<ShareRecord[]>([]);
+  const [permissions, setPermissions] = useState<DrivePermission[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [label, setLabel] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'reader' | 'writer'>('reader');
+  const [code, setCode] = useState('');
+  const [inviting, setInviting] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await actions.listShares();
+      setShares(result.shares);
+      setPermissions(result.permissions);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível ler as partilhas.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (connected && driveFolderId) void load();
+    // Reading again on every render would spend a Drive request per keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, driveFolderId]);
+
+  if (!connected) {
+    return <p className="text-xs text-muted">Conecte a conta do Google para partilhar o cofre.</p>;
+  }
+
+  if (!driveFolderId) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3">
+        <Icon name="warning" size={16} className="mt-0.5 shrink-0 text-warn" />
+        <div className="min-w-0 text-sm text-ink">
+          <p>O cofre ainda está na pasta oculta do app.</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            O Drive não deixa partilhar nada guardado ali, por regra dele. Mova o cofre para uma pasta sua em{' '}
+            <strong className="font-medium text-ink">Onde o cofre fica</strong> e volte aqui.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const invite = async () => {
+    setInviting(true);
+    setError(null);
+    try {
+      await actions.shareVault({ code, label, email, role });
+      setCode('');
+      setLabel('');
+      setEmail('');
+      actions.notify('Acesso concedido. A pessoa já consegue abrir o cofre no aparelho dela.');
+      await load();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível dar acesso.');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const revoke = async (record: ShareRecord) => {
+    if (
+      !confirm(
+        `Remover o acesso de ${record.label}? A chave do cofre será trocada, então uma cópia que essa pessoa ` +
+          'tenha guardado deixa de abrir. Quem continua com acesso não precisa fazer nada.',
+      )
+    ) {
+      return;
+    }
+    await actions.revokeShare(record.id);
+    await load();
+  };
+
+  const orphans = unmatchedPermissions(shares, permissions);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {shares.length === 0 && !loading ? (
+          <p className="text-xs text-muted">O cofre não está partilhado com ninguém.</p>
+        ) : null}
+        {shares.map((share) => (
+          <div key={share.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-canvas p-3">
+            <Icon name="user" size={15} className="shrink-0 text-muted" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-ink">{share.label}</p>
+              <p className="truncate text-xs text-muted">
+                {share.email ?? 'sem conta Google associada'} ·{' '}
+                {share.role === 'writer' ? 'pode editar' : 'só leitura'}
+              </p>
+            </div>
+            <Button size="sm" variant="danger" icon="x" onClick={() => void revoke(share)}>
+              Remover
+            </Button>
+          </div>
+        ))}
+        {orphans.map((permission) => (
+          <div key={permission.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/10 p-3">
+            <Icon name="warning" size={15} className="shrink-0 text-warn" />
+            <div className="min-w-0 flex-1 text-xs text-ink">
+              <p className="truncate">{permission.emailAddress}</p>
+              <p className="mt-0.5 text-muted">
+                Tem acesso à pasta no Drive, mas não à chave — só vê arquivos cifrados.
+              </p>
+            </div>
+          </div>
+        ))}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-line-soft p-3">
+        <p className="text-sm font-medium text-ink">Dar acesso a alguém</p>
+        <p className="text-xs leading-relaxed text-muted">
+          Peça à pessoa para abrir o Keeper no aparelho dela e enviar o código de convite que aparece lá. O
+          código não é segredo: pode vir por WhatsApp ou e-mail sem problema.
+        </p>
+        <Field label="Nome (como você vai reconhecer)">
+          <TextInput value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Maria" />
+        </Field>
+        <Field label="Conta Google da pessoa" hint="É por ela que o Drive libera os arquivos.">
+          <TextInput
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="maria@gmail.com"
+          />
+        </Field>
+        <Field label="Código de convite">
+          <textarea
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            rows={3}
+            placeholder="KEEPER1-..."
+            aria-label="Código de convite"
+            className="w-full rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-xs break-all text-ink placeholder:text-faint focus:border-accent focus:outline-none"
+          />
+        </Field>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            Acesso
+            <select
+              className={selectClass}
+              aria-label="Tipo de acesso"
+              value={role}
+              onChange={(event) => setRole(event.target.value === 'writer' ? 'writer' : 'reader')}
+            >
+              <option value="reader">Só leitura</option>
+              <option value="writer">Pode editar</option>
+            </select>
+          </label>
+          <Button
+            size="sm"
+            variant="primary"
+            icon="share"
+            loading={inviting}
+            disabled={!code.trim() || !email.trim()}
+            onClick={() => void invite()}
+          >
+            Dar acesso
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The panes, in the order the sidebar lists them. A subject with no entry here
  * has no way in, so this list is the whole map of the dialog.
@@ -1014,6 +1200,7 @@ const TABS: { id: string; label: string; icon: string; render: (onClose: () => v
   { id: 'conta', label: 'Conta e Drive', icon: 'cloud', render: () => <AccountPane /> },
   { id: 'seguranca', label: 'Segurança', icon: 'shield', render: () => <SecurityPane /> },
   { id: 'pessoas', label: 'Pessoas e tipos', icon: 'users', render: () => <PeoplePane /> },
+  { id: 'partilha', label: 'Partilha', icon: 'share', render: () => <SharingPane /> },
   { id: 'backup', label: 'Backup', icon: 'download', render: () => <BackupPane /> },
   { id: 'aparencia', label: 'Aparência', icon: 'wand', render: () => <AppearancePane /> },
   { id: 'avancado', label: 'Avançado', icon: 'settings', render: (onClose) => <AdvancedPane onClose={onClose} /> },
