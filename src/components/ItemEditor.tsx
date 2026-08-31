@@ -21,7 +21,17 @@ import { loadNotePanes, pushRecentType, saveNotePanes } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activeFolders, activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
-import { Button, ComboInput, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
+import {
+  Button,
+  ComboInput,
+  Field,
+  IconButton,
+  Modal,
+  PasswordInput,
+  Select,
+  TextArea,
+  TextInput,
+} from './ui';
 import { Icon } from './icons';
 import { useMediaQuery } from './use-media-query';
 import { AttachmentPicker } from './Attachments';
@@ -402,22 +412,19 @@ export function ItemEditor({
             label={family.pickerLabel}
             hint="Muda os campos deste formulário. O que já preencheu é mantido."
           >
-            <select
+            <Select
               aria-label={family.pickerLabel}
+              className="w-full"
               value={draft.type}
-              onChange={(event) => switchType(event.target.value)}
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
-            >
-              {memberGroups.map(([groupName, groupMembers]) => (
-                <optgroup key={groupName} label={groupName}>
-                  {groupMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              onChange={switchType}
+              options={memberGroups.flatMap(([groupName, groupMembers]) =>
+                groupMembers.map((member) => ({
+                  value: member.id,
+                  label: member.label,
+                  group: groupName,
+                })),
+              )}
+            />
           </Field>
         ) : null}
         <div className={isNote ? 'grid gap-4' : 'grid gap-4 sm:grid-cols-2'}>
@@ -482,20 +489,20 @@ export function ItemEditor({
                 </Button>
               </div>
             ) : (
-              <select
+              <Select
                 aria-label="Titular"
+                className="w-full"
                 value={draft.holderId}
-                onChange={(event) => patch({ holderId: event.target.value })}
-                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
-              >
-                <option value="">— sem titular —</option>
-                {people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.name}
-                    {person.relation ? ` · ${person.relation}` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(holderId) => patch({ holderId })}
+                options={[
+                  { value: '', label: '— sem titular —' },
+                  ...people.map((person) => ({
+                    value: person.id,
+                    label: person.name,
+                    ...(person.relation ? { hint: person.relation } : {}),
+                  })),
+                ]}
+              />
             )}
           </Field>
         ) : null}
@@ -507,29 +514,30 @@ export function ItemEditor({
           >
             <span className="flex items-center gap-2">
               <CountryMark code={draft.country} size={20} title={countryName(draft.country)} />
-              <select
+              <Select
                 aria-label="País emissor"
+                className="min-w-0 flex-1"
                 value={draft.country}
-                onChange={(event) => patch({ country: event.target.value })}
-                className="min-w-0 flex-1 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
-              >
-                <option value="">— sem país —</option>
-                {/* The catalogue countries first: they are the likely answer. */}
-                <optgroup label="Mais usados">
-                  {DOCUMENT_ORIGINS.map((origin) => (
-                    <option key={origin.code} value={origin.code}>
-                      {origin.group}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Todos os países">
-                  {allCountries().map((country) => (
-                    <option key={country.code} value={country.code}>
-                      {country.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+                onChange={(country) => patch({ country })}
+                options={[
+                  { value: '', label: '— sem país —' },
+                  // The catalogue countries first: they are the likely answer.
+                  ...DOCUMENT_ORIGINS.map((origin) => ({
+                    value: origin.code,
+                    label: origin.group,
+                    group: 'Mais usados',
+                  })),
+                  // Without the exclusion the catalogue countries appear twice,
+                  // once in each group.
+                  ...allCountries()
+                    .filter((country) => !DOCUMENT_ORIGINS.some((origin) => origin.code === country.code))
+                    .map((country) => ({
+                      value: country.code,
+                      label: country.name,
+                      group: 'Todos os países',
+                    })),
+                ]}
+              />
             </span>
           </Field>
         ) : null}

@@ -9,7 +9,7 @@ import { createCustomType, type CustomTypeDef, type FieldDef } from '../lib/mode
 import { DOCUMENT_ORIGINS, GENERAL_GROUP } from '../lib/documents';
 import { activeCustomTypes } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
-import { Button, Field, IconButton, Modal, TextInput } from './ui';
+import { Button, Field, IconButton, Modal, Select, TextInput } from './ui';
 import { Icon } from './icons';
 
 const ACCENTS = ['#5b8cff', '#34d399', '#fbbf24', '#f472b6', '#c084fc', '#22d3ee'];
@@ -168,22 +168,19 @@ export function TypeBuilder({
             />
           </Field>
           <Field label="Categoria" hint="Entra na lista dessa categoria no assistente.">
-            <select
-              value={groupChoice}
-              onChange={(event) => {
-                dirtyRef.current = true;
-                setGroupChoice(event.target.value);
-              }}
+            <Select
               aria-label="Categoria do tipo"
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3.5 pointer-coarse:py-3"
-            >
-              {groups.map((candidate) => (
-                <option key={candidate} value={candidate}>
-                  {candidate}
-                </option>
-              ))}
-              <option value={NEW_GROUP}>Nova categoria…</option>
-            </select>
+              className="w-full"
+              value={groupChoice}
+              onChange={(next) => {
+                dirtyRef.current = true;
+                setGroupChoice(next);
+              }}
+              options={[
+                ...groups.map((candidate) => ({ value: candidate, label: candidate })),
+                { value: NEW_GROUP, label: 'Nova categoria…', icon: 'plus' },
+              ]}
+            />
           </Field>
         </div>
         {groupChoice === NEW_GROUP ? (

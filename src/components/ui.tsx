@@ -1,5 +1,6 @@
 /** Small, unopinionated UI primitives shared by every screen. */
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -9,6 +10,7 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './icons';
 import { useCloseOnBack } from './use-close-on-back';
 
@@ -327,6 +329,322 @@ export function Badge({
     >
       {children}
     </span>
+  );
+}
+
+
+/* ------------------------------------------------------------------------- *
+ * Select
+ * ------------------------------------------------------------------------- */
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  /** Heading shown above this option; repeat it to keep options together. */
+  group?: string;
+  icon?: string;
+  /** Secondary line, for when the label alone is ambiguous. */
+  hint?: string;
+}
+
+/**
+ * A dropdown that looks like the rest of the app.
+ *
+ * The native control was the honest first choice — free keyboard behaviour, the
+ * iOS wheel, no positioning code — but its list is drawn by the operating
+ * system, so it ignored every colour and radius here and looked like a stranger
+ * in every dialog it appeared in.
+ *
+ * Two things this owes the native one, and pays back:
+ *  - Keyboard. Arrows move, Home/End jump, Enter picks, Escape closes, typing
+ *    letters jumps to a match (which is how anyone finds a country in a list of
+ *    two hundred without reaching for the mouse).
+ *  - Not being clipped. The menu renders in a portal at fixed coordinates, so a
+ *    dialog with `overflow: hidden` or a scrolling sidebar cannot cut it off,
+ *    and it flips above the trigger when the room below runs out.
+ */
+export function Select({
+  value,
+  onChange,
+  options,
+  className = '',
+  size = 'md',
+  'aria-label': ariaLabel,
+  id,
+  placeholder = 'Selecione…',
+  disabled,
+  align = 'start',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  className?: string;
+  size?: 'sm' | 'md';
+  'aria-label'?: string;
+  id?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  /** Which edge of the trigger the menu lines up with when it is wider. */
+  align?: 'start' | 'end';
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [query, setQuery] = useState('');
+  const [box, setBox] = useState<{ top: number; left: number; width: number; drop: 'down' | 'up' } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const typedRef = useRef({ text: '', at: 0 });
+  const listId = useId();
+
+  const selected = options.find((option) => option.value === value) ?? null;
+  // Read by the open-effect, which must not depend on values that change every
+  // render (see below).
+  const optionsRef = useRef(options);
+  const valueRef = useRef(value);
+  const searchableRef = useRef(false);
+  optionsRef.current = options;
+  valueRef.current = value;
+  // Long lists get a filter box. Twelve is about where scanning stops working
+  // and people start hunting.
+  const searchable = options.length > 12;
+  searchableRef.current = searchable;
+  const normalize = (text: string) =>
+    text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  const needle = normalize(query.trim());
+  const shown = needle
+    ? options.filter((option) => normalize(`${option.label} ${option.hint ?? ''}`).includes(needle))
+    : options;
+
+  const place = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const below = window.innerHeight - rect.bottom;
+    const drop: 'down' | 'up' = below < 240 && rect.top > below ? 'up' : 'down';
+    setBox({
+      top: drop === 'down' ? rect.bottom + 4 : rect.top - 4,
+      left: align === 'end' ? rect.right : rect.left,
+      width: rect.width,
+      drop,
+    });
+  }, [align]);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    // Capture phase: the trigger may live inside a scrolling pane, and only the
+    // capturing listener hears that pane scroll.
+    const onScroll = () => place();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open, place]);
+
+  // Deliberately keyed on `open` alone. Callers build their option arrays
+  // inline, so a new array arrives on every render: with `options` in here, an
+  // effect that calls setState would re-run forever.
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setActive(Math.max(0, optionsRef.current.findIndex((option) => option.value === valueRef.current)));
+    // The filter takes focus when there is one; otherwise the menu itself does,
+    // so the arrows work without a click.
+    const timer = window.setTimeout(() => {
+      if (searchableRef.current) searchRef.current?.focus();
+      else menuRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [active, open]);
+
+  const choose = (option: SelectOption) => {
+    onChange(option.value);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const move = (delta: number) => {
+    setActive((current) => {
+      if (shown.length === 0) return 0;
+      return (current + delta + shown.length) % shown.length;
+    });
+  };
+
+  /**
+   * While the menu is open it owns the keyboard, from a capture listener on the
+   * window. Two reasons, both learned the hard way:
+   *  - Escape has to close the MENU and stop there. Bubbling from a portal
+   *    reached the dialog's own Escape handler, so picking an option in a
+   *    select and changing your mind closed the whole dialog.
+   *  - The keys have to work wherever the focus happens to be. After clicking
+   *    the trigger the focus is on the trigger, and arrows did nothing.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      const owned = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', 'Escape'];
+      if (!owned.includes(event.key) && !(event.key === ' ' && !searchableRef.current)) {
+        // Typing goes to the filter box; type-ahead only where there is none.
+        if (searchableRef.current || event.key.length !== 1 || event.metaKey || event.ctrlKey) return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      handleKey(event.key, event.metaKey || event.ctrlKey);
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  });
+
+  const handleKey = (key: string, modified: boolean) => {
+    if (key === 'ArrowDown') move(1);
+    else if (key === 'ArrowUp') move(-1);
+    else if (key === 'Home') setActive(0);
+    else if (key === 'End') setActive(Math.max(0, shown.length - 1));
+    else if (key === 'Enter' || (key === ' ' && !searchable)) {
+      const option = shown[active];
+      if (option) choose(option);
+    } else if (key === 'Escape') {
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (!searchable && key.length === 1 && !modified) {
+      // Type-ahead on short lists, where there is no filter box to type into.
+      const now = Date.now();
+      const text = now - typedRef.current.at < 900 ? typedRef.current.text + key : key;
+      typedRef.current = { text, at: now };
+      const index = shown.findIndex((option) => normalize(option.label).startsWith(normalize(text)));
+      if (index >= 0) setActive(index);
+    }
+  };
+
+  const padding =
+    size === 'sm'
+      ? 'px-2.5 py-1.5 text-xs pointer-coarse:px-3 pointer-coarse:py-2'
+      : 'px-3 py-2 text-sm pointer-coarse:px-3.5 pointer-coarse:py-2.5';
+
+  let lastGroup: string | undefined;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        id={id}
+        type="button"
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        data-select-trigger={ariaLabel ?? ''}
+        data-select-value={value}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (!open && (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className={`inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-line bg-canvas text-left text-ink transition hover:border-line-soft focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:rounded-xl ${padding} ${className}`}
+      >
+        {selected?.icon ? <Icon name={selected.icon} size={14} className="shrink-0 text-muted" /> : null}
+        <span className={`min-w-0 flex-1 truncate ${selected ? '' : 'text-faint'}`}>
+          {selected?.label ?? placeholder}
+        </span>
+        <Icon name="chevron" size={12} className="shrink-0 rotate-90 text-faint" />
+      </button>
+
+      {open && box
+        ? createPortal(
+            <div
+              ref={menuRef}
+              id={listId}
+              role="listbox"
+              tabIndex={-1}
+              aria-label={ariaLabel}
+              style={{
+                position: 'fixed',
+                top: box.drop === 'down' ? box.top : undefined,
+                bottom: box.drop === 'up' ? window.innerHeight - box.top : undefined,
+                left: align === 'end' ? undefined : box.left,
+                right: align === 'end' ? window.innerWidth - box.left : undefined,
+                minWidth: box.width,
+                maxWidth: `min(22rem, calc(100vw - 1rem))`,
+              }}
+              className="animate-in card z-[60] max-h-[min(20rem,60dvh)] overflow-y-auto p-1 shadow-xl focus:outline-none"
+            >
+              {searchable ? (
+                <div className="sticky top-0 z-10 bg-surface p-1 pb-1.5">
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setActive(0);
+                    }}
+                    placeholder="Filtrar…"
+                    aria-label="Filtrar opções"
+                    className="w-full rounded-md border border-line bg-canvas px-2 py-1.5 text-xs text-ink placeholder:text-faint focus:border-accent focus:outline-none"
+                  />
+                </div>
+              ) : null}
+
+              {shown.length === 0 ? <p className="px-2 py-2 text-xs text-faint">Nada encontrado.</p> : null}
+
+              {shown.map((option, index) => {
+                const heading = option.group && option.group !== lastGroup ? option.group : null;
+                lastGroup = option.group;
+                return (
+                  // The key carries the position, not just the value: a list
+                  // may legitimately repeat a value in two groups (a country in
+                  // "most used" and again in "all"), and duplicate keys make
+                  // React reuse the wrong nodes — which in a production build
+                  // is silent, and looks like the filter is broken.
+                  <div key={`${option.group ?? ''}|${option.value}|${index}`}>
+                    {heading ? (
+                      <p className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wider text-faint uppercase">
+                        {heading}
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={option.value === value}
+                      data-option-value={option.value}
+                      data-active={index === active}
+                      onMouseEnter={() => setActive(index)}
+                      onClick={() => choose(option)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition pointer-coarse:py-2.5 ${
+                        index === active ? 'bg-raised text-ink' : 'text-muted'
+                      } ${option.value === value ? 'text-accent' : ''}`}
+                    >
+                      {option.icon ? <Icon name={option.icon} size={14} className="shrink-0" /> : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{option.label}</span>
+                        {option.hint ? <span className="block truncate text-xs text-faint">{option.hint}</span> : null}
+                      </span>
+                      {option.value === value ? <Icon name="check" size={13} className="shrink-0" /> : null}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

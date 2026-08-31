@@ -13,7 +13,7 @@ import {
 } from '../lib/folders';
 import type { TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
-import { Badge, Button, EmptyState, IconButton, Kbd, TextInput } from '../components/ui';
+import { Badge, Button, EmptyState, IconButton, Kbd, Select, TextInput } from '../components/ui';
 import { Icon, Logo } from '../components/icons';
 import { CountryMark } from '../components/flags';
 import { countryName } from '../lib/countries';
@@ -630,21 +630,17 @@ export function VaultScreen() {
     onChange: (value: string) => void;
     options: { value: string; label: string; count: number }[];
   }) => (
-    <select
+    <Select
       aria-label={label}
+      size="sm"
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className={`shrink-0 rounded-lg border px-2 py-1 text-xs focus:outline-none pointer-coarse:rounded-[10px] pointer-coarse:px-3 pointer-coarse:py-2 ${
-        value ? 'border-accent bg-accent/10 text-ink' : 'border-line bg-canvas text-muted'
-      }`}
-    >
-      <option value="">{label}: todos</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label} ({option.count})
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      className={`shrink-0 ${value ? 'border-accent bg-accent/10 text-ink' : 'text-muted'}`}
+      options={[
+        { value: '', label: `${label}: todos` },
+        ...options.map((option) => ({ value: option.value, label: `${option.label} (${option.count})` })),
+      ]}
+    />
   );
 
   const BarAction = ({
@@ -695,42 +691,28 @@ export function VaultScreen() {
         <label className="sr-only" htmlFor="keeper-workspace">
           Cofre
         </label>
-        <div className="relative">
-          <Icon
-            name={guest ? 'share' : 'layers'}
-            size={14}
-            className={`pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 ${
-              guest ? 'text-accent' : 'text-muted'
-            }`}
-          />
-          <select
-            id="keeper-workspace"
-            aria-label="Cofre"
-            value={activeWorkspace}
-            onChange={(event) => {
-              const next = event.target.value;
-              if (next === OPEN_SHARED) {
-                if (!ensurePickerKey()) return;
-                void actions.openSharedVault();
-                return;
-              }
-              void actions.switchWorkspace(next);
-            }}
-            className="w-full appearance-none rounded-lg border border-line bg-canvas py-2 pr-8 pl-8 text-sm text-ink transition focus:border-accent focus:outline-none"
-          >
-            {workspaces.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.label}
-              </option>
-            ))}
-            <option value={OPEN_SHARED}>Abrir um cofre partilhado…</option>
-          </select>
-          <Icon
-            name="chevron"
-            size={13}
-            className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rotate-90 text-faint"
-          />
-        </div>
+        <Select
+          id="keeper-workspace"
+          aria-label="Cofre"
+          className="w-full"
+          value={activeWorkspace}
+          onChange={(next) => {
+            if (next === OPEN_SHARED) {
+              if (!ensurePickerKey()) return;
+              void actions.openSharedVault();
+              return;
+            }
+            void actions.switchWorkspace(next);
+          }}
+          options={[
+            ...workspaces.map((workspace) => ({
+              value: workspace.id,
+              label: workspace.label,
+              icon: workspace.kind === 'shared' ? 'share' : 'layers',
+            })),
+            { value: OPEN_SHARED, label: 'Abrir um cofre partilhado…', icon: 'plus' },
+          ]}
+        />
       </div>
       {/* The account row is the way out to Settings and to what is syncing —
           it stays put while the folders and types scroll past it. */}
@@ -1267,17 +1249,19 @@ export function VaultScreen() {
                   Esvaziar
                 </Button>
               ) : null}
-              <select
-                value={sort}
-                onChange={(event) => setSort(event.target.value as SortMode)}
-                className="rounded-lg border border-line bg-canvas px-2 py-1 text-xs text-muted focus:border-accent focus:outline-none pointer-coarse:rounded-[10px] pointer-coarse:px-3 pointer-coarse:py-2"
+              <Select
                 aria-label="Ordenar"
-              >
-                <option value="updated">Recentes</option>
-                <option value="name">Nome</option>
-                <option value="created">Criação</option>
-                <option value="type">Tipo</option>
-              </select>
+                size="sm"
+                align="end"
+                value={sort}
+                onChange={(next) => setSort(next as SortMode)}
+                options={[
+                  { value: 'updated', label: 'Recentes' },
+                  { value: 'name', label: 'Nome' },
+                  { value: 'created', label: 'Criação' },
+                  { value: 'type', label: 'Tipo' },
+                ]}
+              />
             </div>
           </div>
 
