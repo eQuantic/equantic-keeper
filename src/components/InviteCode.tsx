@@ -9,7 +9,9 @@
 import { useEffect, useState } from 'react';
 import { Button, Modal, Spinner } from './ui';
 import { Icon } from './icons';
+import { useKeeper } from '../state/keeper';
 import { ensureIdentity } from '../lib/identity';
+import { getPickerApiKey, setPickerApiKey } from '../lib/storage';
 import { fingerprint, inviteCode } from '../lib/invites';
 import { shareSheetAvailable, shareText } from '../lib/share';
 
@@ -106,6 +108,36 @@ export function InviteCodePanel() {
   );
 }
 
+/**
+ * Offered to someone who has just signed in and has no vault: they may not be
+ * here to make one, they may be here because someone shared theirs.
+ */
+export function OpenSharedButton() {
+  const { actions, busy } = useKeeper();
+
+  const open = () => {
+    // The picker key normally comes baked into the build. When it does not, a
+    // guest has nowhere to put one — Configurações needs a vault, and a guest
+    // has none — so this is the only moment they can be asked.
+    if (!getPickerApiKey()) {
+      const value = prompt(
+        'Este app foi publicado sem a chave de API do Google que abre o seletor de arquivos. Peça a chave a ' +
+          'quem administra o app e cole aqui:',
+        '',
+      );
+      if (!value?.trim()) return;
+      setPickerApiKey(value);
+    }
+    void actions.openSharedVault();
+  };
+
+  return (
+    <Button variant="outline" className="w-full" icon="share" loading={busy} onClick={open}>
+      Abrir um cofre partilhado comigo
+    </Button>
+  );
+}
+
 /** The same panel, for someone who has no vault of their own yet. */
 export function InviteCodeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -116,10 +148,18 @@ export function InviteCodeDialog({ open, onClose }: { open: boolean; onClose: ()
       subtitle="Mande seu código para quem tem o cofre"
     >
       <InviteCodePanel />
-      <p className="mt-4 text-xs leading-relaxed text-muted">
-        Depois de enviar, a outra pessoa libera o acesso do lado dela. Você vai precisar entrar com a sua conta
-        Google aqui — é por ela que o Drive libera os arquivos.
-      </p>
+
+      {/* The loop closes here on purpose: the person who just sent their code
+          has no reason to know that the next step is a button on another
+          screen — and the only question the flow ever raised was "and now?". */}
+      <div className="mt-5 border-t border-line-soft pt-4">
+        <p className="mb-1 text-sm text-ink">Depois de enviar o código</p>
+        <p className="mb-3 text-xs leading-relaxed text-muted">
+          A outra pessoa cola o seu código no Keeper dela e libera o acesso. Não há nada para você colar aqui:
+          quando ela avisar, entre com a sua conta Google e abra o cofre.
+        </p>
+        <OpenSharedButton />
+      </div>
     </Modal>
   );
 }

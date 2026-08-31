@@ -2,10 +2,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button, Field, PasswordInput, TextInput } from '../components/ui';
 import { Icon, Wordmark } from '../components/icons';
-import { InviteCodeDialog } from '../components/InviteCode';
+import { InviteCodeDialog, OpenSharedButton } from '../components/InviteCode';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
-import { getPickerApiKey, isClientIdOverridden, setPickerApiKey } from '../lib/storage';
+import { isClientIdOverridden } from '../lib/storage';
 
 function AuthShell({
   title,
@@ -162,36 +162,6 @@ export function SignInScreen() {
       </div>
       <InviteCodeDialog open={invite} onClose={() => setInvite(false)} />
     </AuthShell>
-  );
-}
-
-/**
- * Offered to someone who has just signed in and has no vault: they may not be
- * here to make one, they may be here because someone shared theirs.
- */
-function OpenSharedButton() {
-  const { actions, busy } = useKeeper();
-
-  const open = () => {
-    // The picker key normally comes baked into the build. When it does not, a
-    // guest has nowhere to put one — Configurações needs a vault, and a guest
-    // has none — so this is the only moment they can be asked.
-    if (!getPickerApiKey()) {
-      const value = prompt(
-        'Este app foi publicado sem a chave de API do Google que abre o seletor de arquivos. Peça a chave a ' +
-          'quem administra o app e cole aqui:',
-        '',
-      );
-      if (!value?.trim()) return;
-      setPickerApiKey(value);
-    }
-    void actions.openSharedVault();
-  };
-
-  return (
-    <Button variant="outline" className="w-full" icon="share" loading={busy} onClick={open}>
-      Abrir um cofre partilhado comigo
-    </Button>
   );
 }
 
