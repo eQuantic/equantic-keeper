@@ -1146,16 +1146,19 @@ function SharingPane() {
    * so re-reading right after granting showed the old list — the person had to
    * reload the page to see the name they had just added.
    */
-  const invite = async (byLink: boolean) => {
+  const invite = async (
+    byLink: boolean,
+    who: { label: string; email: string; role: 'reader' | 'writer' } = { label, email, role },
+  ) => {
     setInviting(true);
     setError(null);
     try {
       if (byLink) {
-        const { link: made, record } = await actions.shareVaultByLink({ label, email, role });
+        const { link: made, record } = await actions.shareVaultByLink(who);
         setShares((current) => [...current.filter((entry) => entry.id !== record.id), record]);
         setLink(made);
       } else {
-        const record = await actions.shareVault({ code, label, email, role });
+        const record = await actions.shareVault({ code, ...who });
         setShares((current) => [...current.filter((entry) => entry.id !== record.id), record]);
         actions.notify('Acesso concedido. A pessoa já consegue abrir o cofre no aparelho dela.');
       }
@@ -1169,38 +1172,119 @@ function SharingPane() {
     }
   };
 
-  const revoke = async (record: ShareRecord) => {
+  const revoke = async (person: { label: string; ids: string[] }) => {
     if (
       !confirm(
-        `Remover o acesso de ${record.label}? A chave do cofre será trocada, então uma cópia que essa pessoa ` +
+        `Remover o acesso de ${person.label}? A chave do cofre será trocada, então uma cópia que essa pessoa ` +
           'tenha guardado deixa de abrir. Quem continua com acesso não precisa fazer nada.',
       )
     ) {
       return;
     }
-    await actions.revokeShare(record.id);
+    // Someone invited twice holds two records, and leaving one behind would
+    // leave the access behind with it.
+    for (const id of person.ids) await actions.revokeShare(id);
     await load();
   };
 
   const orphans = unmatchedPermissions(shares, permissions);
 
+  /**
+   * One row per person, not per record. Someone invited by code and then sent a
+   * link holds two records, and the owner does not care — they care that
+   * Francine has access, once.
+   */
+  const people = [...shares]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .reduce<{ key: string; label: string; email?: string; role: ShareRecord['role']; ids: string[] }[]>(
+      (rows, record) => {
+        const key = record.email?.toLowerCase() || record.id;
+        const found = rows.find((row) => row.key === key);
+        if (found) {
+          found.ids.push(record.id);
+          // The most recent invite is the one that describes the access.
+          found.role = record.role;
+          found.label = record.label || found.label;
+          return rows;
+        }
+        rows.push({
+          key,
+          label: record.label,
+          ...(record.email ? { email: record.email } : {}),
+          role: record.role,
+          ids: [record.id],
+        });
+        return rows;
+      },
+      [],
+    );
+
   return (
     <div className="space-y-4">
+        {link ? (
+          <div className="space-y-2 rounded-lg border border-accent/40 bg-accent/10 p-3">
+            <p className="text-xs leading-relaxed text-ink">
+              Envie este link para a pessoa. Ele carrega a chave do cofre, então mande por onde você falaria
+              com ela e não o publique em lugar nenhum — sozinho ele não abre nada, mas junto com a conta dela
+              abre.
+            </p>
+            <p className="font-mono text-[11px] break-all text-muted">{link}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                icon={copied ? 'check' : 'copy'}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(link).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1800);
+                  });
+                }}
+              >
+                {copied ? 'Copiado' : 'Copiar link'}
+              </Button>
+              {shareSheetAvailable() ? (
+                <Button size="sm" icon="share" onClick={() => void shareText('Convite do Keeper', link)}>
+                  Enviar
+                </Button>
+              ) : null}
+              <Button size="sm" variant="ghost" onClick={() => setLink(null)}>
+                Já enviei
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
       <div className="space-y-2">
-        {shares.length === 0 && !loading ? (
+        {people.length === 0 && !loading ? (
           <p className="text-xs text-muted">O cofre não está partilhado com ninguém.</p>
         ) : null}
-        {shares.map((share) => (
-          <div key={share.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-canvas p-3">
+        {people.map((person) => (
+          <div key={person.key} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-canvas p-3">
             <Icon name="user" size={15} className="shrink-0 text-muted" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-ink">{share.label}</p>
+              <p className="truncate text-sm text-ink">{person.label}</p>
               <p className="truncate text-xs text-muted">
-                {share.email ?? 'sem conta Google associada'} ·{' '}
-                {share.role === 'writer' ? 'pode editar' : 'só leitura'}
+                {person.email ?? 'sem conta Google associada'} ·{' '}
+                {person.role === 'writer' ? 'pode editar' : 'só leitura'}
               </p>
             </div>
-            <Button size="sm" variant="danger" icon="x" onClick={() => void revoke(share)}>
+            {person.email ? (
+              <Button
+                size="sm"
+                icon="link"
+                loading={inviting}
+                onClick={() => {
+                  void invite(true, {
+                    label: person.label,
+                    email: person.email!,
+                    role: person.role,
+                  });
+                }}
+              >
+                Gerar link
+              </Button>
+            ) : null}
+            <Button size="sm" variant="danger" icon="x" onClick={() => void revoke(person)}>
               Remover
             </Button>
           </div>
@@ -1281,39 +1365,6 @@ function SharingPane() {
             Gerar link de convite
           </Button>
         </div>
-
-        {link ? (
-          <div className="space-y-2 rounded-lg border border-accent/40 bg-accent/10 p-3">
-            <p className="text-xs leading-relaxed text-ink">
-              Envie este link para a pessoa. Ele carrega a chave do cofre, então mande por onde você falaria
-              com ela e não o publique em lugar nenhum — sozinho ele não abre nada, mas junto com a conta dela
-              abre.
-            </p>
-            <p className="font-mono text-[11px] break-all text-muted">{link}</p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                icon={copied ? 'check' : 'copy'}
-                onClick={() => {
-                  void navigator.clipboard?.writeText(link).then(() => {
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1800);
-                  });
-                }}
-              >
-                {copied ? 'Copiado' : 'Copiar link'}
-              </Button>
-              {shareSheetAvailable() ? (
-                <Button size="sm" icon="share" onClick={() => void shareText('Convite do Keeper', link)}>
-                  Enviar
-                </Button>
-              ) : null}
-              <Button size="sm" variant="ghost" onClick={() => setLink(null)}>
-                Já enviei
-              </Button>
-            </div>
-          </div>
-        ) : null}
 
         <details className="rounded-lg border border-line-soft p-3">
           <summary className="cursor-pointer text-xs text-muted">
