@@ -151,6 +151,23 @@ export async function sealVault(keys: VaultKeys, payload: VaultPayload): Promise
   };
 }
 
+/**
+ * Re-seals a vault whose header this device could not have written.
+ *
+ * A recipient holds the data key and nothing else: no password, no derived key,
+ * so no way to produce the verifier or the wrapped envelope the header carries.
+ * They do not need to — those fields belong to the owner and are copied through
+ * untouched. Only the payload is written again, under the key they were given.
+ */
+export async function resealVault(
+  file: VaultFile,
+  dataKey: CryptoKey,
+  payload: VaultPayload,
+): Promise<VaultFile> {
+  const box: SealedBox = await seal(dataKey, payload, aad(file));
+  return { ...file, iv: box.iv, data: box.data, updatedAt: new Date().toISOString() };
+}
+
 export class WrongPasswordError extends Error {
   constructor() {
     super('Senha mestra incorreta.');
@@ -197,6 +214,13 @@ export async function vaultDataKey(file: VaultFile, derived: DerivedKey): Promis
   // the unlocked session.
   const raw = await unwrapContentKeyRaw(derived.key, file.dataKey, aad(file));
   return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
+}
+
+/** Opens a vault with the data key directly — what a share record hands over. */
+export async function openVaultWithDataKey(file: VaultFile, dataKey: CryptoKey): Promise<VaultPayload> {
+  if (file.cipher !== CIPHER) throw new DecryptionError(`Cifra não suportada: ${file.cipher}`);
+  assertSupportedVersion(file);
+  return normalizePayload(await open<VaultPayload>(dataKey, { iv: file.iv, data: file.data }, aad(file)));
 }
 
 export async function openVault(file: VaultFile, keys: VaultKeys | DerivedKey): Promise<VaultPayload> {
