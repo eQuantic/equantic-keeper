@@ -1737,16 +1737,100 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * its user pointed at, so the picker still happens once, filtered to the one
    * folder. After that this device remembers the vault and never asks again.
    */
+  /**
+   * Opens the vault an invite points at, given the ids it carries.
+   *
+   * Returns false when the Drive refuses — which is what happens until this
+   * Google ACCOUNT has pointed at the folder once. The grant belongs to the
+   * account, not to the browser, so a pick made on a laptop is enough for the
+   * phone, and this is the path that then costs nothing.
+   */
+  const openInviteDirectly = useCallback(
+    async (invite: InviteLink, folderId: string): Promise<boolean> => {
+      const { drive } = services();
+      try {
+        const client = folderId ? drive.withSpace({ kind: 'folder', id: folderId }) : drive;
+        const sharesFileId =
+          invite.sharesFileId ||
+          ((await client.listAll()).find((file) => file.name === SHARES_FILE_NAME)?.id ?? '');
+        if (!sharesFileId) return false;
+
+        const shares = await client.readJsonById(sharesFileId, isSharesFile);
+        const record = shares.shares.find((entry) => entry.id === invite.share);
+        if (!record) {
+          throw new Error(
+            'Este convite já não vale — a pessoa que tem o cofre pode tê-lo substituído ou revogado.',
+          );
+        }
+
+        const dataKey = await unwrapWithSecret(record, invite.secret);
+        const file = await client.download(invite.vaultFileId);
+        const payload = await openVaultWithDataKey(file, dataKey);
+
+        if (!guestRef.current && payloadRef.current) {
+          ownSessionRef.current = {
+            payload: payloadRef.current,
+            file: fileRef.current,
+            driveFileId: driveIdRef.current,
+            revision: revisionRef.current,
+          };
+        }
+
+        const session: GuestSession = {
+          role: record.role,
+          label: record.label,
+          folderId,
+          vaultFileId: invite.vaultFileId,
+        };
+        guestKeyRef.current = dataKey;
+        guestRef.current = session;
+        fileRef.current = file;
+        driveIdRef.current = invite.vaultFileId;
+        setPayload(payload);
+        storage.rememberSharedVault({
+          folderId,
+          vaultFileId: invite.vaultFileId,
+          label: record.label || invite.folderName,
+        });
+        try {
+          sessionStorage.removeItem(INVITE_STASH);
+        } catch {
+          /* private window: nothing was stored anyway */
+        }
+        describeWorkspaces(`shared:${invite.vaultFileId}`);
+        patch({ phase: 'unlocked', busy: false, guest: session, pendingInvite: null, sync: { status: 'idle' } });
+        return true;
+      } catch (error) {
+        // A revoked invite is a real answer and must not be retried through the
+        // picker; anything else means "the Drive has not been asked yet".
+        if (error instanceof Error && error.message.includes('convite')) throw error;
+        return false;
+      }
+    },
+    [describeWorkspaces, patch, services, setPayload],
+  );
+
+  /**
+   * Opens the vault an invite link points at.
+   *
+   * The picker is the last resort, not the first step. It costs a screen of
+   * Google's, and on a browser that blocks third-party cookies — Safari, by
+   * default — it cannot see the person's session at all and refuses. So the ids
+   * are tried first: if this account has already been through a picker anywhere,
+   * on any device, there is nothing left to ask.
+   */
   const redeemInvite = useCallback(async () => {
     const invite = state.pendingInvite ?? takePendingInvite();
     if (!invite) return;
     patch({ busy: true, error: null });
     try {
-      const { auth, drive } = services();
+      const { auth } = services();
       await ensureToken();
       if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
-      const token = await auth.requestToken(false);
 
+      if (await openInviteDirectly(invite, invite.folderId)) return;
+
+      const token = await auth.requestToken(false);
       const picked = await pickSharedItems(token, storage.getPickerApiKey(), invite.folderName || KEEPER_FOLDER_NAME);
       if (picked.length === 0) {
         patch({ busy: false });
@@ -1754,68 +1838,16 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       }
 
       const folderId = picked.find((item) => item.isFolder)?.id ?? invite.folderId;
-      const client = folderId ? drive.withSpace({ kind: 'folder', id: folderId }) : drive;
+      if (await openInviteDirectly(invite, folderId)) return;
 
-      // By id, not by name: Drive answers a get immediately, while a listing of
-      // a folder written minutes ago can still be empty.
-      const sharesFileId =
-        invite.sharesFileId ||
-        ((await client.listAll().catch(() => [])).find((file) => file.name === SHARES_FILE_NAME)?.id ?? '');
-      if (!sharesFileId) {
-        throw new Error(
-          'O convite abriu, mas não encontrei a lista de partilhas na pasta. Peça um convite novo à pessoa que ' +
-            'tem o cofre.',
-        );
-      }
-
-      const shares = await client.readJsonById(sharesFileId, isSharesFile);
-      const record = shares.shares.find((entry) => entry.id === invite.share);
-      if (!record) {
-        throw new Error('Este convite já não vale — a pessoa que tem o cofre pode tê-lo substituído ou revogado.');
-      }
-
-      const dataKey = await unwrapWithSecret(record, invite.secret);
-      const file = await client.download(invite.vaultFileId);
-      const payload = await openVaultWithDataKey(file, dataKey);
-
-      if (!guestRef.current && payloadRef.current) {
-        ownSessionRef.current = {
-          payload: payloadRef.current,
-          file: fileRef.current,
-          driveFileId: driveIdRef.current,
-          revision: revisionRef.current,
-        };
-      }
-
-      const session: GuestSession = {
-        role: record.role,
-        label: record.label,
-        folderId,
-        vaultFileId: invite.vaultFileId,
-      };
-      guestKeyRef.current = dataKey;
-      guestRef.current = session;
-      fileRef.current = file;
-      driveIdRef.current = invite.vaultFileId;
-      setPayload(payload);
-      storage.rememberSharedVault({
-        folderId,
-        vaultFileId: invite.vaultFileId,
-        label: record.label || invite.folderName,
-      });
-      // Used once and done: the link stays valid until the owner revokes it,
-      // but this browser has no reason to hold it any more.
-      try {
-        sessionStorage.removeItem(INVITE_STASH);
-      } catch {
-        /* private window: nothing was stored anyway */
-      }
-      describeWorkspaces(`shared:${invite.vaultFileId}`);
-      patch({ phase: 'unlocked', busy: false, guest: session, pendingInvite: null, sync: { status: 'idle' } });
+      throw new Error(
+        'A pasta foi escolhida, mas o Drive não liberou os arquivos dentro dela. Peça à pessoa que tem o ' +
+          'cofre para partilhar também os arquivos, ou escolha-os um a um no seletor.',
+      );
     } catch (error) {
       fail(error, 'Não foi possível abrir o convite.');
     }
-  }, [describeWorkspaces, ensureToken, fail, patch, services, setPayload, state.pendingInvite]);
+  }, [ensureToken, fail, openInviteDirectly, patch, services, state.pendingInvite]);
 
   const dismissInvite = useCallback(() => {
     try {

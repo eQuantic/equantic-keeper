@@ -166,9 +166,15 @@ export function OpenSharedDialog({ open, onClose }: { open: boolean; onClose: ()
           para ela.
         </p>
         <p className="text-xs text-faint">
-          Se o Google responder “The API developer key is invalid”, o problema é da configuração do app, não
-          sua: a chave de API precisa ter a <strong className="text-muted">Google Picker API</strong> liberada
-          em <em>API restrictions</em>. Avise quem administra o app.
+          Se o Google disser que não consegue acessar a sua conta e pedir para permitir cookies, é o Safari do
+          iPhone a bloquear cookies de terceiros — esta tela é do Google dentro da nossa. Duas saídas: desligue
+          <em> Impedir rastreamento entre sites</em> em Ajustes → Safari por um minuto, ou faça esta única
+          confirmação num computador. A autorização fica na sua conta Google, então depois o telemóvel entra
+          direto.
+        </p>
+        <p className="text-xs text-faint">
+          Se disser “The API developer key is invalid”, é configuração do app e não coisa sua: avise quem o
+          administra.
         </p>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">

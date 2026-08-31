@@ -92,8 +92,19 @@ attachments move onto the new one and everyone who stays gets their record
 rewritten around it, so a copy the removed person kept stops opening.
 
 The guest's app reaches the folder through the Google Picker — under
-`drive.file` it can see only what its user pointed at. Guest access is read-only
-for now.
+`drive.file` it can see only what its user pointed at. That grant belongs to the
+**account**, not the browser, so the app tries the file ids first and only falls
+back to the picker when the Drive refuses: one confirmation on any device is
+enough for all of them.
+
+> Worth knowing before you send someone there: the picker is Google's page
+> inside ours, and a browser that blocks third-party cookies — Safari on iOS, by
+> default — will not let it see the person's Google session. It answers *"Can't
+> access your Google Account"*. Either turn off *Prevent Cross-Site Tracking* for
+> that one confirmation, or make it once on a desktop browser and let the
+> account-level grant cover the phone.
+
+Guest access is read-only for now.
 
 ### Biometric unlock
 
