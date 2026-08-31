@@ -135,3 +135,49 @@ export function toEditorInput(blocks: Block[]): DocBlockInput[] {
     children: toEditorInput(block.children),
   }));
 }
+
+export interface OutlineEntry {
+  /** The block's id — the editor stamps the same value on the DOM node. */
+  id: string;
+  level: 1 | 2 | 3;
+  text: string;
+}
+
+/** The note's headings, in order: what the summary column lists. */
+export function noteOutline(blocks: Block[] | undefined): OutlineEntry[] {
+  const levels: Record<string, 1 | 2 | 3> = { HEADING_1: 1, HEADING_2: 2, HEADING_3: 3 };
+  const out: OutlineEntry[] = [];
+  const walk = (nodes: Block[]) => {
+    for (const node of nodes) {
+      const level = levels[node.blockType];
+      const text = String(node.content.text ?? '').trim();
+      if (level && node.id && text) out.push({ id: node.id, level, text });
+      walk(node.children);
+    }
+  };
+  walk(blocks ?? []);
+  return out;
+}
+
+export interface NoteStats {
+  blocks: number;
+  todos: number;
+  done: number;
+}
+
+/** What the summary column says under the headings. */
+export function noteStats(blocks: Block[] | undefined): NoteStats {
+  const stats: NoteStats = { blocks: 0, todos: 0, done: 0 };
+  const walk = (nodes: Block[]) => {
+    for (const node of nodes) {
+      stats.blocks += 1;
+      if (node.blockType === 'TODO') {
+        stats.todos += 1;
+        if (node.content.checked === true) stats.done += 1;
+      }
+      walk(node.children);
+    }
+  };
+  walk(blocks ?? []);
+  return stats;
+}

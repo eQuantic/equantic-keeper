@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { blocksToPlainText, isEmptyBlocks, normalizeBlocks, toEditorInput, type Block } from './blocks';
+import {
+  blocksToPlainText,
+  isEmptyBlocks,
+  noteOutline,
+  noteStats,
+  normalizeBlocks,
+  toEditorInput,
+  type Block,
+} from './blocks';
 import { blocksToDoc } from './editor/blocks-to-pm';
 import { docToBlocks } from './editor/pm-to-blocks';
 
@@ -115,5 +123,34 @@ describe('ida e volta pelo editor', () => {
     });
     expect(round[2]?.content).toMatchObject({ text: 'assinar', checked: true });
     expect(round[4]?.content).toMatchObject({ code: 'npm run build', language: 'bash' });
+  });
+});
+
+describe('sumário da nota', () => {
+  const blocks = normalizeBlocks([
+    { id: 'h1', blockType: 'HEADING_1', content: { text: 'Mudança' }, children: [] },
+    { id: 'p', blockType: 'PARAGRAPH', content: { text: 'texto' }, children: [] },
+    { id: 'h2', blockType: 'HEADING_2', content: { text: 'Contactos' }, children: [] },
+    { id: 'sem-texto', blockType: 'HEADING_2', content: { text: '   ' }, children: [] },
+    {
+      id: 't',
+      blockType: 'TOGGLE',
+      content: { text: 'Detalhes' },
+      children: [{ id: 'h3', blockType: 'HEADING_3', content: { text: 'Contrato' }, children: [] }],
+    },
+    { id: 'todo1', blockType: 'TODO', content: { text: 'a', checked: true }, children: [] },
+    { id: 'todo2', blockType: 'TODO', content: { text: 'b', checked: false }, children: [] },
+  ]);
+
+  it('lista os títulos na ordem, com o nível, inclusive os aninhados', () => {
+    expect(noteOutline(blocks)).toEqual([
+      { id: 'h1', level: 1, text: 'Mudança' },
+      { id: 'h2', level: 2, text: 'Contactos' },
+      { id: 'h3', level: 3, text: 'Contrato' },
+    ]);
+  });
+
+  it('conta blocos e tarefas, com as feitas à parte', () => {
+    expect(noteStats(blocks)).toEqual({ blocks: 8, todos: 2, done: 1 });
   });
 });

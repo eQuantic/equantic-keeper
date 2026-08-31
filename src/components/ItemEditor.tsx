@@ -1,5 +1,6 @@
 /** Create / edit form. Fields are rendered from the type's schema. */
 import { useRef, useState, type FormEvent } from 'react';
+import { noteOutline, noteStats } from '../lib/blocks';
 import {
   NOTE_TYPE_ID,
   countryForType,
@@ -16,12 +17,13 @@ import {
 } from '../lib/model';
 import { DOCUMENT_ORIGINS } from '../lib/documents';
 import { allCountries, countryName } from '../lib/countries';
-import { pushRecentType } from '../lib/storage';
+import { loadNotePanes, pushRecentType, saveNotePanes } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activeFolders, activePeople } from '../lib/vault';
 import { useKeeper } from '../state/keeper';
 import { Button, ComboInput, Field, IconButton, Modal, PasswordInput, TextArea, TextInput } from './ui';
 import { Icon } from './icons';
+import { useMediaQuery } from './use-media-query';
 import { AttachmentPicker } from './Attachments';
 import { CardColorPicker } from './CardVisual';
 import { CountryMark } from './flags';
@@ -221,8 +223,42 @@ export function ItemEditor({
   const showHolder = type.category === 'doc' || people.length > 0 || !!draft.holderId;
   /** Placeholders follow the subject: a declaration form suggests declarations. */
   const isDoc = type.category === 'doc';
-  /** A note is a page: it gets the wide dialog and a pane of its own. */
+  /** A note is a page: it gets the document dialog and columns of its own. */
   const isNote = draft.type === NOTE_TYPE_ID;
+  /**
+   * The page never goes below ~560px of writing width: that is the number the
+   * columns give way to, not a taste in breakpoints. Above 1400 the summary
+   * fits beside the details and the page (340 + 560 + 260); above 1100 the
+   * details still fit; below that each opens over the page as a drawer.
+   */
+  const outlineFits = useMediaQuery('(min-width: 1400px)');
+  const detailsFit = useMediaQuery('(min-width: 1100px)');
+  const [showDetails, setShowDetails] = useState(() => loadNotePanes().details);
+  const [showOutline, setShowOutline] = useState(() => loadNotePanes().outline);
+  /**
+   * The stored preference governs a column that FITS. One that does not fit
+   * starts closed and opens as a drawer only when asked — a summary covering
+   * the page the moment a note opens would be a worse default than no summary.
+   * One drawer at a time, so the page is never buried under two.
+   */
+  const [drawer, setDrawer] = useState<'details' | 'outline' | null>(null);
+  const detailsOpen = isNote ? (detailsFit ? showDetails : drawer === 'details') : true;
+  const outlineOpen = isNote && (outlineFits ? showOutline : drawer === 'outline');
+  const detailsDrawer = detailsOpen && !detailsFit;
+  const outlineDrawer = outlineOpen && !outlineFits;
+  const outline = isNote ? noteOutline(draft.blocks) : [];
+  const stats = isNote ? noteStats(draft.blocks) : { blocks: 0, todos: 0, done: 0 };
+  const togglePane = (pane: 'details' | 'outline') => {
+    const fits = pane === 'details' ? detailsFit : outlineFits;
+    if (!fits) return setDrawer((current) => (current === pane ? null : pane));
+    const next = pane === 'details' ? !showDetails : !showOutline;
+    if (pane === 'details') setShowDetails(next);
+    else setShowOutline(next);
+    saveNotePanes({
+      details: pane === 'details' ? next : showDetails,
+      outline: pane === 'outline' ? next : showOutline,
+    });
+  };
   const patch = (changes: Partial<VaultItem>) => {
     dirtyRef.current = true;
     setDraft((current) => ({ ...current, ...changes }));
@@ -305,8 +341,28 @@ export function ItemEditor({
       onClose={attemptClose}
       wide
       split={isNote}
-      title={isNew ? `Novo: ${type.label}` : 'Editar segredo'}
-      subtitle={isNew ? type.description : type.label}
+      // A document dialog is anchored by the document's own name; the field on
+      // the left still edits it.
+      title={isNote ? draft.name.trim() || 'Nota sem título' : isNew ? `Novo: ${type.label}` : 'Editar segredo'}
+      subtitle={isNote ? [type.label, draft.folder].filter(Boolean).join(' · ') : isNew ? type.description : type.label}
+      actions={
+        isNote ? (
+          <>
+            <IconButton
+              icon="layers"
+              label={detailsOpen ? 'Ocultar detalhes' : 'Mostrar detalhes'}
+              active={detailsOpen}
+              onClick={() => togglePane('details')}
+            />
+            <IconButton
+              icon="note"
+              label={outlineOpen ? 'Ocultar sumário' : 'Mostrar sumário'}
+              active={outlineOpen}
+              onClick={() => togglePane('outline')}
+            />
+          </>
+        ) : undefined
+      }
       footer={
         <>
           <Button onClick={attemptClose}>Cancelar</Button>
@@ -318,19 +374,27 @@ export function ItemEditor({
     >
       <form
         onSubmit={submit}
-        className={
-          isNote
-            ? 'flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden'
-            : 'space-y-4'
-        }
+        className={isNote ? 'relative flex h-full min-h-0 overflow-hidden' : 'space-y-4'}
       >
-        {/* On a wide screen the note is a page with its details beside it; on a
-            phone the two panes stack and the form itself is the scroller. */}
+        {/* A drawer covers the page, so a tap outside is how it closes. */}
+        {isNote && (detailsDrawer || outlineDrawer) ? (
+          <button
+            type="button"
+            aria-label="Fechar painel"
+            onClick={() => setDrawer(null)}
+            className="absolute inset-0 z-10 bg-black/40"
+          />
+        ) : null}
         <div
+          data-note-pane={isNote ? 'details' : undefined}
           className={
-            isNote
-              ? 'space-y-4 px-5 py-4 lg:w-[360px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-line'
-              : 'contents'
+            !isNote
+              ? 'contents'
+              : !detailsOpen
+                ? 'hidden'
+                : detailsFit
+                  ? 'flex w-[340px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-line px-5 py-4'
+                  : 'absolute inset-y-0 left-0 z-20 flex w-[340px] max-w-[85%] flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-5 py-4 shadow-2xl'
           }
         >
         {family ? (
@@ -356,7 +420,7 @@ export function ItemEditor({
             </select>
           </Field>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className={isNote ? 'grid gap-4' : 'grid gap-4 sm:grid-cols-2'}>
           <Field label="Nome">
             <TextInput
               aria-label="Nome"
@@ -570,14 +634,59 @@ export function ItemEditor({
         </div>
 
         {isNote ? (
-          <div className="flex min-h-0 flex-col px-5 py-4 lg:flex-1 lg:overflow-y-auto">
-            <p className="mb-2 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
-              <Icon name={type.icon} size={13} style={{ color: type.accent }} />
-              Conteúdo
-              <span className="ml-auto normal-case text-faint">digite / para inserir um bloco</span>
-            </p>
-            <LazyNoteEditor blocks={draft.blocks} onChange={(blocks) => patch({ blocks })} />
-          </div>
+          <>
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <LazyNoteEditor
+                blocks={draft.blocks}
+                onChange={(blocks) => patch({ blocks })}
+                toolbar
+              />
+            </div>
+
+            <div
+              data-note-pane="outline"
+              className={
+                !outlineOpen
+                  ? 'hidden'
+                  : outlineFits
+                    ? 'flex w-[260px] shrink-0 flex-col overflow-y-auto border-l border-line px-3 py-4'
+                    : 'absolute inset-y-0 right-0 z-20 flex w-[260px] max-w-[85%] flex-col overflow-y-auto border-l border-line bg-surface px-3 py-4 shadow-2xl'
+              }
+            >
+              <p className="mb-2 px-2.5 text-xs font-medium tracking-wide text-muted uppercase">Sumário</p>
+              {outline.length === 0 ? (
+                <p className="px-2.5 text-xs text-faint">
+                  Os títulos da nota aparecem aqui conforme você os escreve.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-px">
+                  {outline.map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      // The editor stamps the block's id on its DOM node, so the
+                      // summary can jump straight to the heading it names.
+                      onClick={() =>
+                        document
+                          .getElementById(entry.id)
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }
+                      style={{ paddingLeft: 10 + (entry.level - 1) * 12 }}
+                      className="truncate rounded-lg py-1.5 pr-2.5 text-left text-[13px] text-muted transition hover:bg-raised hover:text-ink"
+                    >
+                      {entry.text}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="mt-auto border-t border-line-soft px-2.5 pt-3 text-xs leading-relaxed text-faint">
+                {stats.blocks} {stats.blocks === 1 ? 'bloco' : 'blocos'}
+                {stats.todos > 0
+                  ? ` · ${stats.todos} ${stats.todos === 1 ? 'tarefa' : 'tarefas'}, ${stats.todos - stats.done} por fazer`
+                  : ''}
+              </p>
+            </div>
+          </>
         ) : null}
       </form>
     </Modal>

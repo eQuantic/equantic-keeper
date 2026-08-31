@@ -164,3 +164,29 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 export function wipeLocalData(): void {
   for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC]) safeRemove(key);
 }
+
+const NOTE_PANES_KEY = 'keeper.note.panes.v1';
+
+export interface NotePanes {
+  details: boolean;
+  outline: boolean;
+}
+
+/** Which columns the note dialog opens with — a preference, not vault data. */
+export function loadNotePanes(): NotePanes {
+  try {
+    const raw = localStorage.getItem(NOTE_PANES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<NotePanes>) : {};
+    return { details: parsed.details !== false, outline: parsed.outline !== false };
+  } catch {
+    return { details: true, outline: true };
+  }
+}
+
+export function saveNotePanes(panes: NotePanes): void {
+  try {
+    localStorage.setItem(NOTE_PANES_KEY, JSON.stringify(panes));
+  } catch {
+    /* a private window keeps the defaults */
+  }
+}
