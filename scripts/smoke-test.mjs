@@ -848,6 +848,10 @@ const run = async () => {
   // What it must do without them is explain itself, not offer a form that
   // cannot work.
   await openSettings(page, 'Partilha');
+  // Sem conta nenhuma ligada a este dispositivo, a partilha explica em vez de
+  // oferecer um formulário que não pode funcionar. Com conta ligada, o painel
+  // aparece mesmo sem token vivo — trancá-lo atrás de uma sessão que já não se
+  // renova sozinha era deixá-lo inalcançável.
   await check('a partilha pede a conta antes de qualquer formulário', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para partilhar').count()) === 1 &&
     (await page.locator('[role="dialog"] textarea[aria-label="Código de convite"]').count()) === 0);
