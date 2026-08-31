@@ -1475,10 +1475,15 @@ export function VaultScreen() {
         ) : null}
       </div>
 
-      {/* Thumb-reach command bar on phones; desktop keeps these in the header. */}
+      {/* Thumb-reach command bar on phones; desktop keeps these in the header.
+          `relative z-20` is load-bearing: every row in the list is positioned
+          (the swipe layers need it), and a positioned element paints over a
+          static one whatever the document order says — so the last rows were
+          covering the + button that pokes up above this bar. Below the detail
+          sheet (z-30) and the drawer (z-40), which are meant to cover it. */}
       <nav
         aria-label="Ações rápidas"
-        className="flex shrink-0 items-end justify-around border-t border-line bg-surface px-2 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:hidden"
+        className="relative z-20 flex shrink-0 items-end justify-around border-t border-line bg-surface px-2 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:hidden"
       >
         <BarAction icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} />
         <BarAction
