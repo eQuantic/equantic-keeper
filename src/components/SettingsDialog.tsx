@@ -8,7 +8,7 @@ import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
-import type { DriveUsage } from '../lib/drive';
+import { KEEPER_FOLDER_NAME, type DriveUsage } from '../lib/drive';
 import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
 
@@ -166,8 +166,124 @@ const prefLabelClass = 'min-w-0 flex-1 basis-48';
  * find out is here. Asked for on demand, not on open: it is a couple of API
  * calls and nobody needs them every time they change a preference.
  */
+/**
+ * Where the vault is kept, and the one-way door out of the hidden app folder.
+ *
+ * "One-way" only in the sense that nobody would want to go back: the app folder
+ * keeps its copy either way. What the move buys is the ability to share, which
+ * Drive flatly refuses for anything stored in the app folder.
+ */
+function DriveFolderSection() {
+  const { actions, connected, driveFolderId, driveMove, driveMovedElsewhere, phase } = useKeeper();
+  const [cleaning, setCleaning] = useState(false);
+
+  if (!connected) {
+    return <p className="text-xs text-muted">Conecte a conta do Google para escolher onde o cofre fica.</p>;
+  }
+
+  const discard = async () => {
+    if (
+      !confirm(
+        'Apagar a cópia do cofre na pasta oculta do app? A cópia da pasta nova é conferida arquivo por ' +
+          'arquivo antes de qualquer coisa ser apagada.',
+      )
+    ) {
+      return;
+    }
+    setCleaning(true);
+    try {
+      const { deleted, missing } = await actions.discardOldDriveCopy();
+      actions.notify(
+        missing.length
+          ? `Nada foi apagado: ${missing.length} arquivo(s) ainda não estão na pasta nova (${missing
+              .slice(0, 3)
+              .join(', ')}). Mova o cofre de novo e tente depois.`
+          : `Cópia antiga apagada: ${deleted} arquivo(s) liberados da pasta oculta.`,
+      );
+    } catch (error) {
+      actions.notify(error instanceof Error ? error.message : 'Não foi possível apagar a cópia antiga.');
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  if (driveFolderId) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-start gap-3 rounded-lg border border-line bg-canvas p-3">
+          <Icon name="folder" size={16} className="mt-0.5 shrink-0 text-accent" />
+          <div className="min-w-0 text-sm text-ink">
+            <p>
+              O cofre está na pasta <strong className="font-semibold">{KEEPER_FOLDER_NAME}</strong> do seu Drive.
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              Continua tudo cifrado: quem abrir a pasta vê arquivos ilegíveis sem a sua senha mestra. A cópia
+              antiga na pasta oculta do app não foi apagada.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" variant="danger" icon="trash" loading={cleaning} onClick={() => void discard()}>
+            Apagar a cópia antiga
+          </Button>
+          <span className="text-xs text-muted">
+            Só apaga depois de conferir que está tudo na pasta nova.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const moving = !!driveMove;
+  return (
+    <div className="space-y-3">
+      {driveMovedElsewhere ? (
+        <div className="flex items-start gap-3 rounded-lg border border-warn/40 bg-warn/10 p-3">
+          <Icon name="warning" size={16} className="mt-0.5 shrink-0 text-warn" />
+          <div className="min-w-0 text-sm text-ink">
+            <p>Este cofre já foi movido para uma pasta do Drive em outro aparelho.</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted">
+              Este aqui ainda sincroniza pela pasta oculta, então as alterações dos dois lados não se
+              encontram. Conceda a permissão abaixo para trazê-lo de volta à mesma pasta.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs leading-relaxed text-muted">
+            Hoje o cofre fica na pasta oculta do aplicativo. É o acesso mais restrito que o Drive oferece, mas
+            nada guardado ali pode ser partilhado com outra pessoa — é uma regra do próprio Drive. Mover para
+            uma pasta sua é o primeiro passo para dar acesso a alguém.
+          </p>
+          <p className="text-xs leading-relaxed text-muted">
+            Os arquivos são copiados, nunca movidos: se algo falhar no meio, o cofre continua inteiro nos dois
+            lados.
+          </p>
+        </>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          size="sm"
+          icon="folder"
+          loading={moving}
+          disabled={phase !== 'unlocked'}
+          onClick={() => void actions.moveToDriveFolder()}
+        >
+          {driveMovedElsewhere ? 'Conectar este aparelho à pasta' : 'Mover para uma pasta do Drive'}
+        </Button>
+        {moving && driveMove.total > 0 ? (
+          <span className="text-xs text-muted">
+            Copiando {driveMove.done} de {driveMove.total}…
+          </span>
+        ) : null}
+        {phase !== 'unlocked' ? <span className="text-xs text-muted">Abra o cofre primeiro.</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function DriveUsageSection() {
-  const { actions, connected } = useKeeper();
+  const { actions, connected, driveFolderId } = useKeeper();
   const [usage, setUsage] = useState<DriveUsage | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -196,6 +312,7 @@ function DriveUsageSection() {
     return <p className="text-xs text-muted">Conecte a conta do Google para ver o espaço ocupado.</p>;
   }
 
+  const inFolder = !!driveFolderId;
   const rows: { label: string; bytes: number }[] = usage
     ? [
         { label: 'Cofre cifrado', bytes: usage.vault },
@@ -218,7 +335,9 @@ function DriveUsageSection() {
           <p className="mt-0.5 text-xs text-muted">
             {usage?.quota
               ? `A conta usa ${formatBytes(usage.quota.used)} de ${formatBytes(usage.quota.limit)} no total.`
-              : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
+              : inFolder
+                ? `Na pasta "${KEEPER_FOLDER_NAME}" do seu Drive.`
+                : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
           </p>
         </div>
         <Button size="sm" icon="refresh" loading={busy} onClick={() => void read()}>
@@ -266,7 +385,7 @@ function DriveUsageSection() {
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
-  const { actions, account, connected, payload, sync, busy, biometricAvailable, biometricEnrolled } =
+  const { actions, account, connected, driveFolderId, payload, sync, busy, biometricAvailable, biometricEnrolled } =
     useKeeper();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -350,7 +469,14 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <Modal open={open} onClose={onClose} title="Configurações" wide>
-      <Section title="Conta Google" description="Usada apenas para guardar o arquivo cifrado na pasta oculta do app.">
+      <Section
+        title="Conta Google"
+        description={
+          driveFolderId
+            ? `Usada apenas para guardar o arquivo cifrado na pasta "${KEEPER_FOLDER_NAME}" do seu Drive.`
+            : 'Usada apenas para guardar o arquivo cifrado na pasta oculta do app.'
+        }
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-muted">
@@ -595,6 +721,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             <option value="light">Claro</option>
           </select>
         </div>
+      </Section>
+
+      <Section
+        title="Onde o cofre fica"
+        description="A pasta do Google Drive que guarda o arquivo cifrado e os anexos."
+      >
+        <DriveFolderSection />
       </Section>
 
       <Section

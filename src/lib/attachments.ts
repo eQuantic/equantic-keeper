@@ -167,14 +167,14 @@ export const ORPHAN_GRACE_DAYS = 90;
 
 /** Reads the app folder and returns the ids of files nothing references. */
 export async function findOrphans(
-  drive: Pick<DriveBlobApi, 'delete'> & { listAppData(query?: string): Promise<DriveFileMeta[]> },
+  drive: Pick<DriveBlobApi, 'delete'> & { listFiles(query?: string): Promise<DriveFileMeta[]> },
   referenced: AttachmentRef[],
   now = Date.now(),
 ): Promise<string[]> {
   const keep = new Set(referenced.map((ref) => driveName(ref)));
   const cutoff = now - ORPHAN_GRACE_DAYS * 86_400_000;
 
-  const files = await drive.listAppData(`name contains '${DRIVE_PREFIX}' and trashed = false`);
+  const files = await drive.listFiles(`name contains '${DRIVE_PREFIX}' and trashed = false`);
   return files
     .filter((file) => file.name.startsWith(DRIVE_PREFIX))
     .filter((file) => !keep.has(file.name))
