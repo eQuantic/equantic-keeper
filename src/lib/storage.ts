@@ -22,6 +22,8 @@ const KEY_RECENT_TYPES = 'keeper.recentTypes.v1';
 const KEY_DRIVE_FOLDER = 'keeper.drive.folder.v1';
 /** Height in px given to the items half of the sidebar, when it was dragged. */
 const KEY_SIDEBAR_SPLIT = 'keeper.sidebar.split.v1';
+/** Shared vaults this device has already been let into. */
+const KEY_SHARED_VAULTS = 'keeper.shared.v1';
 
 export interface CachedVault {
   file: VaultFile;
@@ -201,6 +203,45 @@ export function saveSidebarSplit(height: number): void {
   safeSet(KEY_SIDEBAR_SPLIT, String(Math.round(height)));
 }
 
+/**
+ * A vault someone else shared, once this device has been through the picker for
+ * it. The Drive grant that the pick created belongs to the account and outlives
+ * the tab, so remembering the ids is enough to walk straight back in — and the
+ * key still comes from the share record, which the owner can revoke at any time.
+ * Nothing secret is stored here: two file ids and a name.
+ */
+export interface KnownSharedVault {
+  folderId: string | null;
+  vaultFileId: string;
+  label: string;
+}
+
+export function loadSharedVaults(): KnownSharedVault[] {
+  const raw = safeGet(KEY_SHARED_VAULTS);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry): entry is KnownSharedVault =>
+        !!entry && typeof entry === 'object' && typeof (entry as KnownSharedVault).vaultFileId === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function rememberSharedVault(entry: KnownSharedVault): void {
+  const others = loadSharedVaults().filter((known) => known.vaultFileId !== entry.vaultFileId);
+  safeSet(KEY_SHARED_VAULTS, JSON.stringify([...others, entry]));
+}
+
+export function forgetSharedVault(vaultFileId: string): void {
+  const left = loadSharedVaults().filter((known) => known.vaultFileId !== vaultFileId);
+  if (left.length === 0) safeRemove(KEY_SHARED_VAULTS);
+  else safeSet(KEY_SHARED_VAULTS, JSON.stringify(left));
+}
+
 export function loadTheme(): 'dark' | 'light' {
   return safeGet(KEY_THEME) === 'light' ? 'light' : 'dark';
 }
@@ -211,7 +252,7 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 
 /** Wipes every trace of the vault from this device (the Drive copy is untouched). */
 export function wipeLocalData(): void {
-  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC, KEY_DRIVE_FOLDER]) safeRemove(key);
+  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC, KEY_DRIVE_FOLDER, KEY_SHARED_VAULTS]) safeRemove(key);
 }
 
 const NOTE_PANES_KEY = 'keeper.note.panes.v1';

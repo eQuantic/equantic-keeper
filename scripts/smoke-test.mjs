@@ -1118,6 +1118,19 @@ const run = async () => {
     return Math.abs(after - before.top) <= 1 && Math.abs(before.bottom - before.navBottom) <= 2;
   });
 
+  // 11c-septies-bis. The vault switcher. A person can hold their own vault and
+  // any number shared with them, and the way between them is here — including
+  // for someone who already has a vault of their own, which is where the guest
+  // flow used to have no door at all.
+  await check('o topo da barra lateral diz em que cofre estamos', async () => {
+    const select = page.locator('select[aria-label="Cofre"]');
+    return (await select.count()) === 1 && (await select.inputValue()) === 'own';
+  });
+  await check('o seletor oferece abrir um cofre partilhado', async () => {
+    const options = await page.locator('select[aria-label="Cofre"] option').allInnerTexts();
+    return options.includes('Meu cofre') && options.some((text) => text.startsWith('Abrir um cofre partilhado'));
+  });
+
   // 11c-octies. The divider between the two halves of the sidebar: dragging it
   // gives the folder tree room, and the choice survives a reload.
   await check('arrastar a divisória redimensiona as metades', async () => {

@@ -26,6 +26,7 @@ import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
 import * as storage from '../lib/storage';
+import { ensurePickerKey } from '../components/InviteCode';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
 /** A sidebar row: one type in use, or a whole family of them. */
@@ -67,6 +68,9 @@ function primarySecret(item: VaultItem): { value: string; label: string } | null
  * drawer works the same as a mouse.
  */
 /** Nothing below this is a list any more, it is a sliver. */
+/** Sentinel option: not a workspace, an action. */
+const OPEN_SHARED = '__open_shared__';
+
 const SIDEBAR_MIN_PANE = 88;
 const SIDEBAR_HANDLE = 12;
 
@@ -141,7 +145,8 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account, connected, driveMovedElsewhere, guest } = useKeeper();
+  const { payload, actions, account, connected, driveMovedElsewhere, guest, workspaces, activeWorkspace } =
+    useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -683,6 +688,50 @@ export function VaultScreen() {
 
   const sidebar = (
     <nav className="flex h-full w-64 shrink-0 flex-col border-r border-line bg-surface">
+      {/* Which vault this is. A person can hold their own and any number of
+          vaults other people shared with them, all open at once — switching is
+          not signing out, so coming back asks for no password. */}
+      <div className="shrink-0 border-b border-line px-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] pb-2.5 lg:pt-3">
+        <label className="sr-only" htmlFor="keeper-workspace">
+          Cofre
+        </label>
+        <div className="relative">
+          <Icon
+            name={guest ? 'share' : 'layers'}
+            size={14}
+            className={`pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 ${
+              guest ? 'text-accent' : 'text-muted'
+            }`}
+          />
+          <select
+            id="keeper-workspace"
+            aria-label="Cofre"
+            value={activeWorkspace}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === OPEN_SHARED) {
+                if (!ensurePickerKey()) return;
+                void actions.openSharedVault();
+                return;
+              }
+              void actions.switchWorkspace(next);
+            }}
+            className="w-full appearance-none rounded-lg border border-line bg-canvas py-2 pr-8 pl-8 text-sm text-ink transition focus:border-accent focus:outline-none"
+          >
+            {workspaces.map((workspace) => (
+              <option key={workspace.id} value={workspace.id}>
+                {workspace.label}
+              </option>
+            ))}
+            <option value={OPEN_SHARED}>Abrir um cofre partilhado…</option>
+          </select>
+          <Icon
+            name="chevron"
+            size={13}
+            className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rotate-90 text-faint"
+          />
+        </div>
+      </div>
       {/* The account row is the way out to Settings and to what is syncing —
           it stays put while the folders and types scroll past it. */}
       <div ref={panesRef} className="flex min-h-0 flex-1 flex-col">
@@ -1056,6 +1105,17 @@ export function VaultScreen() {
               </span>
               <Button size="sm" icon="refresh" onClick={() => void actions.refreshSharedVault()}>
                 Atualizar
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (confirm('Tirar este cofre partilhado deste dispositivo? O cofre da outra pessoa não muda.')) {
+                    actions.forgetSharedVault(`shared:${guest.vaultFileId}`);
+                  }
+                }}
+              >
+                Remover daqui
               </Button>
             </div>
           ) : null}
