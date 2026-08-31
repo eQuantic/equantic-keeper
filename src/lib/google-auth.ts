@@ -80,6 +80,9 @@ function isScopeRefusal(error: unknown): boolean {
   return error.code === 'invalid_scope' || /scope/i.test(error.message);
 }
 
+/** '' lets Google decide; 'consent' insists on the permissions screen. */
+type PromptMode = '' | 'consent';
+
 let scriptPromise: Promise<void> | null = null;
 
 function loadGisScript(): Promise<void> {
@@ -144,7 +147,9 @@ export class GoogleAuth {
   async requestScope(scope: string): Promise<void> {
     this.include(scope);
     this.invalidate();
-    await this.requestToken(true);
+    // The one place that really does want the consent screen: a permission the
+    // person has not been asked for yet.
+    await this.requestToken(true, undefined, 'consent');
     if (!this.hasScope(scope)) {
       throw new GoogleAuthError(
         'A permissão não foi concedida na tela do Google. Nada foi alterado no seu Drive.',
@@ -195,7 +200,7 @@ export class GoogleAuth {
    * touches GIS: it hands back what is in memory or fails, and whoever needed
    * it asks the user for a gesture.
    */
-  async requestToken(interactive: boolean, hint?: string): Promise<string> {
+  async requestToken(interactive: boolean, hint?: string, prompt: PromptMode = ''): Promise<string> {
     if (this.isSignedIn) return this.token!;
     if (!interactive) {
       throw new GoogleAuthError(
@@ -203,7 +208,7 @@ export class GoogleAuth {
         'needs_gesture',
       );
     }
-    this.pending ??= this.withNarrowFallback(interactive, hint).finally(() => {
+    this.pending ??= this.withNarrowFallback(interactive, hint, prompt).finally(() => {
       this.pending = null;
     });
     return this.pending;
@@ -218,18 +223,18 @@ export class GoogleAuth {
    * Only over a scope: a closed popup or a refused consent is the user talking,
    * and answering it with a second popup would be worse than the failure.
    */
-  private async withNarrowFallback(interactive: boolean, hint?: string): Promise<string> {
+  private async withNarrowFallback(interactive: boolean, hint?: string, prompt: PromptMode = ''): Promise<string> {
     try {
-      return await this.doRequest(interactive, hint);
+      return await this.doRequest(interactive, hint, prompt);
     } catch (error) {
       if (this.extra.size === 0 || !isScopeRefusal(error)) throw error;
       this.extra.clear();
       this.client = null;
-      return this.doRequest(interactive, hint);
+      return this.doRequest(interactive, hint, prompt);
     }
   }
 
-  private async doRequest(interactive: boolean, hint?: string): Promise<string> {
+  private async doRequest(interactive: boolean, hint?: string, prompt: PromptMode = ''): Promise<string> {
     const client = await this.ensureClient();
     return new Promise<string>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
@@ -289,7 +294,14 @@ export class GoogleAuth {
       };
 
       try {
-        client.requestAccessToken({ prompt: interactive ? 'consent' : '', ...(hint ? { hint } : {}) });
+        /*
+         * An empty prompt is not "no window" — it is "Google, show one only if
+         * you must". With a live session and consent already given, the window
+         * opens and closes itself. Forcing 'consent' here meant the full
+         * account-and-permissions screen on every single renewal, which is how
+         * a token that lasts an hour turned into a login every hour.
+         */
+        client.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
       } catch (error) {
         settle(() => reject(error instanceof Error ? error : new GoogleAuthError(String(error))));
       }
