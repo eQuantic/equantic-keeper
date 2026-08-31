@@ -303,7 +303,15 @@ const run = async () => {
   const browser = await chromium.launch(
     process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
   );
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  /*
+   * `reducedMotion` is not cosmetic here: Playwright clicks milliseconds after
+   * a dialog opens, and a click that lands while the panel is still sliding is
+   * swallowed. The app already collapses every animation under
+   * prefers-reduced-motion, so this uses its own accessibility path rather than
+   * injecting a stylesheet the real app never sees. Three intermittent failures
+   * in one afternoon, all photographed mid-animation, bought this line.
+   */
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   currentPage = page;
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
@@ -1059,6 +1067,50 @@ const run = async () => {
     return Math.abs(after - before.top) <= 1 && Math.abs(before.bottom - before.navBottom) <= 2;
   });
 
+  // 11c-octies. The divider between the two halves of the sidebar: dragging it
+  // gives the folder tree room, and the choice survives a reload.
+  await check('arrastar a divisória redimensiona as metades', async () => {
+    const before = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    const handle = page.locator('[data-sidebar-splitter]');
+    const box = await handle.boundingBox();
+    if (!box) return false;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 120, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const after = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    return after < before - 60;
+  });
+  await check('a divisória também anda pelo teclado', async () => {
+    const before = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    await page.locator('[data-sidebar-splitter]').focus();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(150);
+    const after = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    return after > before;
+  });
+  await check('a divisória fica onde foi deixada depois de recarregar', async () => {
+    const before = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    const after = await page.evaluate(
+      () => document.querySelector('[data-sidebar-scroll]').getBoundingClientRect().height,
+    );
+    return Math.abs(after - before) <= 2;
+  });
+
   // 11d. Folders created straight in the sidebar, before any item uses them.
   await page.click('button[aria-label="Nova pasta"]');
   await page.fill('input[placeholder="Nome da pasta"]', 'Fiscal');
@@ -1464,6 +1516,7 @@ const run = async () => {
     viewport: { width: 375, height: 812 },
     hasTouch: true,
     isMobile: true,
+    reducedMotion: 'reduce',
   });
   currentPage = phone;
   phone.on('console', (message) => {
@@ -1715,6 +1768,14 @@ const run = async () => {
   const drawerNav = phone.locator('nav button:has-text("Tudo")').filter({ visible: true });
   await phone.click('button[aria-label="Menu"]');
   await phone.waitForSelector('nav button:has-text("Tudo") >> visible=true', { timeout: 3000 });
+  // The sidebar is split in two halves with a divider between them; on a phone
+  // it is a drawer, and both halves have to be reachable there too.
+  await check('a gaveta traz as duas metades da barra lateral', async () =>
+    (await phone.locator('[data-sidebar-scroll] >> visible=true').count()) === 1 &&
+    (await phone.locator('[data-sidebar-folders] >> visible=true').count()) === 1 &&
+    (await phone.locator('[data-sidebar-splitter] >> visible=true').count()) === 1);
+  await phone.waitForTimeout(350);
+  await phone.screenshot({ path: `${OUT}/18-mobile-gaveta.png` });
   await phone.goBack();
   await phone.waitForTimeout(300);
   await check('voltar fecha a gaveta lateral', async () => (await drawerNav.count()) === 0);
