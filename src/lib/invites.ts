@@ -43,6 +43,13 @@ export interface Identity {
 
 export interface ShareRecord {
   id: string;
+  /**
+   * How this record is opened. `device` is wrapped to a keypair that never
+   * leaves the recipient's phone; `link` is wrapped to a secret the owner
+   * generated and put in a link. Absent means `device` (the first records
+   * predate links).
+   */
+  kind?: 'device' | 'link';
   /** Who this was wrapped for — how a recipient finds their own record. */
   fingerprint: string;
   /**
@@ -148,6 +155,19 @@ export async function readInviteCode(code: string): Promise<CryptoKey> {
   }
 }
 
+/* ------------------------------------------------------------------------- *
+ * Invites that travel as a link
+ *
+ * The device invite is the safer shape — nothing secret moves — but it asks the
+ * guest to act first: generate a code, send it, wait. A link inverts that: the
+ * owner sends one thing and the guest only opens it.
+ *
+ * What it costs is that the wrapping secret rides inside the link. What keeps
+ * that from being reckless is the other half of access: the bytes live in a
+ * Drive folder shared with ONE Google account, so the link alone opens nothing.
+ * Someone would need the link AND that account. The owner can revoke either.
+ * ------------------------------------------------------------------------- */
+
 /** Binds a wrap to the record it lives in: a record cannot be moved to another. */
 function shareAad(id: string, fingerprintValue: string): string {
   return `equantic-keeper:share:v1|${id}|${fingerprintValue}`;
@@ -239,6 +259,81 @@ export async function rewrapShare(record: ShareRecord, dataKey: CryptoKey): Prom
  * Saving an edit re-seals the payload under the header the owner wrote, and
  * re-sharing it with a third person is not theirs to do.
  */
+async function keyFromSecret(secret: string, salt: Uint8Array, aad: string): Promise<CryptoKey> {
+  const material = await subtle().importKey('raw', fromBase64(secret).slice().buffer as ArrayBuffer, 'HKDF', false, [
+    'deriveKey',
+  ]);
+  return subtle().deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: salt.slice().buffer as ArrayBuffer, info: utf8(aad) },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+export interface LinkInvite {
+  record: ShareRecord;
+  /** Goes in the link, and nowhere else — the owner never stores it. */
+  secret: string;
+}
+
+export async function wrapForLink(
+  dataKey: CryptoKey,
+  details: { label: string; role: ShareRecord['role']; email?: string },
+): Promise<LinkInvite> {
+  const id = crypto.randomUUID();
+  const secret = toBase64(randomBytes(32));
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  // The fingerprint is of the secret: it names the record without revealing it,
+  // and keeps the shape identical to a device record.
+  const digest = new Uint8Array(await subtle().digest('SHA-256', fromBase64(secret).slice().buffer as ArrayBuffer));
+  const print = toBase64(digest).replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
+  const aad = shareAad(id, print);
+
+  const wrapping = await keyFromSecret(secret, salt, aad);
+  const sealed = await subtle().encrypt(
+    { name: 'AES-GCM', iv, additionalData: utf8(aad), tagLength: 128 },
+    wrapping,
+    await subtle().exportKey('raw', dataKey),
+  );
+
+  return {
+    secret,
+    record: {
+      id,
+      kind: 'link',
+      fingerprint: print,
+      recipient: '',
+      ephemeral: '',
+      salt: toBase64(salt),
+      iv: toBase64(iv),
+      key: toBase64(new Uint8Array(sealed)),
+      role: details.role,
+      label: details.label,
+      ...(details.email ? { email: details.email } : {}),
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/** Opens a link record with the secret that came in the link. */
+export async function unwrapWithSecret(record: ShareRecord, secret: string): Promise<CryptoKey> {
+  try {
+    const aad = shareAad(record.id, record.fingerprint);
+    const wrapping = await keyFromSecret(secret, fromBase64(record.salt), aad);
+    const raw = await subtle().decrypt(
+      { name: 'AES-GCM', iv: fromBase64(record.iv), additionalData: utf8(aad), tagLength: 128 },
+      wrapping,
+      fromBase64(record.key).slice().buffer as ArrayBuffer,
+    );
+    return await subtle().importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  } catch {
+    throw new DecryptionError('Este convite não abre este cofre — pode ter sido revogado.');
+  }
+}
+
 export async function unwrapWithIdentity(record: ShareRecord, identity: Identity): Promise<CryptoKey> {
   try {
     const aad = shareAad(record.id, record.fingerprint);
@@ -279,6 +374,57 @@ export function isSharesFile(value: unknown): value is SharesFile {
   if (!value || typeof value !== 'object') return false;
   const file = value as Partial<SharesFile>;
   return file.format === 'equantic-keeper.shares' && Array.isArray(file.shares);
+}
+
+/* ------------------------------------------------------------------------- *
+ * The link itself
+ * ------------------------------------------------------------------------- */
+
+export interface InviteLink {
+  /** The record to open, by id — no searching, no fingerprints to compare. */
+  share: string;
+  secret: string;
+  folderId: string;
+  vaultFileId: string;
+  /** So the guest reads the list by id, which Drive answers immediately. */
+  sharesFileId: string;
+  folderName: string;
+}
+
+/**
+ * Everything the guest's app needs, in the URL fragment.
+ *
+ * The fragment — after the `#` — is never sent to a server by any browser, and
+ * this app has no server anyway. It is the only part of a URL that can carry a
+ * secret without also handing it to a log somewhere.
+ */
+export function buildInviteLink(origin: string, invite: InviteLink): string {
+  const payload = toBase64(utf8(JSON.stringify(invite)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return `${origin}/#convite=${payload}`;
+}
+
+export function readInviteLink(fragment: string): InviteLink | null {
+  const match = /convite=([A-Za-z0-9_-]+)/.exec(fragment);
+  if (!match?.[1]) return null;
+  try {
+    const padded = match[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = new TextDecoder().decode(fromBase64(padded + '='.repeat((4 - (padded.length % 4)) % 4)));
+    const parsed = JSON.parse(json) as Partial<InviteLink>;
+    if (!parsed.share || !parsed.secret || !parsed.vaultFileId) return null;
+    return {
+      share: parsed.share,
+      secret: parsed.secret,
+      folderId: parsed.folderId ?? '',
+      vaultFileId: parsed.vaultFileId,
+      sharesFileId: parsed.sharesFileId ?? '',
+      folderName: parsed.folderName ?? '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** The record meant for this identity, if the owner has published one. */

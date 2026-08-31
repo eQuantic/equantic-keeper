@@ -17,6 +17,7 @@ import {
   emptyShares,
   isSharesFile,
   readInviteCode,
+  wrapForLink,
   wrapForRecipient,
   type ShareRecord,
   type SharesFile,
@@ -89,6 +90,47 @@ export async function grantAccess(
     const shares = [...stored.file.shares.filter((entry) => entry.fingerprint !== record.fingerprint), record];
     await writeShares(drive, stored, shares);
     return record;
+  } catch (error) {
+    await drive.revokePermission(folderId, permission.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * The same grant, but the key rides in a link instead of being wrapped to a
+ * device. Returns what the owner has to send, and stores only the record.
+ *
+ * The secret is never written down on this side: it exists in the returned
+ * link and in whatever the owner does with it. Losing it means making a new
+ * invite, which is the right way round.
+ */
+export async function grantLinkAccess(
+  drive: SharingDrive,
+  folderId: string,
+  dataKey: CryptoKey,
+  input: Omit<GrantInput, 'code'>,
+): Promise<{ record: ShareRecord; secret: string }> {
+  const email = input.email.trim();
+  if (!email) throw new Error('Falta a conta Google da pessoa — é por ela que o Drive libera os arquivos.');
+
+  const permission = await drive.shareFolder(folderId, email, input.role);
+  try {
+    const stored = await readShares(drive);
+    const { record, secret } = await wrapForLink(dataKey, {
+      label: input.label.trim() || email,
+      role: input.role,
+      email,
+    });
+    // One live invite per person: a new link replaces the last one, so an old
+    // message stops working the moment a new one is sent.
+    const shares = [
+      ...stored.file.shares.filter(
+        (entry) => !(entry.email && entry.email.toLowerCase() === email.toLowerCase() && entry.kind === 'link'),
+      ),
+      record,
+    ];
+    await writeShares(drive, stored, shares);
+    return { record, secret };
   } catch (error) {
     await drive.revokePermission(folderId, permission.id).catch(() => undefined);
     throw error;

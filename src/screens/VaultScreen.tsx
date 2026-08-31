@@ -36,7 +36,7 @@ import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
 import * as storage from '../lib/storage';
-import { OpenSharedDialog } from '../components/InviteCode';
+import { OpenSharedDialog, ensurePickerKey } from '../components/InviteCode';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
 /** A sidebar row: one type in use, or a whole family of them. */
@@ -155,7 +155,7 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account, connected, driveMovedElsewhere, guest, workspaces, activeWorkspace } =
+  const { payload, actions, account, connected, driveMovedElsewhere, guest, workspaces, activeWorkspace, pendingInvite } =
     useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
@@ -1197,6 +1197,30 @@ export function VaultScreen() {
           {/* The vault moved and this device did not follow. It is still writing
               to a copy nobody else reads, so this cannot live behind a settings
               screen the user has no reason to open. */}
+          {pendingInvite && !guest ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-accent/40 bg-accent/10 px-4 py-2.5 text-sm text-ink">
+              <Icon name="share" size={15} className="shrink-0 text-accent" />
+              <span className="min-w-0 flex-1">
+                Alguém partilhou um cofre com você
+                {pendingInvite.folderName ? ` (${pendingInvite.folderName})` : ''}. O seu continua aqui.
+              </span>
+              <Button
+                size="sm"
+                variant="primary"
+                icon="share"
+                onClick={() => {
+                  if (!ensurePickerKey()) return;
+                  void actions.redeemInvite();
+                }}
+              >
+                Abrir
+              </Button>
+              <Button size="sm" variant="ghost" onClick={actions.dismissInvite}>
+                Agora não
+              </Button>
+            </div>
+          ) : null}
+
           {guest ? (
             <div
               data-guest-banner
