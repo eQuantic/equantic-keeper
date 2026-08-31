@@ -300,6 +300,34 @@ async function openSettings(page, pane) {
   });
 }
 
+/**
+ * The app has no native selects any more: every one is the design-system menu,
+ * so choosing an option is open, click, and wait for the menu to go.
+ */
+async function chooseOption(page, label, value) {
+  await page.locator(`[data-select-trigger="${label}"]`).first().click();
+  const menu = page.locator('[role="listbox"]').last();
+  await menu.waitFor({ state: 'visible', timeout: 5000 });
+  await menu.locator(`[data-option-value="${value}"]`).first().click();
+  await page.waitForSelector('[role="listbox"]', { state: 'detached', timeout: 5000 });
+}
+
+/** What the trigger currently holds, by value. */
+async function selectedValue(page, label) {
+  return page.locator(`[data-select-trigger="${label}"]`).first().getAttribute('data-select-value');
+}
+
+/** Every option's visible text, with the menu opened and closed again. */
+async function optionLabels(page, label) {
+  await page.locator(`[data-select-trigger="${label}"]`).first().click();
+  const menu = page.locator('[role="listbox"]').last();
+  await menu.waitFor({ state: 'visible', timeout: 5000 });
+  const labels = await menu.locator('[role="option"]').allInnerTexts();
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="listbox"]', { state: 'detached', timeout: 5000 });
+  return labels;
+}
+
 /** Kept module-level so a crash can still photograph what the page looked like. */
 let currentPage = null;
 
@@ -518,11 +546,11 @@ const run = async () => {
   await page.keyboard.press('Escape');
 
   await check('tipo de Portugal chega com o país já preenchido', async () =>
-    (await page.locator('select[aria-label="País emissor"]').inputValue()) === 'PT');
+    (await selectedValue(page, 'País emissor')) === 'PT');
   await check('titular criado sem sair do formulário', async () => {
-    const select = page.locator('select[aria-label="Titular"]');
-    const value = await select.inputValue();
-    return value !== '' && (await select.locator(`option[value="${value}"]`).textContent())?.includes('Maria Teste');
+    const chosen = await selectedValue(page, 'Titular');
+    const shown = await page.locator('[data-select-trigger="Titular"]').first().innerText();
+    return !!chosen && shown.includes('Maria Teste');
   });
   await page.locator('label:has-text("Número do título") input').first().fill('RP-2024-99887');
   await page.locator('label:has-text("Válido até") input').first().fill('2027-03-10');
@@ -807,10 +835,9 @@ const run = async () => {
   await page.locator('[role="dialog"] button:has-text("API Token")').first().click();
   await page.waitForSelector('[role="dialog"] >> text=Titular', { timeout: 5000 });
   await check('criar com filtro de pessoa pré-seleciona o titular', async () => {
-    const select = page.locator('select[aria-label="Titular"]');
-    const value = await select.inputValue();
-    if (!value) return false;
-    return ((await select.locator(`option[value="${value}"]`).textContent()) ?? '').includes('Maria Teste');
+    const chosen = await selectedValue(page, 'Titular');
+    if (!chosen) return false;
+    return (await page.locator('[data-select-trigger="Titular"]').first().innerText()).includes('Maria Teste');
   });
   await page.keyboard.press('Escape');
   await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
@@ -863,17 +890,17 @@ const run = async () => {
 
   // The theme lives in a pane of its own, one click away.
   await page.locator('[data-settings-nav] button:has-text("Aparência")').click();
-  await page.waitForSelector('select[aria-label="Tema"]', { timeout: 5000 });
+  await page.waitForSelector('[data-select-trigger="Tema"]', { timeout: 5000 });
   await check('trocar de painel troca o conteúdo', async () =>
     (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 0);
-  await page.selectOption('select[aria-label="Tema"]', 'light');
+  await chooseOption(page, 'Tema', 'light');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/05-settings-light.png` });
 
   // 11. Lock clears the decrypted state.
   await check('tema claro aplicado', async () =>
     (await page.evaluate(() => document.documentElement.dataset.theme)) === 'light');
-  await page.selectOption('select[aria-label="Tema"]', 'dark');
+  await chooseOption(page, 'Tema', 'dark');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+l');
   await page.waitForSelector('text=Desbloquear cofre', { timeout: 5000 });
@@ -1123,12 +1150,15 @@ const run = async () => {
   // for someone who already has a vault of their own, which is where the guest
   // flow used to have no door at all.
   await check('o topo da barra lateral diz em que cofre estamos', async () => {
-    const select = page.locator('select[aria-label="Cofre"]');
-    return (await select.count()) === 1 && (await select.inputValue()) === 'own';
+    const trigger = page.locator('[data-select-trigger="Cofre"]');
+    return (await trigger.count()) === 1 && (await selectedValue(page, 'Cofre')) === 'own';
   });
   await check('o seletor oferece abrir um cofre partilhado', async () => {
-    const options = await page.locator('select[aria-label="Cofre"] option').allInnerTexts();
-    return options.includes('Meu cofre') && options.some((text) => text.startsWith('Abrir um cofre partilhado'));
+    const options = await optionLabels(page, 'Cofre');
+    return (
+      options.some((text) => text.includes('Meu cofre')) &&
+      options.some((text) => text.startsWith('Abrir um cofre partilhado'))
+    );
   });
 
   // 11c-octies. The divider between the two halves of the sidebar: dragging it
@@ -1254,7 +1284,7 @@ const run = async () => {
   await page.click('button:has-text("Criar tipo personalizado")');
   await page.waitForSelector('text=Novo tipo personalizado', { timeout: 5000 });
   await page.fill('input[placeholder="Contrato de aluguel — Espanha"]', 'Contrato de aluguel — Espanha');
-  await page.selectOption('select[aria-label="Categoria do tipo"]', 'Espanha');
+  await chooseOption(page, 'Categoria do tipo', 'Espanha');
   await page.click('button:has-text("Adicionar campo")');
   await page.locator('[role="dialog"] button').filter({ hasText: 'Nº do documento, órgão' }).click();
   await page.fill('input[placeholder="Nome do campo"]', 'Número do contrato');
@@ -1367,23 +1397,45 @@ const run = async () => {
   await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
   await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
   await page.click('[role="dialog"] button:has-text("Declarações")');
-  await page.waitForSelector('select[aria-label="Tipo de declaração"]', { timeout: 5000 });
+  await page.waitForSelector('[data-select-trigger="Tipo de declaração"]', { timeout: 5000 });
   // Placeholders follow the subject: no "GitHub PAT" hint on a declaration.
   await check('o exemplo do nome acompanha o tipo escolhido', async () => {
     const generic = await page.locator('input[aria-label="Nome"]').getAttribute('placeholder');
-    await page.selectOption('select[aria-label="Tipo de declaração"]', 'pt-irs');
+    await chooseOption(page, 'Tipo de declaração', 'pt-irs');
     await page.waitForTimeout(150);
     const irs = await page.locator('input[aria-label="Nome"]').getAttribute('placeholder');
-    await page.selectOption('select[aria-label="Tipo de declaração"]', 'declaracao');
+    await chooseOption(page, 'Tipo de declaração', 'declaracao');
     await page.waitForTimeout(150);
     return /declara/i.test(generic ?? '') && irs === 'IRS 2025' && !/GitHub/.test(generic ?? '');
   });
   await check('a família abre o formulário com o seletor de tipo', async () => {
-    const options = await page.locator('select[aria-label="Tipo de declaração"] option').allTextContents();
+    const options = await optionLabels(page, 'Tipo de declaração');
     return options.includes('Declaração de IRS') && options.includes('Declaração de nascido vivo');
   });
+  // Esc dentro de um menu fechava o diálogo inteiro: o evento subia do portal
+  // até o handler do modal. Desistir de escolher não pode custar o formulário.
+  await check('Esc fecha o menu do seletor, não o diálogo', async () => {
+    await page.locator('[data-select-trigger="Tipo de declaração"]').first().click();
+    await page.locator('[role="listbox"]').last().waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    return (
+      (await page.locator('[role="listbox"]').count()) === 0 &&
+      (await page.locator('[role="dialog"]').count()) === 1
+    );
+  });
+  // Depois de clicar no gatilho o foco fica nele, e as setas não faziam nada.
+  await check('o teclado escolhe sem tocar no rato', async () => {
+    const before = await selectedValue(page, 'Tipo de declaração');
+    await page.locator('[data-select-trigger="Tipo de declaração"]').first().click();
+    await page.locator('[role="listbox"]').last().waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('[role="listbox"]', { state: 'detached', timeout: 5000 });
+    return (await selectedValue(page, 'Tipo de declaração')) !== before;
+  });
   await page.fill('input[aria-label="Nome"]', 'IRS 2025');
-  await page.selectOption('select[aria-label="Tipo de declaração"]', 'pt-irs');
+  await chooseOption(page, 'Tipo de declaração', 'pt-irs');
   await page.waitForTimeout(200);
   await check('escolher IRS troca os campos do formulário', async () =>
     (await page.locator('[role="dialog"] label:has-text("Ano fiscal")').count()) === 1 &&
@@ -1414,15 +1466,30 @@ const run = async () => {
   await page.click('[role="dialog"] button:has-text("Documento pessoal")');
   await page.click('[role="dialog"] button:has-text("Geral — qualquer país")');
   await page.click('[role="dialog"] button:has-text("Passaporte")');
-  await page.waitForSelector('select[aria-label="País emissor"]', { timeout: 5000 });
+  await page.waitForSelector('[data-select-trigger="País emissor"]', { timeout: 5000 });
   await check('documento geral abre sem país escolhido', async () =>
-    (await page.locator('select[aria-label="País emissor"]').inputValue()) === '');
+    (await selectedValue(page, 'País emissor')) === '');
   await check('o país emissor oferece o mundo todo, não só o catálogo', async () => {
-    const options = await page.locator('select[aria-label="País emissor"] option').allTextContents();
+    const options = await optionLabels(page, 'País emissor');
     return options.includes('Bélgica') && options.includes('Angola') && options.length > 200;
   });
+  // Duzentas opções não se leem: uma lista longa ganha um filtro, e o filtro
+  // ignora acentos, senão ninguém digita "Bélgica" com o teclado no meio.
+  await check('uma lista longa ganha um filtro que ignora acentos', async () => {
+    await page.locator('[data-select-trigger="País emissor"]').first().click();
+    const menu = page.locator('[role="listbox"]').last();
+    await menu.waitFor({ state: 'visible', timeout: 5000 });
+    const filter = menu.locator('input[aria-label="Filtrar opções"]');
+    if ((await filter.count()) !== 1) return false;
+    await filter.fill('belg');
+    await page.waitForTimeout(200);
+    const shown = await menu.locator('[role="option"]').allInnerTexts();
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[role="listbox"]', { state: 'detached', timeout: 5000 });
+    return shown.length > 0 && shown.every((text) => /bélgica/i.test(text));
+  });
   await page.fill('input[aria-label="Nome"]', 'Passaporte brasileiro');
-  await page.selectOption('select[aria-label="País emissor"]', 'BR');
+  await chooseOption(page, 'País emissor', 'BR');
   await page.click('footer button:has-text("Salvar")');
   await page.waitForSelector('h2:has-text("Passaporte brasileiro")', { timeout: 5000 });
   await check('o detalhe mostra o país escolhido', async () =>
@@ -1446,15 +1513,17 @@ const run = async () => {
   // a phone the sidebar is a drawer and on a desktop this is where the eye is.
   const total = await page.locator('main li').count();
   await check('a lista traz filtros de pessoa, país e tipo', async () =>
-    (await page.locator('main select[aria-label="Pessoa"]').count()) === 1 &&
-    (await page.locator('main select[aria-label="País"]').count()) === 1 &&
-    (await page.locator('main select[aria-label="Tipo"]').count()) === 1);
-  const personOption = await page
-    .locator('main select[aria-label="Pessoa"] option')
+    (await page.locator('main [data-select-trigger="Pessoa"]').count()) === 1 &&
+    (await page.locator('main [data-select-trigger="País"]').count()) === 1 &&
+    (await page.locator('main [data-select-trigger="Tipo"]').count()) === 1);
+  // The filter menu labels people by name; the value behind it is an id.
+  await page.locator('main [data-select-trigger="Pessoa"]').first().click();
+  await page
+    .locator('[role="listbox"] [role="option"]')
     .filter({ hasText: 'Maria Teste' })
     .first()
-    .getAttribute('value');
-  await page.selectOption('main select[aria-label="Pessoa"]', personOption ?? '');
+    .click();
+  await page.waitForSelector('[role="listbox"]', { state: 'detached', timeout: 5000 });
   await page.waitForTimeout(300);
   await check('filtrar por pessoa na lista reduz os itens', async () => {
     // Sob o filtro da pessoa a linha não repete o titular (ver 8c), então a
@@ -1465,7 +1534,7 @@ const run = async () => {
   });
   await check('a barra oferece limpar os filtros ativos', async () =>
     (await page.locator('main button:has-text("Limpar")').count()) === 1);
-  await page.selectOption('main select[aria-label="País"]', 'PT');
+  await chooseOption(page, 'País', 'PT');
   await page.waitForTimeout(300);
   await check('país e pessoa se somam como filtros', async () =>
     (await page.locator('main li:has-text("Título de residência — Maria")').count()) === 1 &&
@@ -1473,7 +1542,7 @@ const run = async () => {
   await page.click('main button:has-text("Limpar")');
   await page.waitForTimeout(300);
   await check('limpar devolve a lista inteira', async () =>
-    (await page.locator('main select[aria-label="Pessoa"]').inputValue()) === '' &&
+    (await selectedValue(page, 'Pessoa')) === '' &&
     (await page.locator('main li').count()) > 1);
 
   // 11c-quater. Filing by drag: a row dropped on a folder or a person in the
@@ -1519,8 +1588,8 @@ const run = async () => {
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.
   await openSettings(page, 'Segurança');
-  await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
-  await page.selectOption('select[aria-label="Bloquear automaticamente"]', '0');
+  await page.waitForSelector('[data-select-trigger="Bloquear automaticamente"]', { timeout: 5000 });
+  await chooseOption(page, 'Bloquear automaticamente', '0');
   await page.waitForTimeout(500);
   await page.keyboard.press('Escape');
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -1550,8 +1619,8 @@ const run = async () => {
   // app switch can reload the page, and a reload inside the inactivity window
   // must not demand the master password.
   await openSettings(page, 'Segurança');
-  await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
-  await page.selectOption('select[aria-label="Bloquear automaticamente"]', '15');
+  await page.waitForSelector('[data-select-trigger="Bloquear automaticamente"]', { timeout: 5000 });
+  await chooseOption(page, 'Bloquear automaticamente', '15');
   await page.waitForTimeout(500);
   await page.keyboard.press('Escape');
   await check('bloqueio por tempo guarda a chave com prazo futuro', async () => {

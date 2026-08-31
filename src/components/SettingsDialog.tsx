@@ -1,6 +1,6 @@
 /** Account, people, security, appearance, backup and danger-zone settings. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Field, IconButton, Modal, PasswordInput, Switch, TextInput } from './ui';
+import { Button, Field, IconButton, Modal, PasswordInput, Select, Switch, TextInput } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
 import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
@@ -149,9 +149,6 @@ function PeopleSection() {
     </Section>
   );
 }
-
-const selectClass =
-  'min-w-0 max-w-full rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none pointer-coarse:rounded-xl pointer-coarse:px-3 pointer-coarse:py-2.5';
 
 /*
  * A `select` refuses to shrink below its widest option, so on narrow phones
@@ -524,7 +521,7 @@ function SecurityPane() {
     <>
       <Section title="Segurança">
         <div className="space-y-1">
-          <label className={prefRowClass}>
+          <div className={prefRowClass}>
             <span className={prefLabelClass}>
               Bloquear automaticamente
               <span className="mt-0.5 block text-xs text-muted">
@@ -533,39 +530,41 @@ function SecurityPane() {
                   : 'Sem uso por esse tempo, a senha é pedida de novo. Recarregar dentro do período mantém o cofre aberto.'}
               </span>
             </span>
-            <select
-              className={`${selectClass} ml-auto`}
+            <Select
+              className="ml-auto"
+              align="end"
               aria-label="Bloquear automaticamente"
-              value={prefs.autoLockMinutes}
-              onChange={(event) => void actions.updatePreferences({ autoLockMinutes: Number(event.target.value) })}
-            >
-              <option value={1}>1 minuto</option>
-              <option value={5}>5 minutos</option>
-              <option value={15}>15 minutos</option>
-              <option value={30}>30 minutos</option>
-              <option value={60}>1 hora</option>
-              <option value={0}>Nunca (não recomendado)</option>
-            </select>
-          </label>
-          <label className={prefRowClass}>
+              value={String(prefs.autoLockMinutes)}
+              onChange={(next) => void actions.updatePreferences({ autoLockMinutes: Number(next) })}
+              options={[
+                { value: '1', label: '1 minuto' },
+                { value: '5', label: '5 minutos' },
+                { value: '15', label: '15 minutos' },
+                { value: '30', label: '30 minutos' },
+                { value: '60', label: '1 hora' },
+                { value: '0', label: 'Nunca', hint: 'Não recomendado' },
+              ]}
+            />
+          </div>
+          <div className={prefRowClass}>
             <span className={prefLabelClass}>
               Limpar área de transferência
               <span className="mt-0.5 block text-xs text-muted">Após copiar um segredo.</span>
             </span>
-            <select
-              className={`${selectClass} ml-auto`}
+            <Select
+              className="ml-auto"
+              align="end"
               aria-label="Limpar área de transferência"
-              value={prefs.clipboardClearSeconds}
-              onChange={(event) =>
-                void actions.updatePreferences({ clipboardClearSeconds: Number(event.target.value) })
-              }
-            >
-              <option value={10}>10 segundos</option>
-              <option value={30}>30 segundos</option>
-              <option value={60}>1 minuto</option>
-              <option value={0}>Não limpar</option>
-            </select>
-          </label>
+              value={String(prefs.clipboardClearSeconds)}
+              onChange={(next) => void actions.updatePreferences({ clipboardClearSeconds: Number(next) })}
+              options={[
+                { value: '10', label: '10 segundos' },
+                { value: '30', label: '30 segundos' },
+                { value: '60', label: '1 minuto' },
+                { value: '0', label: 'Não limpar' },
+              ]}
+            />
+          </div>
           <Switch
             label="Ocultar segredos por padrão"
             description="Exige um clique em “revelar” para exibir cada valor."
@@ -753,46 +752,46 @@ function AppearancePane() {
     <>
       <Section title="Aparência e avisos">
         <div className="space-y-1">
-          <label className={prefRowClass}>
+          <div className={prefRowClass}>
             <span className={prefLabelClass}>
               Tema
               <span className="mt-0.5 block text-xs text-muted">
                 Vale para este dispositivo e acompanha o cofre nos outros.
               </span>
             </span>
-            <select
-              className={`${selectClass} ml-auto`}
+            <Select
+              className="ml-auto"
+              align="end"
               aria-label="Tema"
               value={prefs.theme}
-              onChange={(event) =>
-                void actions.updatePreferences({ theme: event.target.value === 'light' ? 'light' : 'dark' })
-              }
-            >
-              <option value="dark">Escuro</option>
-              <option value="light">Claro</option>
-            </select>
-          </label>
-          <label className={prefRowClass}>
+              onChange={(next) => void actions.updatePreferences({ theme: next === 'light' ? 'light' : 'dark' })}
+              options={[
+                { value: 'dark', label: 'Escuro' },
+                { value: 'light', label: 'Claro' },
+              ]}
+            />
+          </div>
+          <div className={prefRowClass}>
             <span className={prefLabelClass}>
               Avisar sobre validade
               <span className="mt-0.5 block text-xs text-muted">
                 Com quanta antecedência um documento aparece como “vence em breve”.
               </span>
             </span>
-            <select
-              className={`${selectClass} ml-auto`}
+            <Select
+              className="ml-auto"
+              align="end"
               aria-label="Avisar sobre validade"
-              value={prefs.expiryWarningDays}
-              onChange={(event) =>
-                void actions.updatePreferences({ expiryWarningDays: Number(event.target.value) })
-              }
-            >
-              <option value={30}>30 dias</option>
-              <option value={60}>60 dias</option>
-              <option value={90}>90 dias</option>
-              <option value={180}>6 meses</option>
-            </select>
-          </label>
+              value={String(prefs.expiryWarningDays)}
+              onChange={(next) => void actions.updatePreferences({ expiryWarningDays: Number(next) })}
+              options={[
+                { value: '30', label: '30 dias' },
+                { value: '60', label: '60 dias' },
+                { value: '90', label: '90 dias' },
+                { value: '180', label: '6 meses' },
+              ]}
+            />
+          </div>
         </div>
       </Section>
     </>
@@ -1212,15 +1211,15 @@ function SharingPane() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-muted">
             Acesso
-            <select
-              className={selectClass}
+            <Select
               aria-label="Tipo de acesso"
               value={role}
-              onChange={(event) => setRole(event.target.value === 'writer' ? 'writer' : 'reader')}
-            >
-              <option value="reader">Só leitura</option>
-              <option value="writer">Pode editar</option>
-            </select>
+              onChange={(next) => setRole(next === 'writer' ? 'writer' : 'reader')}
+              options={[
+                { value: 'reader', label: 'Só leitura' },
+                { value: 'writer', label: 'Pode editar' },
+              ]}
+            />
           </label>
           <Button
             size="sm"
