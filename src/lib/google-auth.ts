@@ -172,11 +172,37 @@ export class GoogleAuth {
   }
 
   /**
-   * @param interactive `false` attempts a silent renewal and fails fast when
-   * consent or a session is required.
+   * Loads Google's script and builds the client ahead of time.
+   *
+   * Not an optimisation: browsers only allow a window to open from inside the
+   * task that handled the click, and an `await` for a script that has not
+   * downloaded yet breaks that chain. Preloading at boot means the click
+   * handler reaches `requestAccessToken` with nothing between them.
+   */
+  async preload(): Promise<void> {
+    await this.ensureClient().catch(() => undefined);
+  }
+
+  /**
+   * @param interactive `false` means "use the token we already hold" and
+   * nothing more.
+   *
+   * There is no such thing as a silent request here. GIS opens a window every
+   * time — `prompt: ''` only means Google may close it again without asking
+   * anything — and a window opened with no click behind it is blocked on the
+   * desktop and, on a phone, can take the whole page to Google and leave it on
+   * a blank callback with nothing to return to. So a non-interactive call never
+   * touches GIS: it hands back what is in memory or fails, and whoever needed
+   * it asks the user for a gesture.
    */
   async requestToken(interactive: boolean, hint?: string): Promise<string> {
     if (this.isSignedIn) return this.token!;
+    if (!interactive) {
+      throw new GoogleAuthError(
+        'A sessão com o Google expirou neste dispositivo. Toque em Sincronizar para reconectar.',
+        'needs_gesture',
+      );
+    }
     this.pending ??= this.withNarrowFallback(interactive, hint).finally(() => {
       this.pending = null;
     });
