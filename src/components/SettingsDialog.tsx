@@ -1019,10 +1019,24 @@ const TABS: { id: string; label: string; icon: string; render: (onClose: () => v
   { id: 'avancado', label: 'Avançado', icon: 'settings', render: (onClose) => <AdvancedPane onClose={onClose} /> },
 ];
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({
+  open,
+  onClose,
+  initialPane,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Which pane to land on — a banner elsewhere sending the user somewhere specific. */
+  initialPane?: string;
+}) {
   const { payload } = useKeeper();
   const [tab, setTab] = useState(TABS[0]!.id);
   const active = TABS.find((entry) => entry.id === tab) ?? TABS[0]!;
+
+  // Only on the way in: switching panes by hand afterwards must stick.
+  useEffect(() => {
+    if (open && initialPane) setTab(initialPane);
+  }, [open, initialPane]);
 
   if (!payload) return null;
 
