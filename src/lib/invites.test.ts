@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_ITERATIONS } from './crypto';
+import { MIN_ITERATIONS, generateContentKey } from './crypto';
 import {
   InviteCodeError,
   createIdentity,
@@ -9,10 +9,11 @@ import {
   inviteCode,
   isSharesFile,
   readInviteCode,
+  rewrapShare,
   unwrapWithIdentity,
   wrapForRecipient,
 } from './invites';
-import { createVault, emptyPayload, openVaultWithDataKey, resealVault, unlockVault } from './vault';
+import { createVault, emptyPayload, openVaultWithDataKey, resealVault, sealVault, unlockVault } from './vault';
 import { createItem, type VaultItem } from './model';
 
 const iterations = MIN_ITERATIONS;
@@ -158,6 +159,48 @@ describe('o convidado escrevendo de volta', () => {
 
     const dataKey = await unwrapWithIdentity(record, maria);
     expect(dataKey.extractable).toBe(false);
+  });
+});
+
+describe('rodar a chave sem cortar quem fica', () => {
+  it('reembrulha o registo para a mesma pessoa com a chave nova', async () => {
+    const { keys } = await createVault(PASSWORD, emptyPayload(), iterations);
+    const maria = await createIdentity();
+    const before = await wrapForRecipient(keys.data, maria.publicKey, { label: 'Maria', role: 'writer' });
+
+    const nova = await generateContentKey();
+    const after = await rewrapShare(before, nova);
+
+    // A identidade do registo é a mesma: é a mesma partilha, outra chave.
+    expect(after.id).toBe(before.id);
+    expect(after.fingerprint).toBe(before.fingerprint);
+    expect(after.label).toBe('Maria');
+    expect(after.role).toBe('writer');
+    expect(after.createdAt).toBe(before.createdAt);
+    expect(after.key).not.toBe(before.key);
+
+    const opened = await unwrapWithIdentity(after, maria);
+    const sealed = await sealVault({ derived: keys.derived, data: nova }, {
+      ...emptyPayload(),
+      items: [itemWith('Depois da rotação')],
+    });
+    expect((await openVaultWithDataKey(sealed, opened)).items.map((item) => item.name)).toEqual([
+      'Depois da rotação',
+    ]);
+  });
+
+  it('o registo antigo não abre o cofre novo', async () => {
+    const { keys } = await createVault(PASSWORD, emptyPayload(), iterations);
+    const joao = await createIdentity();
+    const old = await wrapForRecipient(keys.data, joao.publicKey, { label: 'João', role: 'reader' });
+
+    const nova = await generateContentKey();
+    const sealed = await sealVault({ derived: keys.derived, data: nova }, emptyPayload());
+
+    // Ele ainda abre o registo dele — o que ele já tinha, tinha. Mas a chave
+    // que sai dali não abre mais o cofre, que é o ponto de revogar.
+    const stale = await unwrapWithIdentity(old, joao);
+    await expect(openVaultWithDataKey(sealed, stale)).rejects.toThrow();
   });
 });
 

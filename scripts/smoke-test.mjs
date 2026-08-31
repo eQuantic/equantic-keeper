@@ -284,9 +284,14 @@ let failures = 0;
  * its own pane is the active one, so every visit has to say which it wants.
  */
 async function openSettings(page, pane) {
-  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 }).catch(() => undefined);
-  await page.locator('nav button:has-text("Configurações")').filter({ visible: true }).first().click();
-  await page.waitForSelector('[data-settings-nav]', { timeout: 5000 });
+  // Already open? Just switch panes. Clicking the sidebar entry behind the
+  // overlay would hang until the timeout, which is a confusing way to learn
+  // that the previous step forgot to close the dialog.
+  if ((await page.locator('[data-settings-nav]').count()) === 0) {
+    await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 }).catch(() => undefined);
+    await page.locator('nav button:has-text("Configurações")').filter({ visible: true }).first().click();
+    await page.waitForSelector('[data-settings-nav]', { timeout: 5000 });
+  }
   await page.locator(`[data-settings-nav] button:has-text("${pane}")`).click();
   // The pane and its entry in the list have to agree: a highlight left on the
   // previous entry is how a settings dialog starts lying about where you are.
@@ -802,6 +807,14 @@ const run = async () => {
   await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
   await page.locator('nav button:has-text("Tudo")').click();
   await page.waitForTimeout(300);
+
+  // Sharing needs an account and a real folder, neither of which exists here.
+  // What it must do without them is explain itself, not offer a form that
+  // cannot work.
+  await openSettings(page, 'Partilha');
+  await check('a partilha pede a conta antes de qualquer formulário', async () =>
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para partilhar').count()) === 1 &&
+    (await page.locator('[role="dialog"] textarea[aria-label="Código de convite"]').count()) === 0);
 
   await openSettings(page, 'Conta e Drive');
   await page.waitForSelector('[role="dialog"] >> text=Espaço no Google Drive', { timeout: 5000 });

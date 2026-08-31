@@ -41,6 +41,9 @@ import {
   readMovedMarker,
   repointAttachments,
 } from '../lib/drive-migration';
+import { rewrapShare, type ShareRecord } from '../lib/invites';
+import { grantAccess, readShares, removeAccess, writeShares, type StoredShares } from '../lib/sharing';
+import type { DrivePermission } from '../lib/drive';
 import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError } from '../lib/google-auth';
 import { createFolder, registerCustomTypes } from '../lib/model';
 import {
@@ -146,6 +149,12 @@ export interface KeeperActions {
   moveToDriveFolder(): Promise<void>;
   /** Deletes the app-folder copy once the new folder is verified complete. */
   discardOldDriveCopy(): Promise<{ deleted: number; missing: string[] }>;
+  /** Gives one person the folder and a copy of the vault's key. */
+  shareVault(input: { code: string; label: string; email: string; role: 'reader' | 'writer' }): Promise<void>;
+  /** Who the vault is shared with, from both sides: the keys and the Drive. */
+  listShares(): Promise<{ shares: ShareRecord[]; permissions: DrivePermission[] }>;
+  /** Takes one person's access away and rotates the key so a kept copy dies. */
+  revokeShare(recordId: string): Promise<void>;
   /** What this vault costs the Drive account, or null when not connected. */
   driveUsage(): Promise<DriveUsage | null>;
   currentVaultFile(): VaultFile | null;
@@ -1271,6 +1280,104 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * "is it all there?" is checked rather than assumed. What it leaves behind is
    * the marker: other devices still need to be told where the vault went.
    */
+  /**
+   * Everything sharing needs and refuses to guess at: an open vault, a folder
+   * the Drive can actually share, and the key to wrap.
+   */
+  const sharingContext = useCallback(() => {
+    const drive = driveRef.current;
+    const keys = keysRef.current;
+    const folderId = storage.loadDriveFolder();
+    if (!drive || !keys) throw new Error('Abra o cofre e conecte a conta Google para partilhar.');
+    if (!folderId) {
+      throw new Error(
+        'O cofre ainda está na pasta oculta do app, que o Drive não deixa partilhar. Mova-o para uma pasta ' +
+          'do seu Drive em Configurações → Onde o cofre fica.',
+      );
+    }
+    return { drive, keys, folderId };
+  }, []);
+
+  const listShares = useCallback(async () => {
+    const { drive, folderId } = sharingContext();
+    const stored = await readShares(drive);
+    // The Drive side can disagree with ours — someone removed by hand in the
+    // Drive UI, say. Reading both is how that becomes visible instead of a lie.
+    const permissions = await drive.folderPermissions(folderId).catch(() => []);
+    return { shares: stored.file.shares, permissions };
+  }, [sharingContext]);
+
+  const shareVault = useCallback(
+    async (input: { code: string; label: string; email: string; role: 'reader' | 'writer' }) => {
+      const { drive, keys, folderId } = sharingContext();
+      await grantAccess(drive, folderId, keys.data, input);
+    },
+    [sharingContext],
+  );
+
+  /**
+   * Mints a new data key and moves everything that hangs off the old one onto
+   * it: the attachments, the vault itself, and the records of everyone who is
+   * staying. What it leaves behind is the point — a copy of the vault someone
+   * kept before this runs stops opening with the key they hold.
+   */
+  const rotateDataKey = useCallback(
+    async (drive: DriveClient, keep: ShareRecord[], stored: StoredShares) => {
+      const keys = keysRef.current;
+      const payload = payloadRef.current;
+      if (!keys || !payload) throw new Error('O cofre está bloqueado.');
+
+      const next: VaultKeys = { derived: keys.derived, data: await generateContentKey() };
+      const items = await Promise.all(
+        payload.items.map(async (item) => {
+          if (item.attachments.length === 0) return item;
+          const attachments = await Promise.all(
+            item.attachments.map(async (ref) => {
+              try {
+                return await rewrapAttachment(ref, keys.data, next.data);
+              } catch {
+                return ref;
+              }
+            }),
+          );
+          return { ...item, attachments };
+        }),
+      );
+
+      // Everyone who stays gets the new key before the vault is sealed with it,
+      // so nobody is locked out between the two writes.
+      await writeShares(drive, stored, await Promise.all(keep.map((record) => rewrapShare(record, next.data))));
+
+      const rotated = { ...payload, items };
+      keysRef.current = next;
+      setPayload(rotated);
+      await persistLocal(rotated);
+      await runSync({ force: true });
+    },
+    [persistLocal, runSync, setPayload],
+  );
+
+  const revokeShare = useCallback(
+    async (recordId: string) => {
+      const { drive, folderId } = sharingContext();
+      patch({ busy: true, error: null });
+      try {
+        const plan = await removeAccess(drive, folderId, recordId);
+        await rotateDataKey(drive, plan.keep, plan.stored);
+        patch({
+          busy: false,
+          notice: plan.removed
+            ? `${plan.removed.label} não tem mais acesso, e a chave do cofre foi trocada — uma cópia que tenha ` +
+              'ficado com essa pessoa deixa de abrir.'
+            : 'Acesso removido.',
+        });
+      } catch (error) {
+        fail(error, 'Não foi possível revogar o acesso.');
+      }
+    },
+    [fail, patch, rotateDataKey, sharingContext],
+  );
+
   const discardOldDriveCopy = useCallback(async () => {
     const drive = driveRef.current;
     const folderId = storage.loadDriveFolder();
@@ -1521,6 +1628,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       collectAttachments,
       moveToDriveFolder,
       discardOldDriveCopy,
+      shareVault,
+      listShares,
+      revokeShare,
       sweepDriveOrphans,
       driveUsage: readDriveUsage,
       currentVaultFile,
@@ -1562,6 +1672,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       signOut,
       moveToDriveFolder,
       discardOldDriveCopy,
+      shareVault,
+      listShares,
+      revokeShare,
       sweepDriveOrphans,
       readDriveUsage,
       syncNow,

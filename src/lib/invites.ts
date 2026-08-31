@@ -45,6 +45,12 @@ export interface ShareRecord {
   id: string;
   /** Who this was wrapped for — how a recipient finds their own record. */
   fingerprint: string;
+  /**
+   * The recipient's public key (base64 raw point). Public by definition, and
+   * kept because rotating the vault's data key means wrapping it again for
+   * everyone who stays — which needs their key, not just their fingerprint.
+   */
+  recipient: string;
   /** The one-off public key this wrap was made with (base64 raw point). */
   ephemeral: string;
   salt: string;
@@ -167,9 +173,11 @@ async function sharedKey(
 export async function wrapForRecipient(
   dataKey: CryptoKey,
   recipient: CryptoKey,
-  details: { label: string; role: ShareRecord['role']; email?: string },
+  details: { label: string; role: ShareRecord['role']; email?: string; id?: string; createdAt?: string },
 ): Promise<ShareRecord> {
-  const id = crypto.randomUUID();
+  // Keeping the id is what makes a rewrap a rewrap: the owner's list, and the
+  // AAD binding the wrap to its slot, both hang off it.
+  const id = details.id ?? crypto.randomUUID();
   const print = await fingerprint(recipient);
   const salt = randomBytes(16);
   const iv = randomBytes(12);
@@ -187,6 +195,7 @@ export async function wrapForRecipient(
   return {
     id,
     fingerprint: print,
+    recipient: toBase64(await rawPublicKey(recipient)),
     ephemeral: toBase64(await rawPublicKey(ephemeral.publicKey)),
     salt: toBase64(salt),
     iv: toBase64(iv),
@@ -194,8 +203,26 @@ export async function wrapForRecipient(
     role: details.role,
     label: details.label,
     ...(details.email ? { email: details.email } : {}),
-    createdAt: new Date().toISOString(),
+    createdAt: details.createdAt ?? new Date().toISOString(),
   };
+}
+
+/**
+ * Wraps a NEW data key for someone who already had a record.
+ *
+ * This is what keeps a rotation from cutting off the people who are staying:
+ * revoking one person mints a fresh data key, and everyone else's record has to
+ * be rewritten around it before the vault is sealed again.
+ */
+export async function rewrapShare(record: ShareRecord, dataKey: CryptoKey): Promise<ShareRecord> {
+  const recipient = await importPublicKey(fromBase64(record.recipient));
+  return wrapForRecipient(dataKey, recipient, {
+    label: record.label,
+    role: record.role,
+    id: record.id,
+    createdAt: record.createdAt,
+    ...(record.email ? { email: record.email } : {}),
+  });
 }
 
 /**

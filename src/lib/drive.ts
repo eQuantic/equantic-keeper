@@ -27,6 +27,7 @@ const FILES_API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILE_FIELDS = 'id,name,modifiedTime,size,headRevisionId';
 const ABOUT_API = 'https://www.googleapis.com/drive/v3/about';
+const PERMISSION_FIELDS = 'id,emailAddress,role,type,displayName';
 
 export interface DriveFileMeta {
   id: string;
@@ -41,6 +42,15 @@ export interface DriveFileMeta {
  * user's own. Everything else about the client is identical.
  */
 export type DriveSpace = { kind: 'appdata' } | { kind: 'folder'; id: string };
+
+/** Who else can reach the folder, as Drive sees it. */
+export interface DrivePermission {
+  id: string;
+  role: 'owner' | 'writer' | 'reader' | 'commenter' | 'organizer' | 'fileOrganizer';
+  type: 'user' | 'group' | 'domain' | 'anyone';
+  emailAddress?: string;
+  displayName?: string;
+}
 
 export interface RemoteVault {
   meta: DriveFileMeta;
@@ -254,7 +264,7 @@ export class DriveClient implements DriveApi, DriveBlobApi {
     return { meta, file: await this.download(meta.id) };
   }
 
-  async create(name: string, file: VaultFile): Promise<DriveFileMeta> {
+  async create(name: string, file: unknown): Promise<DriveFileMeta> {
     const boundary = `keeper-${crypto.randomUUID()}`;
     const body =
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
@@ -270,7 +280,7 @@ export class DriveClient implements DriveApi, DriveBlobApi {
     return (await response.json()) as DriveFileMeta;
   }
 
-  async update(fileId: string, file: VaultFile): Promise<DriveFileMeta> {
+  async update(fileId: string, file: unknown): Promise<DriveFileMeta> {
     const response = await this.request(`${UPLOAD_API}/${fileId}?uploadType=media&fields=${FILE_FIELDS}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -281,6 +291,58 @@ export class DriveClient implements DriveApi, DriveBlobApi {
 
   async delete(fileId: string): Promise<void> {
     await this.request(`${FILES_API}/${fileId}`, { method: 'DELETE' });
+  }
+
+  /**
+   * Reads one JSON document from this space by name — the shares list lives
+   * beside the vault rather than inside it, so a recipient can find their own
+   * key without first being able to decrypt anything.
+   */
+  async readJson<T>(name: string, guard: (value: unknown) => value is T): Promise<{ meta: DriveFileMeta; value: T } | null> {
+    const [meta] = await this.listFiles(`name = '${name}' and trashed = false`);
+    if (!meta) return null;
+    const response = await this.request(`${FILES_API}/${meta.id}?alt=media`);
+    const raw: unknown = await response.json().catch(() => null);
+    if (!guard(raw)) throw new DriveError(`O arquivo "${name}" no Drive não está no formato esperado.`);
+    return { meta, value: raw };
+  }
+
+  /** Writes it back, creating the file the first time. */
+  async writeJson(name: string, value: unknown, fileId?: string): Promise<DriveFileMeta> {
+    return fileId ? this.update(fileId, value) : this.create(name, value);
+  }
+
+  /**
+   * Gives another Google account access to the folder — the second half of
+   * sharing, and the half a key cannot do: the recipient has to be able to
+   * download the bytes before there is anything for their key to open.
+   *
+   * No notification e-mail: the owner is already talking to this person (that
+   * is how the invite code got here), and a mail from Google saying a folder of
+   * documents was shared is not a message anyone chose to send.
+   */
+  async shareFolder(folderId: string, email: string, role: 'reader' | 'writer'): Promise<DrivePermission> {
+    const response = await this.request(
+      `${FILES_API}/${folderId}/permissions?sendNotificationEmail=false&fields=${PERMISSION_FIELDS}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'user', role, emailAddress: email }),
+      },
+    );
+    return (await response.json()) as DrivePermission;
+  }
+
+  async folderPermissions(folderId: string): Promise<DrivePermission[]> {
+    const response = await this.request(
+      `${FILES_API}/${folderId}/permissions?fields=permissions(${PERMISSION_FIELDS})&pageSize=100`,
+    );
+    const data = (await response.json()) as { permissions?: DrivePermission[] };
+    return data.permissions ?? [];
+  }
+
+  async revokePermission(folderId: string, permissionId: string): Promise<void> {
+    await this.request(`${FILES_API}/${folderId}/permissions/${permissionId}`, { method: 'DELETE' });
   }
 
   /**
