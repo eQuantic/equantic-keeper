@@ -17,6 +17,7 @@ import {
 } from '../lib/model';
 import { DOCUMENT_ORIGINS } from '../lib/documents';
 import { allCountries, countryName } from '../lib/countries';
+import { resolveMask } from '../lib/mask';
 import { loadNotePanes, pushRecentType, saveNotePanes } from '../lib/storage';
 import { TypeWizard } from './TypeWizard';
 import { activeFolders, activePeople } from '../lib/vault';
@@ -25,6 +26,7 @@ import {
   Button,
   ComboInput,
   Field,
+  MaskedInput,
   IconButton,
   Modal,
   PasswordInput,
@@ -102,6 +104,8 @@ function FieldInput({
 }) {
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const secret = isSecretKind(field.kind);
+  // Resolved against what is typed: a card number groups by brand.
+  const mask = resolveMask(field, value);
   const generatable = field.kind === 'password' || field.kind === 'secret';
 
   // The card's color field edits as swatches, not as text.
@@ -133,7 +137,7 @@ function FieldInput({
   ) : secret ? (
     <PasswordInput
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      {...(mask ? { mask, onValueChange: onChange } : { onChange: (event) => onChange(event.target.value) })}
       placeholder={field.placeholder ?? ''}
       autoComplete="off"
       spellCheck={false}
@@ -144,6 +148,17 @@ function FieldInput({
       defaultRevealed={field.numeric}
       revealLabel="Revelar"
       hideLabel="Ocultar"
+    />
+  ) : mask ? (
+    <MaskedInput
+      mask={mask}
+      value={value}
+      onChange={onChange}
+      placeholder={field.placeholder ?? ''}
+      autoComplete="off"
+      spellCheck={false}
+      inputMode={field.numeric ? 'numeric' : undefined}
+      autoCapitalize={field.numeric ? 'none' : undefined}
     />
   ) : (
     <TextInput

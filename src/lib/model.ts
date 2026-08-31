@@ -25,6 +25,15 @@ export interface FieldDef {
   /** Set on digits-only fields so phones open the numeric keypad. */
   numeric?: boolean;
   /**
+   * Formats the value as it is typed: `0` takes a digit, `A` a letter, `*`
+   * either, and anything else is punctuation the mask puts in. A CPF is written
+   * `000.000.000-00` on every form the person has ever filled — a bare run of
+   * digits is where a transposed pair hides.
+   */
+  mask?: string;
+  /** For a mask that depends on the value: a card number groups by brand. */
+  dynamicMask?: 'card';
+  /**
    * Closed-ish list of values for this field. Rendered as an editable select:
    * the options are what people almost always type, and anything else can
    * still be typed — see ComboInput.

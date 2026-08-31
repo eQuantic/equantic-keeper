@@ -1145,6 +1145,100 @@ const run = async () => {
     return Math.abs(after - before.top) <= 1 && Math.abs(before.bottom - before.navBottom) <= 2;
   });
 
+  // 11c-quinquies-bis. Masks: a CPF is written 000.000.000-00 on every form the
+  // person has ever filled, and a run of digits is where a transposed pair hides.
+  await page.click('header button:has-text("Novo")');
+  await page.waitForSelector('text=O que você quer guardar?', { timeout: 5000 });
+  await page.click('button:has-text("Documento pessoal")');
+  await page.waitForSelector('text=De onde é o documento?', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Brasil")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("CPF")');
+  await page.waitForSelector('[role="dialog"] label:has-text("CPF")', { timeout: 5000 });
+  const cpfInput = page.locator('[role="dialog"] label:has-text("CPF") input').first();
+  await check('o CPF se formata enquanto se digita', async () => {
+    await cpfInput.click();
+    await page.keyboard.type('123');
+    const three = await cpfInput.inputValue();
+    await page.keyboard.type('4');
+    const four = await cpfInput.inputValue();
+    await page.keyboard.type('5678900');
+    const full = await cpfInput.inputValue();
+    // Sem pontuação pendurada no fim: o ponto entra com o dígito seguinte.
+    return three === '123' && four === '123.4' && full === '123.456.789-00';
+  });
+  await check('digitar no meio não faz o cursor saltar', async () => {
+    // Apagar um dígito do meio e escrever outro: o valor tem de continuar
+    // formatado e o cursor tem de ficar onde a pessoa estava.
+    await cpfInput.click();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.type('9');
+    const value = await cpfInput.inputValue();
+    const caret = await cpfInput.evaluate((el) => el.selectionStart);
+    return value === '123.945.678-90' && caret === 5;
+  });
+  // O formulário está sujo, então sair pede confirmação.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
+
+  // 11c-sexies-bis. The right button on a row. Everything it offers has another
+  // way in, but all of those cost a trip somewhere else.
+  await page.click('main li:has-text("GitHub PAT") >> nth=0', { button: 'right' });
+  await page.waitForSelector('[data-context-menu]', { timeout: 5000 });
+  await check('o botão direito abre o menu do item', async () => {
+    const labels = await page.locator('[data-context-menu] [role="menuitem"]').allInnerTexts();
+    return (
+      labels.some((text) => text.includes('Editar')) &&
+      labels.some((text) => text.includes('favoritos')) &&
+      labels.some((text) => text.includes('Mover para')) &&
+      labels.some((text) => text.includes('Titular')) &&
+      labels.some((text) => text.includes('lixeira'))
+    );
+  });
+  await check('a lista de pastas abre dentro do próprio menu', async () => {
+    await page.click('[data-context-menu] [data-menu-item="folder"]');
+    await page.waitForTimeout(200);
+    const labels = await page.locator('[data-context-menu] [role="menuitem"]').allInnerTexts();
+    return labels.includes('Sem pasta') && labels.some((text) => text.includes('Infra'));
+  });
+  await page.screenshot({ path: `${OUT}/03b-menu-item.png` });
+  await check('escolher a pasta move o item de verdade', async () => {
+    await page.click('[data-context-menu] [role="menuitem"]:has-text("Produtos")');
+    await page.waitForSelector('[data-context-menu]', { state: 'detached', timeout: 5000 });
+    await page.waitForTimeout(400);
+    // Prova pela pasta, não pela lista inteira: o item tem de estar lá dentro.
+    await page.click('nav button:has-text("Produtos")');
+    await page.locator('main li').first().waitFor({ state: 'visible', timeout: 5000 });
+    const moved = (await page.locator('main li:has-text("GitHub PAT")').count()) === 1;
+    await page.click('nav button:has-text("Tudo")');
+    await page.locator('main li:has-text("Azure Container Registry")').first().waitFor({ timeout: 5000 });
+    return moved;
+  });
+  await check('favoritar pelo menu marca o item', async () => {
+    await page.click('main li:has-text("Azure Container Registry") >> nth=0', { button: 'right' });
+    await page.waitForSelector('[data-context-menu]', { timeout: 5000 });
+    await page.click('[data-context-menu] [data-menu-item="favorite"]');
+    await page.waitForSelector('[data-context-menu]', { state: 'detached', timeout: 5000 });
+    await page.waitForTimeout(400);
+    await page.click('nav button:has-text("Favoritos")');
+    await page.locator('main li').first().waitFor({ state: 'visible', timeout: 5000 });
+    const favorited = (await page.locator('main li:has-text("Azure Container Registry")').count()) === 1;
+    await page.click('nav button:has-text("Tudo")');
+    await page.locator('main li:has-text("Painel DigitalOcean")').first().waitFor({ timeout: 5000 });
+    return favorited;
+  });
+  await check('Esc fecha o menu sem fazer nada', async () => {
+    await page.click('main li:has-text("Painel DigitalOcean") >> nth=0', { button: 'right' });
+    await page.waitForSelector('[data-context-menu]', { timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-context-menu]', { state: 'detached', timeout: 5000 });
+    return (await page.locator('main li:has-text("Painel DigitalOcean")').count()) === 1;
+  });
+
   // 11c-septies-bis. The vault switcher. A person can hold their own vault and
   // any number shared with them, and the way between them is here — including
   // for someone who already has a vault of their own, which is where the guest

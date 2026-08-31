@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Button, Modal, Spinner } from './ui';
+import { KEEPER_FOLDER_NAME } from '../lib/drive';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
 import { ensureIdentity } from '../lib/identity';
@@ -130,18 +131,79 @@ export function ensurePickerKey(): boolean {
   return true;
 }
 
-export function OpenSharedButton() {
+/**
+ * What happens next, before it happens.
+ *
+ * The picker is Google's screen, not ours, and being dropped into it with no
+ * warning — asked to find a folder among everything anyone has ever shared with
+ * you — is bewildering. It is also a one-time step: the permission it grants
+ * belongs to the account, so the vault is in the list from then on. Both of
+ * those are worth one short paragraph.
+ */
+export function OpenSharedDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { actions, busy } = useKeeper();
 
-  const open = () => {
-    if (!ensurePickerKey()) return;
-    void actions.openSharedVault();
-  };
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Abrir um cofre partilhado"
+      subtitle="Só nesta primeira vez"
+    >
+      <div className="space-y-3 text-sm leading-relaxed text-ink">
+        <p>
+          O Google vai perguntar qual pasta você quer abrir. Escolha a pasta{' '}
+          <strong className="font-semibold">{KEEPER_FOLDER_NAME}</strong> — é a que a outra pessoa partilhou
+          com você. A tela já abre filtrada nela.
+        </p>
+        <p className="text-xs text-muted">
+          É o Google que decide o que este app pode ver, e ele só libera o que você apontar. Por isso esta
+          pergunta existe, e por isso acontece uma vez só: depois o cofre fica na lista lá em cima, junto com o
+          seu.
+        </p>
+        <p className="text-xs text-muted">
+          Se a pasta não aparecer, a outra pessoa ainda não liberou o acesso — mande o seu código de convite
+          para ela.
+        </p>
+      </div>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          icon="folder"
+          loading={busy}
+          onClick={() => {
+            if (!ensurePickerKey()) return;
+            void actions.openSharedVault();
+            onClose();
+          }}
+        >
+          Escolher a pasta
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Agora não
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+export function OpenSharedButton() {
+  const { busy } = useKeeper();
+  const [intro, setIntro] = useState(false);
 
   return (
-    <Button variant="outline" className="w-full" icon="share" loading={busy} onClick={open}>
-      Abrir um cofre partilhado comigo
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        className="w-full"
+        icon="share"
+        loading={busy}
+        onClick={() => setIntro(true)}
+      >
+        Abrir um cofre partilhado comigo
+      </Button>
+      <OpenSharedDialog open={intro} onClose={() => setIntro(false)} />
+    </>
   );
 }
 

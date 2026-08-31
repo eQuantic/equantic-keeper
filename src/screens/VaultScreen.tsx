@@ -13,7 +13,17 @@ import {
 } from '../lib/folders';
 import type { TypeFamily } from '../lib/documents';
 import { useKeeper } from '../state/keeper';
-import { Badge, Button, EmptyState, IconButton, Kbd, Select, TextInput } from '../components/ui';
+import {
+  Badge,
+  Button,
+  ContextMenu,
+  EmptyState,
+  IconButton,
+  Kbd,
+  Select,
+  TextInput,
+  type MenuItem,
+} from '../components/ui';
 import { Icon, Logo } from '../components/icons';
 import { CountryMark } from '../components/flags';
 import { countryName } from '../lib/countries';
@@ -26,7 +36,7 @@ import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
 import * as storage from '../lib/storage';
-import { ensurePickerKey } from '../components/InviteCode';
+import { OpenSharedDialog } from '../components/InviteCode';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
 /** A sidebar row: one type in use, or a whole family of them. */
@@ -158,6 +168,9 @@ export function VaultScreen() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
+  /** Right-click on a row: the pointer position and what was under it. */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; item: VaultItem } | null>(null);
+  const [openShared, setOpenShared] = useState(false);
   const [addingFolder, setAddingFolder] = useState(false);
   /**
    * How tall the items half is, in px. Null while nobody has dragged: each half
@@ -246,6 +259,117 @@ export function VaultScreen() {
     if (item[key] === value) return;
     void actions.saveItem({ ...item, ...change });
     actions.notify(`“${item.name || 'Sem título'}” em ${where}.`);
+  };
+
+  /**
+   * What the right button offers on a row.
+   *
+   * Everything here has another way in — the detail pane, a swipe, dragging the
+   * row onto a folder — but all of those cost a trip somewhere else. This is the
+   * desktop shortcut for the things people do in a list: file it, mark it, throw
+   * it away.
+   */
+  const rowMenuItems = (item: VaultItem): MenuItem[] => {
+    const quick = primarySecret(item);
+    const copyItem: MenuItem[] = quick
+      ? [
+          {
+            id: 'copy',
+            label: `Copiar ${quick.label.toLocaleLowerCase('pt-BR')}`,
+            icon: 'copy',
+            onSelect: () => {
+              void copy(quick.value, `menu:${item.id}`).then((result) => {
+                if (result.ok) actions.notify('Copiado para a área de transferência.');
+              });
+            },
+          },
+        ]
+      : [];
+
+    // A guest is looking at someone else's vault: nothing here may change it.
+    if (guest) return copyItem;
+
+    if (item.deletedAt) {
+      return [
+        ...copyItem,
+        { id: 'restore', label: 'Restaurar', icon: 'refresh', onSelect: () => void actions.restoreItem(item.id) },
+        {
+          id: 'purge',
+          label: 'Apagar definitivamente',
+          icon: 'trash',
+          danger: true,
+          onSelect: () => {
+            if (confirm(`Apagar “${item.name || 'Sem título'}” para sempre? Não há como desfazer.`)) {
+              void actions.purgeItem(item.id);
+              if (selectedId === item.id) setSelectedId(null);
+            }
+          },
+        },
+      ];
+    }
+
+    return [
+      { id: 'edit', label: 'Editar', icon: 'pencil', onSelect: () => setEditing({ item }) },
+      ...copyItem,
+      {
+        id: 'favorite',
+        label: item.favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos',
+        icon: 'star',
+        checked: item.favorite,
+        onSelect: () => void actions.toggleFavorite(item.id),
+      },
+      {
+        id: 'folder',
+        label: 'Mover para',
+        icon: 'folder',
+        hint: item.folder,
+        children: [
+          {
+            id: 'folder:none',
+            label: 'Sem pasta',
+            checked: !item.folder,
+            onSelect: () => dropOnto(item.id, { folder: '' }, 'nenhuma pasta'),
+          },
+          ...folders.map((entry) => ({
+            id: `folder:${entry.folder}`,
+            label: entry.folder,
+            icon: 'folder',
+            checked: item.folder === entry.folder,
+            onSelect: () => dropOnto(item.id, { folder: entry.folder }, entry.folder),
+          })),
+        ],
+      },
+      {
+        id: 'holder',
+        label: 'Titular',
+        icon: 'user',
+        children: [
+          {
+            id: 'holder:none',
+            label: 'Sem titular',
+            checked: !item.holderId,
+            onSelect: () => dropOnto(item.id, { holderId: '' }, 'ninguém'),
+          },
+          ...people.map((person) => ({
+            id: `holder:${person.id}`,
+            label: person.name,
+            icon: 'user',
+            checked: item.holderId === person.id,
+            onSelect: () => dropOnto(item.id, { holderId: person.id }, `nome de ${person.name}`),
+          })),
+        ],
+      },
+      {
+        id: 'trash',
+        label: 'Mover para a lixeira',
+        icon: 'trash',
+        danger: true,
+        onSelect: () => {
+          void actions.trashItem(item.id);
+          if (selectedId === item.id) setSelectedId(null);
+        },
+      },
+    ];
   };
 
   const typeCounts = useMemo(() => {
@@ -697,11 +821,9 @@ export function VaultScreen() {
           className="w-full"
           value={activeWorkspace}
           onChange={(next) => {
-            if (next === OPEN_SHARED) {
-              if (!ensurePickerKey()) return;
-              void actions.openSharedVault();
-              return;
-            }
+            // The same explanation as the entry screen: whoever picks this from
+            // the switcher has just as little idea what Google is about to ask.
+            if (next === OPEN_SHARED) return setOpenShared(true);
             void actions.switchWorkspace(next);
           }}
           options={[
@@ -1334,10 +1456,27 @@ export function VaultScreen() {
                           setDropTarget(null);
                         }}
                         onClick={() => setSelectedId(item.id)}
+                        onContextMenu={(event) => {
+                          // Touch keeps the swipe actions; this is the mouse's
+                          // equivalent, and the browser's own menu is no use on
+                          // a row of ours.
+                          if (coarsePointer) return;
+                          event.preventDefault();
+                          setSelectedId(item.id);
+                          setRowMenu({ x: event.clientX, y: event.clientY, item });
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault();
                             setSelectedId(item.id);
+                          }
+                          // Shift+F10 and the menu key are how a keyboard asks
+                          // for a context menu; the row is focusable, so it can.
+                          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                            event.preventDefault();
+                            const box = event.currentTarget.getBoundingClientRect();
+                            setSelectedId(item.id);
+                            setRowMenu({ x: box.left + 24, y: box.bottom - 4, item });
                           }
                         }}
                         className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition pointer-coarse:py-3 ${
@@ -1519,6 +1658,17 @@ export function VaultScreen() {
       ) : null}
 
       <GeneratorDialog open={generatorOpen} onClose={() => setGeneratorOpen(false)} />
+      <OpenSharedDialog open={openShared} onClose={() => setOpenShared(false)} />
+
+      {rowMenu ? (
+        <ContextMenu
+          at={rowMenu}
+          label={`Ações de ${rowMenu.item.name || 'item sem título'}`}
+          items={rowMenuItems(rowMenu.item)}
+          onClose={() => setRowMenu(null)}
+        />
+      ) : null}
+
       <SettingsDialog
         open={settingsOpen}
         initialPane={settingsPane}
