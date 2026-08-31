@@ -1633,6 +1633,34 @@ const run = async () => {
     });
     return delta <= 1;
   });
+  // The + button pokes up above the bar, and every row in the list is
+  // positioned (the swipe layers need it) — a positioned element paints over a
+  // static one whatever the document order says. Needs a list long enough to
+  // reach up there, which the test vault only manages on a shorter screen.
+  await phone.setViewportSize({ width: 390, height: 560 });
+  await phone.waitForTimeout(300);
+  await check('o botão + fica acima da lista, não por baixo', async () =>
+    phone.evaluate(() => {
+      for (const element of [document.scrollingElement, ...document.querySelectorAll('main, main *')]) {
+        if (element && element.scrollHeight > element.clientHeight + 4) element.scrollTop = element.scrollHeight;
+      }
+      const bar = document.querySelector('nav[aria-label="Ações rápidas"]');
+      const plus = bar?.querySelector('button:has(span)');
+      if (!bar || !plus) return false;
+      const box = plus.getBoundingClientRect();
+      const covered = [...document.querySelectorAll('main li')].some((row) => {
+        const r = row.getBoundingClientRect();
+        return r.bottom > box.top + 2 && r.top < box.top + 8 && r.right > box.left && r.left < box.right;
+      });
+      // No row up there means the test proves nothing, so it fails rather than
+      // passing on empty space.
+      if (!covered) return false;
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 4);
+      return !!hit && (plus === hit || plus.contains(hit));
+    }));
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.waitForTimeout(300);
+
   await check('duplo toque não dispara zoom (touch-action)', async () =>
     (await phone.evaluate(() => getComputedStyle(document.body).touchAction)) === 'manipulation');
 
