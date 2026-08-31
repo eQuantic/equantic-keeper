@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DecryptionError, MIN_ITERATIONS } from './crypto';
+import { DecryptionError, MIN_ITERATIONS, deriveKey, newKdfParams, seal } from './crypto';
 import type { Person, VaultItem } from './model';
 import {
   TOMBSTONE_TTL_DAYS,
   VAULT_VERSION,
+  WrongPasswordError,
   activeFolders,
   activePeople,
-  WrongPasswordError,
   createVault,
   emptyPayload,
   isVaultFile,
@@ -14,7 +14,9 @@ import {
   mergePayloads,
   normalizePayload,
   purgeTombstones,
+  sealVault,
   unlockVault,
+  type VaultFile,
 } from './vault';
 
 const iterations = MIN_ITERATIONS;
@@ -189,6 +191,76 @@ describe('país do item', () => {
 
     const [kept] = normalizePayload({ items: [item('2', '2026-01-01T00:00:00.000Z', { country: 'BR' })] }).items;
     expect(kept?.country).toBe('BR');
+  });
+});
+
+describe('envelope da chave de dados', () => {
+  it('cifra o conteúdo com uma chave própria, embrulhada pela senha', async () => {
+    const { file, keys } = await createVault('senha-mestra-de-teste', emptyPayload(), iterations);
+    expect(file.version).toBe(VAULT_VERSION);
+    expect(file.dataKey).toBeDefined();
+    // A chave do conteúdo não é a da senha: é isso que permite trocar uma sem
+    // tocar na outra.
+    expect(keys.data).not.toBe(keys.derived.key);
+    const opened = await unlockVault(file, 'senha-mestra-de-teste');
+    expect(opened.needsEnvelope).toBe(false);
+  });
+
+  it('abre um cofre anterior ao envelope e avisa que ele precisa migrar', async () => {
+    const { file, keys } = await createVault('senha-mestra-de-teste', emptyPayload(), iterations);
+    // Um cofre v7: o conteúdo cifrado com a própria chave da senha.
+    const legacyHeader = { format: file.format, version: 7, cipher: file.cipher, kdf: file.kdf };
+    const box = await seal(keys.derived.key, emptyPayload(), [
+      legacyHeader.format,
+      legacyHeader.version,
+      legacyHeader.cipher,
+      legacyHeader.kdf.algo,
+      legacyHeader.kdf.iterations,
+      legacyHeader.kdf.salt,
+    ].join('|'));
+    const legacy: VaultFile = {
+      ...legacyHeader,
+      verifier: file.verifier,
+      iv: box.iv,
+      data: box.data,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const opened = await unlockVault(legacy, 'senha-mestra-de-teste');
+    expect(opened.needsEnvelope).toBe(true);
+    expect(opened.keys.data).toBe(opened.derived.key);
+    expect(opened.payload.items).toEqual([]);
+  });
+
+  it('a chave de dados sobrevive a trocas de senha sucessivas', async () => {
+    // A segunda troca é a que importa: aí a chave de dados já não é a que foi
+    // gerada nesta sessão, e sim uma desembrulhada do arquivo. Se ela voltasse
+    // não-extraível, embrulhá-la de novo falharia com "key is not extractable".
+    const { file } = await createVault('senha-um', emptyPayload(), iterations);
+
+    const first = await unlockVault(file, 'senha-um');
+    const second = await sealVault(
+      { derived: await deriveKey('senha-dois', newKdfParams(iterations)), data: first.keys.data },
+      first.payload,
+    );
+
+    const reopened = await unlockVault(second, 'senha-dois');
+    const third = await sealVault(
+      { derived: await deriveKey('senha-tres', newKdfParams(iterations)), data: reopened.keys.data },
+      reopened.payload,
+    );
+
+    await expect(unlockVault(third, 'senha-tres')).resolves.toBeDefined();
+    await expect(unlockVault(third, 'senha-um')).rejects.toThrow(WrongPasswordError);
+  });
+
+  it('recusa um envelope adulterado', async () => {
+    const { file } = await createVault('senha-mestra-de-teste', emptyPayload(), iterations);
+    const tampered: VaultFile = {
+      ...file,
+      dataKey: { ...file.dataKey!, key: file.dataKey!.key.replace(/^./, (c) => (c === 'A' ? 'B' : 'A')) },
+    };
+    await expect(unlockVault(tampered, 'senha-mestra-de-teste')).rejects.toThrow();
   });
 });
 

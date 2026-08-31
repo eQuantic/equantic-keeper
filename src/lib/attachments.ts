@@ -19,6 +19,7 @@ import {
   openBytes,
   sealBytes,
   unwrapContentKey,
+  unwrapContentKeyRaw,
   wrapContentKey,
 } from './crypto';
 import type { DriveBlobApi, DriveFileMeta } from './drive';
@@ -121,6 +122,30 @@ export async function decryptAttachment(
 ): Promise<Uint8Array> {
   const contentKey = await unwrapContentKey(master, ref.wrapped, keyAad(ref.id));
   return openBytes(contentKey, ref.iv, ciphertext, contentAad(ref));
+}
+
+/**
+ * Moves an attachment's key from one master key to another, without touching
+ * the file itself: the content key is unwrapped and wrapped again.
+ *
+ * This is what a vault written before the key envelope needs — its attachment
+ * keys hang off the PASSWORD's key, so changing the password used to orphan
+ * every scan in the vault. Under the envelope they hang off the data key,
+ * which a password change leaves alone.
+ */
+export async function rewrapAttachment(
+  ref: AttachmentRef,
+  from: CryptoKey,
+  to: CryptoKey,
+): Promise<AttachmentRef> {
+  // Unwrapped extractable on purpose and only here: the raw bytes are needed
+  // to wrap them under the other key, and the value never leaves this call.
+  const raw = await unwrapContentKeyRaw(from, ref.wrapped, keyAad(ref.id));
+  const contentKey = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, true, [
+    'encrypt',
+    'decrypt',
+  ]);
+  return { ...ref, wrapped: await wrapContentKey(to, contentKey, keyAad(ref.id)) };
 }
 
 /** The file name used in the Drive app folder. It leaks nothing: Drive already

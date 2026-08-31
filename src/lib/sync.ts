@@ -10,11 +10,25 @@
 import type { DriveApi } from './drive';
 import { VAULT_FILE_NAME } from './drive';
 import type { DerivedKey } from './crypto';
-import { matchesKey, mergePayloads, openVault, sealVault, type VaultFile, type VaultPayload } from './vault';
+import {
+  matchesKey,
+  mergePayloads,
+  openVault,
+  sealVault,
+  type VaultFile,
+  type VaultKeys,
+  type VaultPayload,
+} from './vault';
 
 export interface SyncContext {
   drive: DriveApi;
   derived: DerivedKey;
+  /**
+   * The content key. A remote vault sealed under the same password carries the
+   * same data key inside its own envelope, so it is opened with the keys we
+   * unwrapped locally — never with a key from the file we are reading.
+   */
+  keys: VaultKeys;
   /** Drive file id, when this device already knows it. */
   driveFileId?: string | undefined;
   /** Revision seen the last time this device wrote or read. */
@@ -60,7 +74,7 @@ async function push(
   fileId: string | undefined,
   merged: boolean,
 ): Promise<SyncResult> {
-  const file = await sealVault(context.derived, payload);
+  const file = await sealVault(context.keys, payload);
   const meta = fileId
     ? await context.drive.update(fileId, file)
     : await context.drive.create(VAULT_FILE_NAME, file);

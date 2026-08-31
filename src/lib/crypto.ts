@@ -277,6 +277,27 @@ export async function wrapContentKey(
   return { key: toBase64(new Uint8Array(wrapped)), iv: toBase64(iv) };
 }
 
+/**
+ * The wrapped key's raw bytes. Only for re-wrapping under another master key —
+ * every other caller wants `unwrapContentKey`, which hands back a key that
+ * cannot be read back out.
+ */
+export async function unwrapContentKeyRaw(
+  master: CryptoKey,
+  wrapped: WrappedKey,
+  aad: string,
+): Promise<ArrayBuffer> {
+  try {
+    return await subtle().decrypt(
+      { name: 'AES-GCM', iv: fromBase64(wrapped.iv), additionalData: utf8(aad), tagLength: 128 },
+      master,
+      fromBase64(wrapped.key),
+    );
+  } catch {
+    throw new DecryptionError('Não foi possível abrir a chave deste anexo.');
+  }
+}
+
 export async function unwrapContentKey(
   master: CryptoKey,
   wrapped: WrappedKey,

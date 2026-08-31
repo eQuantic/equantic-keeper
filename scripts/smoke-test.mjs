@@ -602,6 +602,50 @@ const run = async () => {
   await check('nenhum blob: sobrou registrado após fechar', async () =>
     (await page.evaluate(() => performance.getEntriesByType('resource').filter((e) => e.name.startsWith('blob:')).length)) === 0);
 
+  // 8f-bis. Changing the master password must not cost the attachments. Before
+  // the key envelope their keys hung off the password's key, and nothing
+  // rewrapped them: every scan in the vault became unreadable.
+  const NEW_PASSWORD = `${PASSWORD}-nova`;
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Alterar senha mestra")');
+  await page.locator('[role="dialog"] label:has-text("Senha mestra atual") input').first().fill(PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Nova senha mestra") input').first().fill(NEW_PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Confirme a nova senha") input').first().fill(NEW_PASSWORD);
+  await page.getByRole('button', { name: 'Alterar senha', exact: true }).click();
+  await page.waitForSelector('text=Senha mestra alterada', { timeout: 30000 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  await check('trocar a senha mestra mantém os anexos legíveis', async () => {
+    await page.click('main li:has-text("Título de residência — Maria")');
+    await page.click('aside:has(h2) button:has-text("residencia-2024.pdf")');
+    await page.waitForSelector('[role="dialog"] canvas', { timeout: 30000 });
+    const box = await page.locator('[role="dialog"] canvas').first().boundingBox();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    return !!box && box.width > 50;
+  });
+  await check('o cofre passa a abrir com a senha nova', async () => {
+    await page.keyboard.press('Control+l');
+    await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+    await page.fill('input[type="password"]', NEW_PASSWORD);
+    await page.click('button:has-text("Desbloquear")');
+    await page.waitForSelector('text=GitHub PAT', { timeout: 30000 });
+    return true;
+  });
+  // Back to the original phrase: everything downstream unlocks with it, and
+  // the round trip proves the second change costs the attachments nothing.
+  await page.locator('nav button:has-text("Configurações")').click();
+  await page.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+  await page.click('[role="dialog"] button:has-text("Alterar senha mestra")');
+  await page.locator('[role="dialog"] label:has-text("Senha mestra atual") input').first().fill(NEW_PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Nova senha mestra") input').first().fill(PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Confirme a nova senha") input').first().fill(PASSWORD);
+  await page.getByRole('button', { name: 'Alterar senha', exact: true }).click();
+  await page.waitForSelector('text=Senha mestra alterada', { timeout: 30000 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+
   // 8g. Validity: what is expired, what is about to be, and what is neither.
   await check('barra lateral separa vencidos de quem vence em breve', async () =>
     (await page.locator('nav button:has-text("Vencidos")').count()) === 1 &&
