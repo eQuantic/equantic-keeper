@@ -141,7 +141,7 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account, connected, driveMovedElsewhere } = useKeeper();
+  const { payload, actions, account, connected, driveMovedElsewhere, guest } = useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1022,9 +1022,12 @@ export function VaultScreen() {
         <div className="hidden items-center gap-2 lg:flex">
           <IconButton icon="wand" label="Gerador" onClick={() => setGeneratorOpen(true)} />
           <IconButton icon="lock" label="Bloquear (Ctrl+L)" onClick={actions.lock} />
-          <Button variant="primary" icon="plus" onClick={() => setEditing({ item: null })} className="shrink-0">
-            Novo
-          </Button>
+          {/* Nothing to create in a vault that is not yours. */}
+          {guest ? null : (
+            <Button variant="primary" icon="plus" onClick={() => setEditing({ item: null })} className="shrink-0">
+              Novo
+            </Button>
+          )}
         </div>
       </header>
 
@@ -1041,6 +1044,22 @@ export function VaultScreen() {
           {/* The vault moved and this device did not follow. It is still writing
               to a copy nobody else reads, so this cannot live behind a settings
               screen the user has no reason to open. */}
+          {guest ? (
+            <div
+              data-guest-banner
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-accent/40 bg-accent/10 px-4 py-2.5 text-sm text-ink"
+            >
+              <Icon name="share" size={15} className="shrink-0 text-accent" />
+              <span className="min-w-0 flex-1">
+                Você está vendo um cofre partilhado com você{guest.label ? ` como “${guest.label}”` : ''}. Só
+                leitura: nada do que estiver aqui é alterado por este aparelho.
+              </span>
+              <Button size="sm" icon="refresh" onClick={() => void actions.refreshSharedVault()}>
+                Atualizar
+              </Button>
+            </div>
+          ) : null}
+
           {driveMovedElsewhere ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-warn/40 bg-warn/10 px-4 py-2.5 text-sm text-ink">
               <Icon name="warning" size={15} className="shrink-0 text-warn" />
@@ -1414,16 +1433,20 @@ export function VaultScreen() {
             )
           }
         />
-        <button
-          type="button"
-          onClick={() => setEditing({ item: null })}
-          className="-mt-6 flex w-[72px] flex-col items-center gap-1 text-[11px] text-ink"
-        >
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-white shadow-lg shadow-accent/40">
-            <Icon name="plus" size={26} />
-          </span>
-          Novo
-        </button>
+        {guest ? (
+          <span className="w-[72px]" aria-hidden="true" />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing({ item: null })}
+            className="-mt-6 flex w-[72px] flex-col items-center gap-1 text-[11px] text-ink"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-white shadow-lg shadow-accent/40">
+              <Icon name="plus" size={26} />
+            </span>
+            Novo
+          </button>
+        )}
         <BarAction icon="settings" label="Ajustes" onClick={() => setSettingsOpen(true)} />
         <BarAction icon="lock" label="Bloquear" onClick={actions.lock} />
       </nav>

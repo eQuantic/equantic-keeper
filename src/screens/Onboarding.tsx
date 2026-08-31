@@ -165,6 +165,25 @@ export function SignInScreen() {
   );
 }
 
+/**
+ * Offered to someone who has just signed in and has no vault: they may not be
+ * here to make one, they may be here because someone shared theirs.
+ */
+function OpenSharedButton() {
+  const { actions, busy } = useKeeper();
+  return (
+    <Button
+      variant="outline"
+      className="w-full"
+      icon="share"
+      loading={busy}
+      onClick={() => void actions.openSharedVault()}
+    >
+      Abrir um cofre partilhado comigo
+    </Button>
+  );
+}
+
 export function CreateVaultScreen() {
   const { actions, busy, account } = useKeeper();
   const [password, setPassword] = useState('');
@@ -243,6 +262,13 @@ export function CreateVaultScreen() {
           Criar cofre
         </Button>
       </form>
+
+      <div className="mt-5 border-t border-line-soft pt-4">
+        <p className="mb-2 text-xs text-muted">
+          Ou, se alguém partilhou um cofre com você, não precisa criar nada: abra o dela.
+        </p>
+        <OpenSharedButton />
+      </div>
     </AuthShell>
   );
 }

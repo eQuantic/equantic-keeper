@@ -307,6 +307,17 @@ export class DriveClient implements DriveApi, DriveBlobApi {
     return { meta, value: raw };
   }
 
+  /**
+   * The same, by id: a guest reaches files through the picker, which hands back
+   * ids and never a folder listing to search by name.
+   */
+  async readJsonById<T>(fileId: string, guard: (value: unknown) => value is T): Promise<T> {
+    const response = await this.request(`${FILES_API}/${fileId}?alt=media`);
+    const raw: unknown = await response.json().catch(() => null);
+    if (!guard(raw)) throw new DriveError('O arquivo no Drive não está no formato esperado.');
+    return raw;
+  }
+
   /** Writes it back, creating the file the first time. */
   async writeJson(name: string, value: unknown, fileId?: string): Promise<DriveFileMeta> {
     return fileId ? this.update(fileId, value) : this.create(name, value);
