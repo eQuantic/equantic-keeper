@@ -1184,8 +1184,9 @@ function SharingPane() {
       <div className="space-y-3 rounded-lg border border-line-soft p-3">
         <p className="text-sm font-medium text-ink">Dar acesso a alguém</p>
         <p className="text-xs leading-relaxed text-muted">
-          Peça à pessoa para abrir o Keeper no aparelho dela e enviar o código de convite que aparece lá. O
-          código não é segredo: pode vir por WhatsApp ou e-mail sem problema.
+          O código vem <strong className="font-medium text-ink">dela para você</strong>, não o contrário: peça
+          para abrir o Keeper no aparelho dela, tocar em “Fui convidado por alguém” e enviar o código que
+          aparece. Não é segredo, pode vir por WhatsApp.
         </p>
         <Field label="Nome (como você vai reconhecer)">
           <TextInput value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Maria" />
