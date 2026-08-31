@@ -277,6 +277,24 @@ const PDF_MARKER = 'TITULO DE RESIDENCIA 2024';
 const errors = [];
 
 let failures = 0;
+/**
+ * Opens Configurações on one of its panes.
+ *
+ * The dialog is a sidebar of panes now: a section exists in the DOM only while
+ * its own pane is the active one, so every visit has to say which it wants.
+ */
+async function openSettings(page, pane) {
+  await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 }).catch(() => undefined);
+  await page.locator('nav button:has-text("Configurações")').filter({ visible: true }).first().click();
+  await page.waitForSelector('[data-settings-nav]', { timeout: 5000 });
+  await page.locator(`[data-settings-nav] button:has-text("${pane}")`).click();
+  // The pane and its entry in the list have to agree: a highlight left on the
+  // previous entry is how a settings dialog starts lying about where you are.
+  await page.waitForSelector(`[data-settings-nav] button[aria-current="page"]:has-text("${pane}")`, {
+    timeout: 5000,
+  });
+}
+
 /** Kept module-level so a crash can still photograph what the page looked like. */
 let currentPage = null;
 
@@ -606,8 +624,9 @@ const run = async () => {
   // the key envelope their keys hung off the password's key, and nothing
   // rewrapped them: every scan in the vault became unreadable.
   const NEW_PASSWORD = `${PASSWORD}-nova`;
-  await page.locator('nav button:has-text("Configurações")').click();
-  await page.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+  await openSettings(page, 'Segurança');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/05b-config-seguranca.png` });
   await page.click('[role="dialog"] button:has-text("Alterar senha mestra")');
   await page.locator('[role="dialog"] label:has-text("Senha mestra atual") input').first().fill(PASSWORD);
   await page.locator('[role="dialog"] label:has-text("Nova senha mestra") input').first().fill(NEW_PASSWORD);
@@ -635,8 +654,7 @@ const run = async () => {
   });
   // Back to the original phrase: everything downstream unlocks with it, and
   // the round trip proves the second change costs the attachments nothing.
-  await page.locator('nav button:has-text("Configurações")').click();
-  await page.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+  await openSettings(page, 'Segurança');
   await page.click('[role="dialog"] button:has-text("Alterar senha mestra")');
   await page.locator('[role="dialog"] label:has-text("Senha mestra atual") input').first().fill(NEW_PASSWORD);
   await page.locator('[role="dialog"] label:has-text("Nova senha mestra") input').first().fill(PASSWORD);
@@ -652,7 +670,7 @@ const run = async () => {
   // The previous dialog has to be gone, not just closing: a click that lands
   // mid-animation is swallowed by the overlay and the next one reopens nothing.
   await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
-  await page.locator('nav button:has-text("Configurações")').click();
+  await openSettings(page, 'Conta e Drive');
   await page.waitForSelector('[role="dialog"] >> text=Onde o cofre fica', { timeout: 5000 });
   await check('configurações dizem onde o cofre fica', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para escolher onde o cofre fica').count()) === 1);
@@ -694,7 +712,7 @@ const run = async () => {
   });
 
   // 8h. Backup bundle: export vault + attachments, then restore from it.
-  await page.locator('nav button:has-text("Configurações")').click();
+  await openSettings(page, 'Backup');
   await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
 
   // Arm the listener before the click: the download can start immediately.
@@ -735,8 +753,8 @@ const run = async () => {
   await page.locator('[role="dialog"] button[aria-label="Fechar"]').click();
 
   // 10. Light theme.
-  await page.locator('nav button:has-text("Configurações")').click();
-  await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
+  await openSettings(page, 'Pessoas e tipos');
+  await page.waitForSelector('[role="dialog"] input[aria-label="Nome do titular"]', { timeout: 5000 });
 
   // 10b. The holder added from the editor is managed here, and edits stick.
   const holderName = page.locator('[role="dialog"] input[aria-label="Nome do titular"]');
@@ -749,8 +767,8 @@ const run = async () => {
   await holderName.click(); // blur commits the edit
   await page.waitForTimeout(300);
   await page.keyboard.press('Escape');
-  await page.locator('nav button:has-text("Configurações")').click();
-  await page.waitForSelector('[role="dialog"] >> text=Backup e portabilidade', { timeout: 5000 });
+  await openSettings(page, 'Pessoas e tipos');
+  await page.waitForSelector('[role="dialog"] input[aria-label="Parentesco"]', { timeout: 5000 });
   await check('o parentesco editado sobrevive ao fechar e reabrir', async () =>
     (await page.locator('[role="dialog"] input[aria-label="Parentesco"]').inputValue()) === 'esposa');
   await page.screenshot({ path: `${OUT}/08-pessoas.png` });
@@ -777,14 +795,18 @@ const run = async () => {
   await page.locator('nav button:has-text("Tudo")').click();
   await page.waitForTimeout(300);
 
-  // The theme block below expects the settings dialog open again.
-  await page.locator('nav button:has-text("Configurações")').click();
-  await page.waitForSelector('select[aria-label="Tema"]', { timeout: 5000 });
-
+  await openSettings(page, 'Conta e Drive');
+  await page.waitForSelector('[role="dialog"] >> text=Espaço no Google Drive', { timeout: 5000 });
   await check('as configurações têm a seção de espaço no Drive', async () =>
     (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 1);
   await check('sem conta conectada, a seção explica em vez de mentir um número', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para ver o espaço').count()) === 1);
+
+  // The theme lives in a pane of its own, one click away.
+  await page.locator('[data-settings-nav] button:has-text("Aparência")').click();
+  await page.waitForSelector('select[aria-label="Tema"]', { timeout: 5000 });
+  await check('trocar de painel troca o conteúdo', async () =>
+    (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 0);
   await page.selectOption('select[aria-label="Tema"]', 'light');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/05-settings-light.png` });
@@ -1148,7 +1170,7 @@ const run = async () => {
   await check('o tipo personalizado sobrevive à recarga', async () =>
     (await page.locator('aside:has(h2) >> text=Contrato de aluguel — Espanha').count()) > 0);
 
-  await page.locator('nav button:has-text("Configurações")').click();
+  await openSettings(page, 'Pessoas e tipos');
   await page.waitForSelector('[role="dialog"] >> text=Tipos personalizados', { timeout: 5000 });
   await check('configurações listam o tipo personalizado', async () =>
     (await page.locator('button[aria-label="Remover tipo Contrato de aluguel — Espanha"]').count()) === 1);
@@ -1380,7 +1402,7 @@ const run = async () => {
   // 11d. Auto-lock "Nunca" must survive a reload: browsers discard idle tabs
   // and every app update reloads the page — none of that reads as "I locked
   // my vault", so none of it may cost the master password.
-  await page.locator('nav button:has-text("Configurações")').click();
+  await openSettings(page, 'Segurança');
   await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
   await page.selectOption('select[aria-label="Bloquear automaticamente"]', '0');
   await page.waitForTimeout(500);
@@ -1411,7 +1433,7 @@ const run = async () => {
   // A timed auto-lock persists too, stamped with the deadline: on phones every
   // app switch can reload the page, and a reload inside the inactivity window
   // must not demand the master password.
-  await page.locator('nav button:has-text("Configurações")').click();
+  await openSettings(page, 'Segurança');
   await page.waitForSelector('select[aria-label="Bloquear automaticamente"]', { timeout: 5000 });
   await page.selectOption('select[aria-label="Bloquear automaticamente"]', '15');
   await page.waitForTimeout(500);
@@ -1504,9 +1526,14 @@ const run = async () => {
   await phone.waitForSelector('[role="dialog"]', { timeout: 5000 });
   await check('Configurações cabem sem rolagem lateral a 320px', async () =>
     phone.evaluate(() => {
-      const scroller = document.querySelector('[role="dialog"] .overflow-y-auto');
-      return scroller.scrollWidth <= scroller.clientWidth;
+      const dialog = document.querySelector('[role="dialog"]');
+      const scroller = dialog.querySelector('.overflow-y-auto');
+      // The pane has to fit, and the dialog itself must not pan sideways: the
+      // list of panes scrolls on its own, inside its strip.
+      return scroller.scrollWidth <= scroller.clientWidth && dialog.scrollWidth <= dialog.clientWidth;
     }));
+  await phone.waitForTimeout(400);
+  await phone.screenshot({ path: `${OUT}/17-mobile-config-320.png` });
   await phone.click('[role="dialog"] button[aria-label="Fechar"]');
   await phone.waitForTimeout(300);
   await phone.setViewportSize({ width: 390, height: 844 });
@@ -1811,9 +1838,7 @@ const run = async () => {
     await phone.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
     await phone.click('button[aria-label="Menu"]');
-    const settingsEntry = phone.locator('nav button:has-text("Configurações")').filter({ visible: true });
-    await settingsEntry.click();
-    await phone.waitForSelector('[role="dialog"] >> text=Segurança', { timeout: 5000 });
+    await openSettings(phone, 'Segurança');
     await phone.click('[role="dialog"] button:has-text("Ativar desbloqueio por biometria")');
     await phone.locator('[role="dialog"] label:has-text("Senha mestra") input').first().fill(PASSWORD);
     await phone.getByRole('button', { name: 'Ativar', exact: true }).click();

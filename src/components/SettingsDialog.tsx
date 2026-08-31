@@ -1,5 +1,5 @@
 /** Account, people, security, appearance, backup and danger-zone settings. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Field, IconButton, Modal, PasswordInput, Switch, TextInput } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
@@ -383,92 +383,18 @@ function DriveUsageSection() {
   );
 }
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
-  const { actions, account, connected, driveFolderId, payload, sync, busy, biometricAvailable, biometricEnrolled } =
-    useKeeper();
-  const fileRef = useRef<HTMLInputElement>(null);
+/* ------------------------------------------------------------------------- *
+ * Panes
+ *
+ * One screen per subject instead of one scroll for all of them. Each pane owns
+ * the state only it uses — the import form, the password form — so opening
+ * settings no longer mounts every form in the dialog to show one of them.
+ * ------------------------------------------------------------------------- */
 
-  const [changingPassword, setChangingPassword] = useState(false);
-  const [enablingBiometrics, setEnablingBiometrics] = useState(false);
-  const [biometricPassword, setBiometricPassword] = useState('');
-  const [biometricError, setBiometricError] = useState<string | null>(null);
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [importState, setImportState] = useState<{ text: string; bytes?: Uint8Array; name: string } | null>(
-    null,
-  );
-  const [bundling, setBundling] = useState(false);
-  const [sweeping, setSweeping] = useState(false);
-  const [importPassword, setImportPassword] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  if (!payload) return null;
-  const prefs = payload.preferences;
-  const strength = estimateStrength(next);
-
-  const submitPasswordChange = async () => {
-    setPasswordError(null);
-    if (next.length < 12) {
-      setPasswordError('A nova senha precisa ter ao menos 12 caracteres.');
-      return;
-    }
-    if (next !== confirmPassword) {
-      setPasswordError('A confirmação não confere.');
-      return;
-    }
-    try {
-      await actions.changeMasterPassword(current, next);
-      setChangingPassword(false);
-      setCurrent('');
-      setNext('');
-      setConfirmPassword('');
-    } catch (error) {
-      setPasswordError(error instanceof Error ? error.message : 'Falha ao alterar a senha.');
-    }
-  };
-
-  const submitEnableBiometrics = async () => {
-    setBiometricError(null);
-    try {
-      await actions.enableBiometrics(biometricPassword);
-      setEnablingBiometrics(false);
-      setBiometricPassword('');
-    } catch (error) {
-      setBiometricError(error instanceof Error ? error.message : 'Falha ao ativar a biometria.');
-    }
-  };
-
-  const runImport = async () => {
-    if (!importState) return;
-    setImporting(true);
-    setImportError(null);
-    try {
-      if (importState.bytes) {
-        const { items, attachments } = await actions.importBundle(importState.bytes, importPassword);
-        setImportState(null);
-        setImportPassword('');
-        actions.notify(
-          `Importação concluída: ${items} item(ns) novo(s) e ${attachments} anexo(s) restaurado(s).`,
-        );
-      } else {
-        const added = await actions.importBackup(importState.text, importPassword);
-        setImportState(null);
-        setImportPassword('');
-        actions.notify(`Importação concluída: ${added} item(ns) novo(s) adicionados ao cofre.`);
-      }
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Falha ao importar.');
-    } finally {
-      setImporting(false);
-    }
-  };
-
+function AccountPane() {
+  const { actions, account, connected, driveFolderId, sync } = useKeeper();
   return (
-    <Modal open={open} onClose={onClose} title="Configurações" wide>
+    <>
       <Section
         title="Conta Google"
         description={
@@ -527,8 +453,72 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         ) : null}
       </Section>
 
-      <PeopleSection />
+      <Section
+        title="Onde o cofre fica"
+        description="A pasta do Google Drive que guarda o arquivo cifrado e os anexos."
+      >
+        <DriveFolderSection />
+      </Section>
 
+      <Section
+        title="Espaço no Google Drive"
+        description="Quanto este cofre ocupa na conta conectada, item por item."
+      >
+        <DriveUsageSection />
+      </Section>
+    </>
+  );
+}
+
+function SecurityPane() {
+  const { actions, payload, busy, biometricAvailable, biometricEnrolled } = useKeeper();
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [enablingBiometrics, setEnablingBiometrics] = useState(false);
+  const [biometricPassword, setBiometricPassword] = useState('');
+  const [biometricError, setBiometricError] = useState<string | null>(null);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const submitPasswordChange = async () => {
+    setPasswordError(null);
+    if (next.length < 12) {
+      setPasswordError('A nova senha precisa ter ao menos 12 caracteres.');
+      return;
+    }
+    if (next !== confirmPassword) {
+      setPasswordError('A confirmação não confere.');
+      return;
+    }
+    try {
+      await actions.changeMasterPassword(current, next);
+      setChangingPassword(false);
+      setCurrent('');
+      setNext('');
+      setConfirmPassword('');
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : 'Falha ao alterar a senha.');
+    }
+  };
+
+  const submitEnableBiometrics = async () => {
+    setBiometricError(null);
+    try {
+      await actions.enableBiometrics(biometricPassword);
+      setEnablingBiometrics(false);
+      setBiometricPassword('');
+    } catch (error) {
+      setBiometricError(error instanceof Error ? error.message : 'Falha ao ativar a biometria.');
+    }
+  };
+
+  if (!payload) return null;
+  const prefs = payload.preferences;
+  const strength = estimateStrength(next);
+
+  return (
+    <>
       <Section title="Segurança">
         <div className="space-y-1">
           <label className={prefRowClass}>
@@ -571,27 +561,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <option value={30}>30 segundos</option>
               <option value={60}>1 minuto</option>
               <option value={0}>Não limpar</option>
-            </select>
-          </label>
-          <label className={prefRowClass}>
-            <span className={prefLabelClass}>
-              Avisar sobre validade
-              <span className="mt-0.5 block text-xs text-muted">
-                Com quanta antecedência um documento aparece como “vence em breve”.
-              </span>
-            </span>
-            <select
-              className={`${selectClass} ml-auto`}
-              aria-label="Avisar sobre validade"
-              value={prefs.expiryWarningDays}
-              onChange={(event) =>
-                void actions.updatePreferences({ expiryWarningDays: Number(event.target.value) })
-              }
-            >
-              <option value={30}>30 dias</option>
-              <option value={60}>60 dias</option>
-              <option value={90}>90 dias</option>
-              <option value={180}>6 meses</option>
             </select>
           </label>
           <Switch
@@ -705,38 +674,168 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </Button>
         )}
       </Section>
+    </>
+  );
+}
 
-      <Section title="Aparência">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 py-1 text-sm text-ink">
-          <span>Tema</span>
-          <select
-            className={`${selectClass} ml-auto`}
-            aria-label="Tema"
-            value={prefs.theme}
-            onChange={(event) =>
-              void actions.updatePreferences({ theme: event.target.value === 'light' ? 'light' : 'dark' })
-            }
-          >
-            <option value="dark">Escuro</option>
-            <option value="light">Claro</option>
-          </select>
+function PeoplePane() {
+  const { actions, payload } = useKeeper();
+  const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
+  return (
+    <>
+      <PeopleSection />
+
+      {activeCustomTypes(payload?.customTypes ?? []).length > 0 ? (
+        <Section
+          title="Tipos personalizados"
+          description="Criados no assistente de novo item. Remover um tipo não apaga os itens — eles continuam legíveis."
+        >
+          <div className="space-y-2">
+            {activeCustomTypes(payload?.customTypes ?? []).map((custom) => (
+              <div key={custom.id} className="flex items-center gap-3 rounded-lg border border-line-soft px-3 py-2">
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                  style={{ color: custom.accent, backgroundColor: `color-mix(in srgb, ${custom.accent} 13%, transparent)` }}
+                >
+                  <Icon name={getType(custom.id).icon} size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-ink">{custom.label}</span>
+                  <span className="block truncate text-xs text-muted">
+                    {custom.group} · {custom.fields.length} campo(s)
+                  </span>
+                </span>
+                <IconButton icon="pencil" label={`Editar tipo ${custom.label}`} onClick={() => setEditingType(custom)} />
+                <IconButton
+                  icon="trash"
+                  label={`Remover tipo ${custom.label}`}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        `Remover o tipo "${custom.label}"? Itens existentes continuam legíveis e mantêm os dados.`,
+                      )
+                    ) {
+                      void actions.removeCustomType(custom.id);
+                    }
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
+
+      {editingType ? (
+        <TypeBuilder
+          existing={editingType}
+          onSaved={() => setEditingType(null)}
+          onClose={() => setEditingType(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * How the app looks and when it warns — the two settings that are neither about
+ * the account nor about the lock. The expiry warning sat under Segurança for
+ * want of anywhere better; a document announcing itself early is a preference,
+ * not a defence.
+ */
+function AppearancePane() {
+  const { actions, payload } = useKeeper();
+  if (!payload) return null;
+  const prefs = payload.preferences;
+  return (
+    <>
+      <Section title="Aparência e avisos">
+        <div className="space-y-1">
+          <label className={prefRowClass}>
+            <span className={prefLabelClass}>
+              Tema
+              <span className="mt-0.5 block text-xs text-muted">
+                Vale para este dispositivo e acompanha o cofre nos outros.
+              </span>
+            </span>
+            <select
+              className={`${selectClass} ml-auto`}
+              aria-label="Tema"
+              value={prefs.theme}
+              onChange={(event) =>
+                void actions.updatePreferences({ theme: event.target.value === 'light' ? 'light' : 'dark' })
+              }
+            >
+              <option value="dark">Escuro</option>
+              <option value="light">Claro</option>
+            </select>
+          </label>
+          <label className={prefRowClass}>
+            <span className={prefLabelClass}>
+              Avisar sobre validade
+              <span className="mt-0.5 block text-xs text-muted">
+                Com quanta antecedência um documento aparece como “vence em breve”.
+              </span>
+            </span>
+            <select
+              className={`${selectClass} ml-auto`}
+              aria-label="Avisar sobre validade"
+              value={prefs.expiryWarningDays}
+              onChange={(event) =>
+                void actions.updatePreferences({ expiryWarningDays: Number(event.target.value) })
+              }
+            >
+              <option value={30}>30 dias</option>
+              <option value={60}>60 dias</option>
+              <option value={90}>90 dias</option>
+              <option value={180}>6 meses</option>
+            </select>
+          </label>
         </div>
       </Section>
+    </>
+  );
+}
 
-      <Section
-        title="Onde o cofre fica"
-        description="A pasta do Google Drive que guarda o arquivo cifrado e os anexos."
-      >
-        <DriveFolderSection />
-      </Section>
+function BackupPane() {
+  const { actions, payload } = useKeeper();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importState, setImportState] = useState<{ text: string; bytes?: Uint8Array; name: string } | null>(
+    null,
+  );
+  const [bundling, setBundling] = useState(false);
+  const [importPassword, setImportPassword] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
-      <Section
-        title="Espaço no Google Drive"
-        description="Quanto este cofre ocupa na conta conectada, item por item."
-      >
-        <DriveUsageSection />
-      </Section>
+  const runImport = async () => {
+    if (!importState) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      if (importState.bytes) {
+        const { items, attachments } = await actions.importBundle(importState.bytes, importPassword);
+        setImportState(null);
+        setImportPassword('');
+        actions.notify(
+          `Importação concluída: ${items} item(ns) novo(s) e ${attachments} anexo(s) restaurado(s).`,
+        );
+      } else {
+        const added = await actions.importBackup(importState.text, importPassword);
+        setImportState(null);
+        setImportPassword('');
+        actions.notify(`Importação concluída: ${added} item(ns) novo(s) adicionados ao cofre.`);
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Falha ao importar.');
+    } finally {
+      setImporting(false);
+    }
+  };
 
+  if (!payload) return null;
+
+  return (
+    <>
       <Section
         title="Backup e portabilidade"
         description={`O cofre cifrado leva os dados; o pacote leva também os arquivos anexados. Itens na lixeira são apagados definitivamente após ${TOMBSTONE_TTL_DAYS} dias.`}
@@ -837,55 +936,15 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </div>
         ) : null}
       </Section>
+    </>
+  );
+}
 
-      {activeCustomTypes(payload?.customTypes ?? []).length > 0 ? (
-        <Section
-          title="Tipos personalizados"
-          description="Criados no assistente de novo item. Remover um tipo não apaga os itens — eles continuam legíveis."
-        >
-          <div className="space-y-2">
-            {activeCustomTypes(payload?.customTypes ?? []).map((custom) => (
-              <div key={custom.id} className="flex items-center gap-3 rounded-lg border border-line-soft px-3 py-2">
-                <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                  style={{ color: custom.accent, backgroundColor: `color-mix(in srgb, ${custom.accent} 13%, transparent)` }}
-                >
-                  <Icon name={getType(custom.id).icon} size={15} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-ink">{custom.label}</span>
-                  <span className="block truncate text-xs text-muted">
-                    {custom.group} · {custom.fields.length} campo(s)
-                  </span>
-                </span>
-                <IconButton icon="pencil" label={`Editar tipo ${custom.label}`} onClick={() => setEditingType(custom)} />
-                <IconButton
-                  icon="trash"
-                  label={`Remover tipo ${custom.label}`}
-                  onClick={() => {
-                    if (
-                      confirm(
-                        `Remover o tipo "${custom.label}"? Itens existentes continuam legíveis e mantêm os dados.`,
-                      )
-                    ) {
-                      void actions.removeCustomType(custom.id);
-                    }
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {editingType ? (
-        <TypeBuilder
-          existing={editingType}
-          onSaved={() => setEditingType(null)}
-          onClose={() => setEditingType(null)}
-        />
-      ) : null}
-
+function AdvancedPane({ onClose }: { onClose: () => void }) {
+  const { actions, connected } = useKeeper();
+  const [sweeping, setSweeping] = useState(false);
+  return (
+    <>
       <Section title="Avançado">
         <p className="mb-2 text-xs text-muted">
           OAuth Client ID em uso: <code className="text-ink">{getClientId() || 'nenhum'}</code>
@@ -943,6 +1002,58 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           </Button>
         </div>
       </Section>
+    </>
+  );
+}
+
+/**
+ * The panes, in the order the sidebar lists them. A subject with no entry here
+ * has no way in, so this list is the whole map of the dialog.
+ */
+const TABS: { id: string; label: string; icon: string; render: (onClose: () => void) => ReactNode }[] = [
+  { id: 'conta', label: 'Conta e Drive', icon: 'cloud', render: () => <AccountPane /> },
+  { id: 'seguranca', label: 'Segurança', icon: 'shield', render: () => <SecurityPane /> },
+  { id: 'pessoas', label: 'Pessoas e tipos', icon: 'users', render: () => <PeoplePane /> },
+  { id: 'backup', label: 'Backup', icon: 'download', render: () => <BackupPane /> },
+  { id: 'aparencia', label: 'Aparência', icon: 'wand', render: () => <AppearancePane /> },
+  { id: 'avancado', label: 'Avançado', icon: 'settings', render: (onClose) => <AdvancedPane onClose={onClose} /> },
+];
+
+export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { payload } = useKeeper();
+  const [tab, setTab] = useState(TABS[0]!.id);
+  const active = TABS.find((entry) => entry.id === tab) ?? TABS[0]!;
+
+  if (!payload) return null;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Configurações" paned>
+      <div className="flex h-full min-h-0 flex-col sm:flex-row">
+        {/* Below sm the list is a strip above the pane: a sidebar would eat half
+            the width of a phone to show six words. */}
+        <nav
+          aria-label="Seções das configurações"
+          data-settings-nav
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 py-2 sm:w-52 sm:flex-col sm:gap-0.5 sm:overflow-x-hidden sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3"
+        >
+          {TABS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-current={entry.id === tab ? 'page' : undefined}
+              onClick={() => setTab(entry.id)}
+              className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm whitespace-nowrap transition sm:w-full ${
+                entry.id === tab ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+              }`}
+            >
+              <Icon name={entry.icon} size={15} />
+              {entry.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">{active.render(onClose)}</div>
+      </div>
     </Modal>
   );
 }
