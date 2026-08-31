@@ -165,6 +165,11 @@ export function OpenSharedDialog({ open, onClose }: { open: boolean; onClose: ()
           Se a pasta não aparecer, a outra pessoa ainda não liberou o acesso — mande o seu código de convite
           para ela.
         </p>
+        <p className="text-xs text-faint">
+          Se o Google responder “The API developer key is invalid”, o problema é da configuração do app, não
+          sua: a chave de API precisa ter a <strong className="text-muted">Google Picker API</strong> liberada
+          em <em>API restrictions</em>. Avise quem administra o app.
+        </p>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
         <Button

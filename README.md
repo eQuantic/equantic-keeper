@@ -206,10 +206,15 @@ wraps the vault's master bits into a record kept in `localStorage`.
    app folder if the scope is missing.
 5. To let someone open a vault **shared with them**, also enable the **Google
    Picker API** (*APIs & Services → Library*) and create an **API key** under
-   *Credentials* — restrict it to your origin and to the Picker API. Under
-   `drive.file` a guest's browser can only reach files they pointed at through
-   that picker, so without the key the guest side does nothing; everything else
-   works without it.
+   *Credentials*. Under `drive.file` a guest's browser can only reach files they
+   pointed at through that picker, so without the key the guest side does
+   nothing; everything else works without it.
+
+   > If the key is restricted (and it should be), the restrictions have to cover
+   > **both** halves: the origin under *Website restrictions*, and **Google
+   > Picker API** in the list under *API restrictions*. A key restricted to the
+   > Drive API alone makes the picker refuse with **"The API developer key is
+   > invalid"** — the key is fine, the picker is simply not on its list.
 6. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
 7. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
    trailing slash and no path. For the official instance: `https://keeper.equantic.tech`;
