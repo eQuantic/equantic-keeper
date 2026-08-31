@@ -112,8 +112,8 @@ function payloadWith(...items: VaultItem[]): VaultPayload {
 }
 
 async function setup(password = 'senha-mestra-de-teste') {
-  const { derived } = await createVault(password, emptyPayload(), iterations);
-  return { derived, drive: new FakeDrive() };
+  const { derived, keys } = await createVault(password, emptyPayload(), iterations);
+  return { derived, keys, drive: new FakeDrive() };
 }
 
 /** Decrypts whatever the fake Drive currently holds, to assert on real content. */
@@ -134,10 +134,10 @@ describe('espera entre tentativas', () => {
 
 describe('syncVault', () => {
   it('creates the vault file when Drive has none', async () => {
-    const { derived, drive } = await setup();
+    const { derived, keys, drive } = await setup();
     const local = payloadWith(item('a', 'GitHub PAT', 1));
 
-    const result = await syncVault({ drive, derived }, local);
+    const result = await syncVault({ drive, derived, keys }, local);
 
     expect(drive.calls.create).toBe(1);
     expect(drive.calls.update).toBe(0);
@@ -148,11 +148,11 @@ describe('syncVault', () => {
   });
 
   it('pushes without downloading when the remote revision is the one we know', async () => {
-    const { derived, drive } = await setup();
-    const meta = drive.seed(await sealVault(derived, emptyPayload()));
+    const { derived, keys, drive } = await setup();
+    const meta = drive.seed(await sealVault(keys, emptyPayload()));
 
     const result = await syncVault(
-      { drive, derived, driveFileId: meta.id, knownRevision: meta.headRevisionId },
+      { drive, derived, keys, driveFileId: meta.id, knownRevision: meta.headRevisionId },
       payloadWith(item('a', 'novo', 1)),
     );
 
@@ -163,12 +163,12 @@ describe('syncVault', () => {
   });
 
   it('merges when the remote moved on, keeping items from both devices', async () => {
-    const { derived, drive } = await setup();
-    const meta = drive.seed(await sealVault(derived, payloadWith(item('remoto', 'do outro aparelho', 5))));
+    const { derived, keys, drive } = await setup();
+    const meta = drive.seed(await sealVault(keys, payloadWith(item('remoto', 'do outro aparelho', 5))));
 
     const result = await syncVault(
       // A stale revision is what tells us another device wrote in the meantime.
-      { drive, derived, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
+      { drive, derived, keys, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
       payloadWith(item('local', 'deste aparelho', 1)),
     );
 
@@ -181,11 +181,11 @@ describe('syncVault', () => {
   });
 
   it('keeps the most recent version of an item edited on both sides', async () => {
-    const { derived, drive } = await setup();
-    const meta = drive.seed(await sealVault(derived, payloadWith(item('a', 'versão antiga', 60))));
+    const { derived, keys, drive } = await setup();
+    const meta = drive.seed(await sealVault(keys, payloadWith(item('a', 'versão antiga', 60))));
 
     const result = await syncVault(
-      { drive, derived, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
+      { drive, derived, keys, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
       payloadWith(item('a', 'versão nova', 1)),
     );
 
@@ -194,12 +194,12 @@ describe('syncVault', () => {
   });
 
   it('refuses to merge a vault encrypted with a different master password', async () => {
-    const { derived, drive } = await setup('senha-deste-aparelho');
+    const { derived, keys, drive } = await setup('senha-deste-aparelho');
     const other = await createVault('senha-do-outro-aparelho', payloadWith(item('x', 'alheio', 1)), iterations);
     const meta = drive.seed(other.file);
 
     await expect(
-      syncVault({ drive, derived, driveFileId: meta.id, knownRevision: 'rev-obsoleta' }, emptyPayload()),
+      syncVault({ drive, derived, keys, driveFileId: meta.id, knownRevision: 'rev-obsoleta' }, emptyPayload()),
     ).rejects.toBeInstanceOf(VaultPasswordMismatchError);
 
     // The remote copy must survive untouched so the user can still choose a side.
@@ -208,12 +208,12 @@ describe('syncVault', () => {
   });
 
   it('overwrites the remote copy when forced, without merging', async () => {
-    const { derived, drive } = await setup('minha-senha');
+    const { derived, keys, drive } = await setup('minha-senha');
     const other = await createVault('outra-senha', payloadWith(item('x', 'alheio', 1)), iterations);
     const meta = drive.seed(other.file);
 
     const result = await syncVault(
-      { drive, derived, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
+      { drive, derived, keys, driveFileId: meta.id, knownRevision: 'rev-obsoleta' },
       payloadWith(item('meu', 'sobrescreve', 1)),
       { force: true },
     );
@@ -224,28 +224,28 @@ describe('syncVault', () => {
   });
 
   it('falls back to creating the file when the known id vanished from Drive', async () => {
-    const { derived, drive } = await setup();
+    const { derived, keys, drive } = await setup();
 
-    const result = await syncVault({ drive, derived, driveFileId: 'apagado-em-outro-lugar' }, emptyPayload());
+    const result = await syncVault({ drive, derived, keys, driveFileId: 'apagado-em-outro-lugar' }, emptyPayload());
 
     expect(drive.calls.create).toBe(1);
     expect(result.driveFileId).not.toBe('apagado-em-outro-lugar');
   });
 
   it('still reports success when the backup snapshot fails', async () => {
-    const { derived, drive } = await setup();
+    const { derived, keys, drive } = await setup();
     drive.backupsFail = true;
 
     // Losing a snapshot must never cost the user their save.
-    await expect(syncVault({ drive, derived }, payloadWith(item('a', 'importante', 1)))).resolves.toMatchObject({
+    await expect(syncVault({ drive, derived, keys }, payloadWith(item('a', 'importante', 1)))).resolves.toMatchObject({
       merged: false,
     });
     expect(drive.calls.rotateBackups).toBe(1);
   });
 
   it('writes ciphertext, never plaintext', async () => {
-    const { derived, drive } = await setup();
-    const result = await syncVault({ drive, derived }, payloadWith(item('a', 'GitHub PAT', 1)));
+    const { derived, keys, drive } = await setup();
+    const result = await syncVault({ drive, derived, keys }, payloadWith(item('a', 'GitHub PAT', 1)));
 
     const raw = JSON.stringify(drive.stored(result.driveFileId));
     expect(raw).not.toContain('GitHub PAT');
@@ -253,10 +253,10 @@ describe('syncVault', () => {
   });
 
   it('advances the revision it reports after each write', async () => {
-    const { derived, drive } = await setup();
-    const first = await syncVault({ drive, derived }, emptyPayload());
+    const { derived, keys, drive } = await setup();
+    const first = await syncVault({ drive, derived, keys }, emptyPayload());
     const second = await syncVault(
-      { drive, derived, driveFileId: first.driveFileId, knownRevision: first.revision },
+      { drive, derived, keys, driveFileId: first.driveFileId, knownRevision: first.revision },
       payloadWith(item('a', 'novo', 1)),
     );
     expect(second.revision).not.toBe(first.revision);
@@ -265,15 +265,15 @@ describe('syncVault', () => {
 
 describe('pullVault', () => {
   it('returns null when Drive has no vault yet', async () => {
-    const { derived, drive } = await setup();
-    await expect(pullVault({ drive, derived })).resolves.toBeNull();
+    const { derived, keys, drive } = await setup();
+    await expect(pullVault({ drive, derived, keys })).resolves.toBeNull();
   });
 
   it('decrypts the remote vault without writing anything back', async () => {
-    const { derived, drive } = await setup();
-    drive.seed(await sealVault(derived, payloadWith(item('a', 'remoto', 1))));
+    const { derived, keys, drive } = await setup();
+    drive.seed(await sealVault(keys, payloadWith(item('a', 'remoto', 1))));
 
-    const result = await pullVault({ drive, derived });
+    const result = await pullVault({ drive, derived, keys });
 
     expect(result?.payload.items[0]?.name).toBe('remoto');
     expect(drive.calls.update).toBe(0);
@@ -281,10 +281,10 @@ describe('pullVault', () => {
   });
 
   it('rejects a remote vault under a different master password', async () => {
-    const { derived, drive } = await setup('minha-senha');
+    const { derived, keys, drive } = await setup('minha-senha');
     const other = await createVault('outra-senha', emptyPayload(), iterations);
     drive.seed(other.file);
 
-    await expect(pullVault({ drive, derived })).rejects.toBeInstanceOf(VaultPasswordMismatchError);
+    await expect(pullVault({ drive, derived, keys })).rejects.toBeInstanceOf(VaultPasswordMismatchError);
   });
 });

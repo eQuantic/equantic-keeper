@@ -16,8 +16,10 @@ import {
   type ReactNode,
 } from 'react';
 import type { DerivedKey } from '../lib/crypto';
+import { generateContentKey } from '../lib/crypto';
 import {
   deriveKey,
+  newKdfParams,
   deriveKeyFromMasterBits,
   deriveMasterBits,
   fromBase64,
@@ -46,6 +48,7 @@ import type { AttachmentRef, Person, VaultItem } from '../lib/model';
 import {
   cacheAttachment,
   encryptAttachment,
+  rewrapAttachment,
   fetchCiphertext,
   findOrphans,
   forgetAttachment,
@@ -61,6 +64,7 @@ import {
   unlockVault,
   unlockVaultWithDerived,
   type VaultFile,
+  type VaultKeys,
   type VaultPayload,
   type VaultPreferences,
 } from '../lib/vault';
@@ -160,6 +164,11 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const authRef = useRef<GoogleAuth | null>(null);
   const driveRef = useRef<DriveClient | null>(null);
   const derivedRef = useRef<DerivedKey | null>(null);
+  /**
+   * The content key, unwrapped from the vault's envelope. Kept beside the
+   * password's key because saving needs both: one to encrypt, one to wrap.
+   */
+  const keysRef = useRef<VaultKeys | null>(null);
   const payloadRef = useRef<VaultPayload | null>(null);
   const fileRef = useRef<VaultFile | null>(null);
   const driveIdRef = useRef<string | undefined>(undefined);
@@ -232,9 +241,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
   /** Persist the encrypted vault locally so the app works offline. */
   const persistLocal = useCallback(async (payload: VaultPayload) => {
-    const derived = derivedRef.current;
-    if (!derived) return null;
-    const file = await sealVault(derived, payload);
+    const keys = keysRef.current;
+    if (!keys) return null;
+    const file = await sealVault(keys, payload);
     fileRef.current = file;
     const stored = storage.saveCachedVault({
       file,
@@ -291,10 +300,11 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const runSync = useCallback(
     async (options: { force?: boolean; silent?: boolean } = {}) => {
       const derived = derivedRef.current;
+      const keys = keysRef.current;
       const payload = payloadRef.current;
       const drive = driveRef.current;
       const auth = authRef.current;
-      if (!derived || !payload) return;
+      if (!derived || !keys || !payload) return;
       // `auth.isSignedIn` is NOT part of this guard on purpose: a Google access
       // token lives about an hour, and the Drive client renews it silently on
       // every call (and once more after a 401). Refusing to try because the
@@ -325,6 +335,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           {
             drive,
             derived,
+            keys,
             driveFileId: driveIdRef.current,
             knownRevision: revisionRef.current,
           },
@@ -387,6 +398,58 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       setPayload(next);
       await persistLocal(next);
       scheduleSync();
+    },
+    [persistLocal, scheduleSync, setPayload],
+  );
+
+  /**
+   * Takes the keys an unlock produced and makes them this session's.
+   *
+   * A vault written before the envelope hands back the password's key as the
+   * content key. Here it gets a real one: minted, every attachment key moved
+   * onto it, and the vault saved in the new shape. Doing it at unlock (rather
+   * than lazily) means the fix for "changing the password orphaned every
+   * attachment" applies from the first moment the vault is open.
+   */
+  const adoptKeys = useCallback(
+    async (opened: {
+      derived: DerivedKey;
+      keys: VaultKeys;
+      payload: VaultPayload;
+      needsEnvelope: boolean;
+    }): Promise<VaultKeys> => {
+      derivedRef.current = opened.derived;
+      keysRef.current = opened.keys;
+      if (!opened.needsEnvelope) {
+        setPayload(opened.payload);
+        return opened.keys;
+      }
+
+      const keys: VaultKeys = { derived: opened.derived, data: await generateContentKey() };
+      const items = await Promise.all(
+        opened.payload.items.map(async (item) => {
+          if (item.attachments.length === 0) return item;
+          const attachments = await Promise.all(
+            item.attachments.map(async (ref) => {
+              try {
+                return await rewrapAttachment(ref, opened.keys.data, keys.data);
+              } catch {
+                // A key that was already unreadable stays as it is: one broken
+                // attachment must not cost the migration of everything else.
+                return ref;
+              }
+            }),
+          );
+          return { ...item, attachments };
+        }),
+      );
+
+      const payload = { ...opened.payload, items };
+      keysRef.current = keys;
+      setPayload(payload);
+      await persistLocal(payload);
+      scheduleSync();
+      return keys;
     },
     [persistLocal, scheduleSync, setPayload],
   );
@@ -458,8 +521,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     async (password: string) => {
       patch({ busy: true, error: null });
       try {
-        const { derived, file } = await buildVault(password, emptyPayload());
+        const { derived, keys, file } = await buildVault(password, emptyPayload());
         derivedRef.current = derived;
+        keysRef.current = keys;
         adoptVaultFile(file);
         setPayload(emptyPayload());
         storage.saveCachedVault({ file, cachedAt: new Date().toISOString() });
@@ -474,12 +538,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
   /** Pull anything newer that landed on Drive while this device was away. */
   const pullAfterUnlock = useCallback(
-    async (derived: DerivedKey, payload: VaultPayload) => {
+    async (keys: VaultKeys, payload: VaultPayload) => {
       if (!authRef.current?.isSignedIn || !navigator.onLine) return;
       try {
         const remote = await pullVault({
           drive: driveRef.current!,
-          derived,
+          derived: keys.derived,
+          keys,
           driveFileId: driveIdRef.current,
           knownRevision: revisionRef.current,
         });
@@ -510,12 +575,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       }
       patch({ busy: true, error: null });
       try {
-        const { derived, payload } = await unlockVault(file, password);
-        derivedRef.current = derived;
-        setPayload(payload);
+        const opened = await unlockVault(file, password);
+        const keys = await adoptKeys(opened);
+        setPayload(payloadRef.current ?? opened.payload);
         patch({ phase: 'unlocked', busy: false });
-        syncKeystore(derived, payload.preferences.autoLockMinutes);
-        await pullAfterUnlock(derived, payload);
+        syncKeystore(opened.derived, opened.payload.preferences.autoLockMinutes);
+        await pullAfterUnlock(keys, payloadRef.current ?? opened.payload);
       } catch (error) {
         fail(error, 'Não foi possível desbloquear o cofre.');
       }
@@ -551,12 +616,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       } finally {
         masterBits.fill(0);
       }
-      const { payload } = await unlockVaultWithDerived(file, derived);
-      derivedRef.current = derived;
-      setPayload(payload);
+      const opened = await unlockVaultWithDerived(file, derived);
+      const keys = await adoptKeys(opened);
+      setPayload(payloadRef.current ?? opened.payload);
       patch({ phase: 'unlocked', busy: false });
-      syncKeystore(derived, payload.preferences.autoLockMinutes);
-      await pullAfterUnlock(derived, payload);
+      syncKeystore(derived, opened.payload.preferences.autoLockMinutes);
+      await pullAfterUnlock(keys, payloadRef.current ?? opened.payload);
     } catch (error) {
       // Dismissing the Face ID / fingerprint sheet is not a failure to report.
       if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
@@ -868,17 +933,24 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * with no connection.
    */
   const prepareAttachment = useCallback(async (file: File) => {
-    const derived = derivedRef.current;
-    if (!derived) throw new Error('O cofre está bloqueado.');
-    const { ref, ciphertext } = await encryptAttachment(derived.key, file);
+    const keys = keysRef.current;
+    if (!keys) throw new Error('O cofre está bloqueado.');
+    const { ref, ciphertext } = await encryptAttachment(keys.data, file);
     await cacheAttachment(ref, ciphertext);
     return ref;
   }, []);
 
   const readAttachment = useCallback(async (ref: AttachmentRef) => {
-    const derived = derivedRef.current;
-    if (!derived) throw new Error('O cofre está bloqueado.');
-    return openAttachment(driveRef.current, derived.key, ref);
+    const keys = keysRef.current;
+    if (!keys) throw new Error('O cofre está bloqueado.');
+    try {
+      return await openAttachment(driveRef.current, keys.data, ref);
+    } catch (error) {
+      // An attachment saved before the envelope is wrapped with the password's
+      // key. It is rewrapped on the next save; until then, still open it.
+      if (keys.data === keys.derived.key) throw error;
+      return openAttachment(driveRef.current, keys.derived.key, ref);
+    }
   }, []);
 
   const discardAttachment = useCallback(
@@ -923,8 +995,16 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         const check = await deriveKey(current, file.kdf);
         if (!timingSafeEqual(check.verifier, file.verifier)) throw new Error('Senha mestra atual incorreta.');
 
-        const { derived, file: rebuilt } = await buildVault(next, payload);
+        // The content key does not change: only its wrapping does. That is why
+        // attachments survive a password change now — their keys hang off the
+        // data key, which is exactly the same key before and after.
+        const data = keysRef.current?.data;
+        if (!data) throw new Error('O cofre está bloqueado.');
+        const derived = await deriveKey(next, newKdfParams());
+        const keys: VaultKeys = { derived, data };
+        const rebuilt = await sealVault(keys, payload);
         derivedRef.current = derived;
+        keysRef.current = keys;
         fileRef.current = rebuilt;
         syncKeystore(derived, payload.preferences.autoLockMinutes);
         storage.saveCachedVault({
@@ -955,6 +1035,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const importBackup = useCallback(
     async (text: string, password: string) => {
       const imported = await readBackup(text, password);
+      // A JSON backup has no attachment bytes with it, so its refs point at
+      // files this device may not have; their keys are rewrapped when the
+      // bundle form is imported, which is the form that carries the bytes.
       let added = 0;
       await mutate((payload) => {
         const before = new Set(payload.items.map((item) => item.id));
@@ -992,7 +1075,36 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const importBundle = useCallback(
     async (bytes: Uint8Array, password: string) => {
       const bundle = parseBundle(bytes);
-      const { payload: imported } = await unlockVault(bundle.file, password);
+      const opened = await unlockVault(bundle.file, password);
+      const keys = keysRef.current;
+      if (!keys) throw new Error('O cofre precisa estar aberto.');
+      /*
+       * The backup carries a vault of its own, with its own content key — even
+       * when the password matches. Its attachment keys are wrapped by THAT key,
+       * so they are moved onto this vault's before the items are merged; a ref
+       * that arrives unreadable is left alone rather than silently dropped.
+       */
+      const imported = {
+        ...opened.payload,
+        items: await Promise.all(
+          opened.payload.items.map(async (item) =>
+            item.attachments.length === 0
+              ? item
+              : {
+                  ...item,
+                  attachments: await Promise.all(
+                    item.attachments.map(async (ref) => {
+                      try {
+                        return await rewrapAttachment(ref, opened.keys.data, keys.data);
+                      } catch {
+                        return ref;
+                      }
+                    }),
+                  ),
+                },
+          ),
+        ),
+      };
 
       // Restore the bytes to this device first: an item that arrives pointing
       // at an attachment nobody has is a broken document.
@@ -1118,13 +1230,14 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           await clearDerivedKey();
         } else if (stored) {
           try {
-            const { payload } = await unlockVaultWithDerived(cached.file, stored.derived);
-            derivedRef.current = stored.derived;
+            const opened = await unlockVaultWithDerived(cached.file, stored.derived);
+            const keys = await adoptKeys(opened);
+            const payload = payloadRef.current ?? opened.payload;
             setPayload(payload);
             patch({ phase: 'unlocked' });
             // Reopening counts as activity: the window restarts.
             syncKeystore(stored.derived, payload.preferences.autoLockMinutes);
-            await pullAfterUnlock(stored.derived, payload);
+            await pullAfterUnlock(keys, payload);
             return;
           } catch {
             await clearDerivedKey();

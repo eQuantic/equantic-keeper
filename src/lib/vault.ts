@@ -8,14 +8,18 @@
 import {
   CIPHER,
   DecryptionError,
-  type DerivedKey,
-  type KdfParams,
-  type SealedBox,
   deriveKey,
+  generateContentKey,
   newKdfParams,
   open,
   seal,
   timingSafeEqual,
+  type DerivedKey,
+  type KdfParams,
+  type SealedBox,
+  type WrappedKey,
+  unwrapContentKeyRaw,
+  wrapContentKey,
 } from './crypto';
 import { DEFAULT_WARNING_DAYS } from './expiry';
 import { DOCUMENT_ORIGINS } from './documents';
@@ -26,14 +30,15 @@ export const VAULT_FORMAT = 'equantic-keeper.vault';
 /**
  * v2 added `people` and `holderId`; v3 added `item.attachments`; v4 added
  * explicitly created `folders`; v5 added user-defined `customTypes`; v6 adds
- * `item.country`, the issuing country of a document; v7 adds `item.blocks`,
- * the body of a note. Each bump
+ * `item.country`, the issuing country of a document; v7 added `item.blocks`,
+ * the body of a note; v8 wraps a random data key in the header instead of
+ * encrypting with the password's key. Each bump
  * matters: a client that predates one would silently drop what it does not
  * understand on its next save, so refusing to open a newer vault (which
  * `unlockVault` already does) is the safe failure. Older vaults still open —
  * `normalizePayload` fills in what is missing.
  */
-export const VAULT_VERSION = 7;
+export const VAULT_VERSION = 8;
 
 /** Trashed items are purged from the payload after this many days. */
 export const TOMBSTONE_TTL_DAYS = 90;
@@ -44,6 +49,16 @@ export interface VaultFile {
   kdf: KdfParams;
   cipher: typeof CIPHER;
   verifier: string;
+  /**
+   * The vault's data key, wrapped by the password-derived key (v8+).
+   *
+   * The payload is encrypted with a random key of its own, not with the
+   * password's: that is what lets the master password change without touching
+   * a byte of content — and what will let a second person be given a wrapped
+   * copy of the same key without ever learning the password. Absent in vaults
+   * written before v8, which are read with the derived key directly.
+   */
+  dataKey?: WrappedKey;
   iv: string;
   data: string;
   /** Public, non-sensitive: lets us order syncs without decrypting. */
@@ -104,21 +119,32 @@ export function isVaultFile(value: unknown): value is VaultFile {
 
 export async function createVault(password: string, payload: VaultPayload, iterations?: number) {
   const derived = await deriveKey(password, newKdfParams(iterations));
-  const file = await sealVault(derived, payload);
-  return { derived, file };
+  const keys: VaultKeys = { derived, data: await generateContentKey() };
+  const file = await sealVault(keys, payload);
+  return { derived, keys, file };
 }
 
-export async function sealVault(derived: DerivedKey, payload: VaultPayload): Promise<VaultFile> {
+/**
+ * The two keys a vault runs on: the one the password derives (which unwraps
+ * and verifies) and the one the content is actually encrypted with.
+ */
+export interface VaultKeys {
+  derived: DerivedKey;
+  data: CryptoKey;
+}
+
+export async function sealVault(keys: VaultKeys, payload: VaultPayload): Promise<VaultFile> {
   const header = {
     format: VAULT_FORMAT,
     version: VAULT_VERSION,
     cipher: CIPHER,
-    kdf: derived.kdf,
+    kdf: keys.derived.kdf,
   } as const;
-  const box: SealedBox = await seal(derived.key, payload, aad(header));
+  const box: SealedBox = await seal(keys.data, payload, aad(header));
   return {
     ...header,
-    verifier: derived.verifier,
+    verifier: keys.derived.verifier,
+    dataKey: await wrapContentKey(keys.derived.key, keys.data, aad(header)),
     iv: box.iv,
     data: box.data,
     updatedAt: new Date().toISOString(),
@@ -143,8 +169,12 @@ export async function unlockVault(file: VaultFile, password: string) {
 export async function unlockVaultWithDerived(file: VaultFile, derived: DerivedKey) {
   assertSupportedVersion(file);
   if (!timingSafeEqual(derived.verifier, file.verifier)) throw new WrongPasswordError();
-  const payload = await openVault(file, derived);
-  return { derived, payload };
+  const data = await vaultDataKey(file, derived);
+  const keys: VaultKeys = { derived, data };
+  const payload = await openVault(file, keys);
+  // A vault older than the envelope is still under the password's key: the
+  // caller mints a data key and rewraps what hangs off it before saving.
+  return { derived, keys, payload, needsEnvelope: !file.dataKey };
 }
 
 function assertSupportedVersion(file: VaultFile): void {
@@ -155,9 +185,27 @@ function assertSupportedVersion(file: VaultFile): void {
   }
 }
 
-export async function openVault(file: VaultFile, derived: DerivedKey): Promise<VaultPayload> {
+/**
+ * The key the CONTENT is under: the wrapped one from v8 headers, or — for a
+ * vault written before the envelope existed — the password's key itself.
+ */
+export async function vaultDataKey(file: VaultFile, derived: DerivedKey): Promise<CryptoKey> {
+  if (!file.dataKey) return derived.key;
+  // Extractable on purpose, and only this one key: every password change has to
+  // wrap it again under the new password's key, which means exporting it. The
+  // password's own key stays non-extractable, and this one lives no longer than
+  // the unlocked session.
+  const raw = await unwrapContentKeyRaw(derived.key, file.dataKey, aad(file));
+  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
+}
+
+export async function openVault(file: VaultFile, keys: VaultKeys | DerivedKey): Promise<VaultPayload> {
   if (file.cipher !== CIPHER) throw new DecryptionError(`Cifra não suportada: ${file.cipher}`);
-  const raw = await open<VaultPayload>(derived.key, { iv: file.iv, data: file.data }, aad(file));
+  // Callers that only hold the password's key (a backup being imported) pass
+  // it directly; the envelope is opened for them.
+  const data =
+    'data' in keys ? keys.data : await vaultDataKey(file, keys);
+  const raw = await open<VaultPayload>(data, { iv: file.iv, data: file.data }, aad(file));
   return normalizePayload(raw);
 }
 
