@@ -381,6 +381,7 @@ export function Modal({
   footer,
   wide,
   split,
+  paned,
 }: {
   open: boolean;
   onClose: () => void;
@@ -400,6 +401,12 @@ export function Modal({
    * the note editor puts its details and its summary beside the page.
    */
   split?: boolean;
+  /**
+   * A dialog with navigation of its own: the body is laid out by the caller
+   * (settings puts a list of panes beside the pane) and the height is fixed, so
+   * switching panes moves what is inside the dialog instead of resizing it.
+   */
+  paned?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useCloseOnBack(open, onClose);
@@ -460,9 +467,11 @@ export function Modal({
         className={`animate-in card relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
           split
             ? 'sm:h-full sm:max-w-[1760px]'
-            : wide
-              ? 'sm:max-w-3xl'
-              : 'sm:max-w-lg'
+            : paned
+              ? 'h-[92dvh] sm:h-[min(44rem,88dvh)] sm:max-w-4xl'
+              : wide
+                ? 'sm:max-w-3xl'
+                : 'sm:max-w-lg'
         }`}
       >
         <div
@@ -515,7 +524,7 @@ export function Modal({
         {/* overflow-x-hidden: a too-wide child must never pan the whole sheet sideways. */}
         <div
           className={
-            split
+            split || paned
               ? 'min-h-0 flex-1 overflow-hidden'
               : 'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4'
           }
