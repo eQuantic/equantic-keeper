@@ -19,6 +19,8 @@ const KEY_RECENT_TYPES = 'keeper.recentTypes.v1';
  * device — a cache of a fact that lives in the Drive, not the fact itself.
  */
 const KEY_DRIVE_FOLDER = 'keeper.drive.folder.v1';
+/** Height in px given to the items half of the sidebar, when it was dragged. */
+const KEY_SIDEBAR_SPLIT = 'keeper.sidebar.split.v1';
 
 export interface CachedVault {
   file: VaultFile;
@@ -168,6 +170,17 @@ export function saveDriveFolder(folderId: string): void {
 
 export function clearDriveFolder(): void {
   safeRemove(KEY_DRIVE_FOLDER);
+}
+
+/** Null until the divider is dragged: until then each half sizes itself. */
+export function loadSidebarSplit(): number | null {
+  const raw = safeGet(KEY_SIDEBAR_SPLIT);
+  const value = raw ? Number(raw) : NaN;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function saveSidebarSplit(height: number): void {
+  safeSet(KEY_SIDEBAR_SPLIT, String(Math.round(height)));
 }
 
 export function loadTheme(): 'dark' | 'light' {

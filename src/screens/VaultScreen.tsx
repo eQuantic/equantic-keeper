@@ -25,6 +25,7 @@ import { CopyButton, useCopy } from '../components/SecretValue';
 import { SwipeableRow, type SwipeSide } from '../components/SwipeableRow';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { PullToSync } from '../components/PullToSync';
+import * as storage from '../lib/storage';
 import { useCloseOnBack } from '../components/use-close-on-back';
 
 /** A sidebar row: one type in use, or a whole family of them. */
@@ -55,6 +56,62 @@ function primarySecret(item: VaultItem): { value: string; label: string } | null
   }
   const custom = item.customFields.find((field) => field.secret && field.value);
   return custom ? { value: custom.value, label: custom.label || 'Campo' } : null;
+}
+
+/**
+ * The line between the two halves of the sidebar.
+ *
+ * A vault with forty folders and one with two want opposite things from the
+ * same screen, and only the person looking knows which — so the divider drags,
+ * with the arrow keys as the other way in. Pointer events, so a thumb on the
+ * drawer works the same as a mouse.
+ */
+/** Nothing below this is a list any more, it is a sliver. */
+const SIDEBAR_MIN_PANE = 88;
+const SIDEBAR_HANDLE = 12;
+
+function SidebarSplitter({ onResize }: { onResize: (dy: number) => void }) {
+  const last = useRef<{ y: number; pointerId: number } | null>(null);
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Redimensionar as seções da barra lateral"
+      tabIndex={0}
+      data-sidebar-splitter
+      onPointerDown={(event) => {
+        last.current = { y: event.clientY, pointerId: event.pointerId };
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* synthetic pointers (tests) have no capture */
+        }
+      }}
+      onPointerMove={(event) => {
+        const start = last.current;
+        if (!start || event.pointerId !== start.pointerId) return;
+        // Deltas since the previous move, not since the press: the pane clamps
+        // at its limits, and an absolute offset would keep counting past them.
+        onResize(event.clientY - start.y);
+        last.current = { y: event.clientY, pointerId: event.pointerId };
+      }}
+      onPointerUp={() => {
+        last.current = null;
+      }}
+      onPointerCancel={() => {
+        last.current = null;
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        onResize(event.key === 'ArrowDown' ? 24 : -24);
+      }}
+      className="group flex h-3 shrink-0 cursor-row-resize touch-none items-center px-3 focus-visible:outline-none"
+    >
+      <span className="h-px w-full rounded bg-line transition group-hover:h-0.5 group-hover:bg-accent/60 group-focus-visible:h-0.5 group-focus-visible:bg-accent" />
+    </div>
+  );
 }
 
 function SyncBadge() {
@@ -97,6 +154,13 @@ export function VaultScreen() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swipeOpen, setSwipeOpen] = useState<{ id: string; side: SwipeSide } | null>(null);
   const [addingFolder, setAddingFolder] = useState(false);
+  /**
+   * How tall the items half is, in px. Null while nobody has dragged: each half
+   * sizes itself to its content, which is right until it is not.
+   */
+  const [itemsHeight, setItemsHeight] = useState<number | null>(() => storage.loadSidebarSplit());
+  const panesRef = useRef<HTMLDivElement>(null);
+  const itemsPaneRef = useRef<HTMLDivElement>(null);
   /**
    * Dragging a row onto a folder or a person files it there. Mouse only: on
    * touch the horizontal swipe already owns the gesture, and the sidebar is a
@@ -601,13 +665,35 @@ export function VaultScreen() {
     </button>
   );
 
+  /**
+   * Moves the divider by `dy` px, keeping both halves usable. The first drag
+   * has no stored height to start from, so it measures what the items half is
+   * occupying right now — the line then moves from where the user sees it.
+   */
+  const resizeSidebar = (dy: number) => {
+    const total = panesRef.current?.getBoundingClientRect().height ?? 0;
+    const measured = itemsPaneRef.current?.getBoundingClientRect().height ?? 0;
+    const room = Math.max(SIDEBAR_MIN_PANE, total - SIDEBAR_MIN_PANE - SIDEBAR_HANDLE);
+    setItemsHeight((current) => {
+      const next = Math.min(Math.max((current ?? measured) + dy, SIDEBAR_MIN_PANE), room);
+      storage.saveSidebarSplit(next);
+      return next;
+    });
+  };
+
   const sidebar = (
     <nav className="flex h-full w-64 shrink-0 flex-col border-r border-line bg-surface">
       {/* The account row is the way out to Settings and to what is syncing —
           it stays put while the folders and types scroll past it. */}
+      <div ref={panesRef} className="flex min-h-0 flex-1 flex-col">
       <div
+        ref={itemsPaneRef}
         data-sidebar-scroll
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 lg:pt-4">
+        style={itemsHeight === null ? undefined : { height: itemsHeight, flex: '0 0 auto' }}
+        className={`flex min-h-0 flex-col gap-4 overflow-y-auto px-3 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 lg:pt-4 ${
+          itemsHeight === null ? 'max-h-[60%] flex-none' : ''
+        }`}
+      >
       <div className="space-y-0.5">
         <NavItem
           icon="layers"
@@ -756,7 +842,38 @@ export function VaultScreen() {
         <p className="px-2.5 text-xs text-faint">Nenhum item ainda.</p>
       ) : null}
 
-      <div>
+      {tags.length > 0 ? (
+        <div>
+          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Tags</p>
+          <div className="flex flex-wrap gap-1 px-1.5">
+            {tags.slice(0, 24).map(({ tag, count }) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() =>
+                  setFilter(
+                    filters.tag === tag
+                      ? { ...EMPTY_FILTERS, query: filters.query }
+                      : { ...EMPTY_FILTERS, tag, query: filters.query },
+                  )
+                }
+                className={`rounded-md px-2 py-1 text-xs transition ${
+                  filters.tag === tag ? 'bg-accent/15 text-accent' : 'bg-raised text-muted hover:text-ink'
+                }`}
+              >
+                {tag} <span className="text-faint">{count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      </div>
+
+      <SidebarSplitter onResize={resizeSidebar} />
+
+      {/* The folder tree gets a half of its own: it is the part that grows
+          without limit, and it was pushing everything else off the screen. */}
+      <div data-sidebar-folders className="min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-3">
         <div
           className={`mb-1 flex items-center justify-between rounded-lg pr-1.5 transition ${
             draggingFolder ? 'ring-1 ring-line ring-dashed' : ''
@@ -850,32 +967,6 @@ export function VaultScreen() {
           ) : null}
         </div>
       </div>
-
-      {tags.length > 0 ? (
-        <div>
-          <p className="mb-1 px-2.5 text-[11px] font-medium tracking-wider text-faint uppercase">Tags</p>
-          <div className="flex flex-wrap gap-1 px-1.5">
-            {tags.slice(0, 24).map(({ tag, count }) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() =>
-                  setFilter(
-                    filters.tag === tag
-                      ? { ...EMPTY_FILTERS, query: filters.query }
-                      : { ...EMPTY_FILTERS, tag, query: filters.query },
-                  )
-                }
-                className={`rounded-md px-2 py-1 text-xs transition ${
-                  filters.tag === tag ? 'bg-accent/15 text-accent' : 'bg-raised text-muted hover:text-ink'
-                }`}
-              >
-                {tag} <span className="text-faint">{count}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       </div>
 
