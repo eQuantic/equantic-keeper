@@ -1,5 +1,5 @@
 /** Account, people, security, appearance, backup and danger-zone settings. */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Field, IconButton, Modal, PasswordInput, Switch, TextInput } from './ui';
 import { Icon } from './icons';
 import { useKeeper } from '../state/keeper';
@@ -8,6 +8,8 @@ import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
 import { getClientId } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
+import type { DriveUsage } from '../lib/drive';
+import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
@@ -156,6 +158,111 @@ const selectClass =
  */
 const prefRowClass = 'flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 py-2 text-sm text-ink';
 const prefLabelClass = 'min-w-0 flex-1 basis-48';
+
+/**
+ * What this vault costs the Drive account.
+ *
+ * The app folder is invisible in the Drive UI — the only place a person can
+ * find out is here. Asked for on demand, not on open: it is a couple of API
+ * calls and nobody needs them every time they change a preference.
+ */
+function DriveUsageSection() {
+  const { actions, connected } = useKeeper();
+  const [usage, setUsage] = useState<DriveUsage | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const read = async () => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const result = await actions.driveUsage();
+      setUsage(result);
+      setFailed(!result);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (connected) void read();
+    // Reading again on every render would spend requests for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected]);
+
+  if (!connected) {
+    return <p className="text-xs text-muted">Conecte a conta do Google para ver o espaço ocupado.</p>;
+  }
+
+  const rows: { label: string; bytes: number }[] = usage
+    ? [
+        { label: 'Cofre cifrado', bytes: usage.vault },
+        { label: 'Anexos', bytes: usage.attachments },
+        { label: 'Backups automáticos', bytes: usage.backups },
+        ...(usage.other > 0 ? [{ label: 'Outros arquivos', bytes: usage.other }] : []),
+      ]
+    : [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
+        <div className="min-w-0">
+          <p className="text-sm text-ink">
+            {usage ? formatBytes(usage.total) : busy ? 'Somando…' : '—'}
+            {usage ? (
+              <span className="text-muted"> em {usage.files} {usage.files === 1 ? 'arquivo' : 'arquivos'}</span>
+            ) : null}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            {usage?.quota
+              ? `A conta usa ${formatBytes(usage.quota.used)} de ${formatBytes(usage.quota.limit)} no total.`
+              : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
+          </p>
+        </div>
+        <Button size="sm" icon="refresh" loading={busy} onClick={() => void read()}>
+          Recalcular
+        </Button>
+      </div>
+
+      {failed ? (
+        <p className="text-xs text-warn">Não foi possível ler o espaço agora. Tente de novo.</p>
+      ) : null}
+
+      {usage && usage.total > 0 ? (
+        <>
+          <div className="flex h-2 overflow-hidden rounded-full bg-raised" aria-hidden="true">
+            {rows.map((row, index) =>
+              row.bytes > 0 ? (
+                <span
+                  key={row.label}
+                  style={{
+                    width: `${(row.bytes / usage.total) * 100}%`,
+                    backgroundColor: ['var(--color-accent)', '#2dd4bf', '#fbbf24', '#8d96ae'][index],
+                  }}
+                />
+              ) : null,
+            )}
+          </div>
+          <div className="space-y-1">
+            {rows.map((row, index) => (
+              <div key={row.label} className="flex items-center gap-2 text-xs">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: ['var(--color-accent)', '#2dd4bf', '#fbbf24', '#8d96ae'][index] }}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-muted">{row.label}</span>
+                <span className="tabular-nums text-ink">{formatBytes(row.bytes)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [editingType, setEditingType] = useState<CustomTypeDef | null>(null);
@@ -488,6 +595,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             <option value="light">Claro</option>
           </select>
         </div>
+      </Section>
+
+      <Section
+        title="Espaço no Google Drive"
+        description="Quanto este cofre ocupa na conta conectada, item por item."
+      >
+        <DriveUsageSection />
       </Section>
 
       <Section

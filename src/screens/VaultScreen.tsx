@@ -600,7 +600,12 @@ export function VaultScreen() {
   );
 
   const sidebar = (
-    <nav className="flex h-full w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] lg:pt-4 lg:pb-4">
+    <nav className="flex h-full w-64 shrink-0 flex-col border-r border-line bg-surface">
+      {/* The account row is the way out to Settings and to what is syncing —
+          it stays put while the folders and types scroll past it. */}
+      <div
+        data-sidebar-scroll
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 lg:pt-4">
       <div className="space-y-0.5">
         <NavItem
           icon="layers"
@@ -870,7 +875,11 @@ export function VaultScreen() {
         </div>
       ) : null}
 
-      <div className="mt-auto border-t border-line-soft pt-3">
+      </div>
+
+      <div
+        data-sidebar-footer
+        className="shrink-0 border-t border-line bg-surface px-3 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:pb-2">
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}

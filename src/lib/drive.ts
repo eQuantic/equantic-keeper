@@ -16,6 +16,7 @@ const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FILES_API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILE_FIELDS = 'id,name,modifiedTime,size,headRevisionId';
+const ABOUT_API = 'https://www.googleapis.com/drive/v3/about';
 
 export interface DriveFileMeta {
   id: string;
@@ -96,6 +97,46 @@ export class DriveClient implements DriveApi, DriveBlobApi {
     const response = await this.request(`${FILES_API}?${params}`);
     const data = (await response.json()) as { files?: DriveFileMeta[] };
     return data.files ?? [];
+  }
+
+  /** Every file in the app folder, following Drive's paging to the end. */
+  async listAllAppData(): Promise<DriveFileMeta[]> {
+    const all: DriveFileMeta[] = [];
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        spaces: 'appDataFolder',
+        fields: `nextPageToken,files(${FILE_FIELDS})`,
+        pageSize: '1000',
+        q: 'trashed = false',
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const response = await this.request(`${FILES_API}?${params}`);
+      const data = (await response.json()) as { files?: DriveFileMeta[]; nextPageToken?: string };
+      all.push(...(data.files ?? []));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+    return all;
+  }
+
+  /**
+   * The account's storage totals, or null. The app-data scope does not always
+   * carry the right to ask, and this is context, not the answer — so a refusal
+   * is silent rather than an error in the user's face.
+   */
+  async storageQuota(): Promise<{ used: number; limit: number } | null> {
+    try {
+      const response = await this.request(`${ABOUT_API}?fields=storageQuota`);
+      const data = (await response.json()) as {
+        storageQuota?: { usage?: string; limit?: string };
+      };
+      const used = Number(data.storageQuota?.usage ?? NaN);
+      const limit = Number(data.storageQuota?.limit ?? NaN);
+      if (!Number.isFinite(used) || !Number.isFinite(limit)) return null;
+      return { used, limit };
+    } catch {
+      return null;
+    }
   }
 
   async findVault(): Promise<DriveFileMeta | null> {
@@ -203,6 +244,43 @@ export class DriveClient implements DriveApi, DriveBlobApi {
       await this.delete(stale.id).catch(() => undefined);
     }
   }
+}
+
+export interface DriveUsage {
+  /** Bytes, by what the file is for. */
+  vault: number;
+  backups: number;
+  attachments: number;
+  other: number;
+  total: number;
+  files: number;
+  /** The account's own quota, when Drive tells us — it is not always allowed. */
+  quota?: { used: number; limit: number };
+}
+
+const ATTACHMENT_PREFIX = 'attachment-';
+
+/**
+ * Everything Keeper keeps in the Drive, counted.
+ *
+ * The app folder is invisible in the Drive UI, so the only way to know what
+ * this app costs an account is to add it up here — pages included, because a
+ * vault with a few hundred scans has more than one page of files.
+ */
+export async function driveUsage(client: DriveClient): Promise<DriveUsage> {
+  const usage: DriveUsage = { vault: 0, backups: 0, attachments: 0, other: 0, total: 0, files: 0 };
+  for (const file of await client.listAllAppData()) {
+    const size = Number(file.size ?? 0);
+    if (!Number.isFinite(size)) continue;
+    usage.files += 1;
+    usage.total += size;
+    if (file.name === VAULT_FILE_NAME) usage.vault += size;
+    else if (file.name.startsWith(BACKUP_PREFIX)) usage.backups += size;
+    else if (file.name.startsWith(ATTACHMENT_PREFIX)) usage.attachments += size;
+    else usage.other += size;
+  }
+  const quota = await client.storageQuota();
+  return quota ? { ...usage, quota } : usage;
 }
 
 async function describeError(response: Response): Promise<string> {

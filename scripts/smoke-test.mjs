@@ -722,6 +722,10 @@ const run = async () => {
   await page.locator('nav button:has-text("Configurações")').click();
   await page.waitForSelector('select[aria-label="Tema"]', { timeout: 5000 });
 
+  await check('as configurações têm a seção de espaço no Drive', async () =>
+    (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 1);
+  await check('sem conta conectada, a seção explica em vez de mentir um número', async () =>
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para ver o espaço').count()) === 1);
   await page.selectOption('select[aria-label="Tema"]', 'light');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${OUT}/05-settings-light.png` });
@@ -948,6 +952,31 @@ const run = async () => {
     markdown.includes('- agendar AIMA'));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
+
+  // 11c-septies. The account row is the way to Settings: it must not scroll
+  // away with the folders and types.
+  await check('o rodapé da barra lateral fica fixo', async () => {
+    const before = await page.evaluate(() => {
+      const footer = document.querySelector('[data-sidebar-footer]');
+      const scroller = document.querySelector('[data-sidebar-scroll]');
+      if (!footer || !scroller) return null;
+      scroller.scrollTop = scroller.scrollHeight;
+      return {
+        top: Math.round(footer.getBoundingClientRect().top),
+        // Só prova alguma coisa se a lista realmente rolar.
+        scrollable: scroller.scrollHeight > scroller.clientHeight + 4,
+        bottom: Math.round(footer.getBoundingClientRect().bottom),
+        navBottom: Math.round(document.querySelector('nav').getBoundingClientRect().bottom),
+      };
+    });
+    if (!before) return false;
+    await page.waitForTimeout(250);
+    const after = await page.evaluate(() =>
+      Math.round(document.querySelector('[data-sidebar-footer]').getBoundingClientRect().top),
+    );
+    if (!before.scrollable) console.log('      (barra lateral não rolava neste viewport)');
+    return Math.abs(after - before.top) <= 1 && Math.abs(before.bottom - before.navBottom) <= 2;
+  });
 
   // 11d. Folders created straight in the sidebar, before any item uses them.
   await page.click('button[aria-label="Nova pasta"]');
