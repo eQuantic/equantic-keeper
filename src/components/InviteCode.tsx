@@ -112,22 +112,29 @@ export function InviteCodePanel() {
  * Offered to someone who has just signed in and has no vault: they may not be
  * here to make one, they may be here because someone shared theirs.
  */
+/**
+ * The picker key normally comes baked into the build. When it does not, a guest
+ * has nowhere to put one — Configurações needs a vault, and a guest may have
+ * none — so it is asked for at the moment it is needed. Returns false when the
+ * person declines, and the caller does nothing.
+ */
+export function ensurePickerKey(): boolean {
+  if (getPickerApiKey()) return true;
+  const value = prompt(
+    'Este app foi publicado sem a chave de API do Google que abre o seletor de arquivos. Peça a chave a ' +
+      'quem administra o app e cole aqui:',
+    '',
+  );
+  if (!value?.trim()) return false;
+  setPickerApiKey(value);
+  return true;
+}
+
 export function OpenSharedButton() {
   const { actions, busy } = useKeeper();
 
   const open = () => {
-    // The picker key normally comes baked into the build. When it does not, a
-    // guest has nowhere to put one — Configurações needs a vault, and a guest
-    // has none — so this is the only moment they can be asked.
-    if (!getPickerApiKey()) {
-      const value = prompt(
-        'Este app foi publicado sem a chave de API do Google que abre o seletor de arquivos. Peça a chave a ' +
-          'quem administra o app e cole aqui:',
-        '',
-      );
-      if (!value?.trim()) return;
-      setPickerApiKey(value);
-    }
+    if (!ensurePickerKey()) return;
     void actions.openSharedVault();
   };
 

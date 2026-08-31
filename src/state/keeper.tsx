@@ -126,7 +126,22 @@ export interface KeeperState {
    * local cache — the guest reads what the owner published, and nothing else.
    */
   guest: GuestSession | null;
+  /**
+   * Every vault this device can show right now: the person's own, plus the ones
+   * shared with them. Switching between them is not signing out and in — both
+   * stay open in memory, so coming back needs no master password.
+   */
+  workspaces: Workspace[];
+  activeWorkspace: string;
 }
+
+export interface Workspace {
+  id: string;
+  label: string;
+  kind: 'own' | 'shared';
+}
+
+export const OWN_WORKSPACE = 'own';
 
 export interface GuestSession {
   /** What the owner granted. Editing is not wired yet, so both read for now. */
@@ -182,6 +197,10 @@ export interface KeeperActions {
   revokeShare(recordId: string): Promise<void>;
   /** Opens a vault someone else shared: pick the folder, find our key, read. */
   openSharedVault(): Promise<void>;
+  /** Moves between the vaults this device holds open. */
+  switchWorkspace(id: string): Promise<void>;
+  /** Forgets a shared vault on this device (the owner's copy is untouched). */
+  forgetSharedVault(id: string): void;
   /** Reads the shared vault again — a guest has no sync, only a refresh. */
   refreshSharedVault(): Promise<void>;
   /** What this vault costs the Drive account, or null when not connected. */
@@ -218,6 +237,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     driveMove: null,
     driveMovedElsewhere: false,
     guest: null,
+    workspaces: [],
+    activeWorkspace: OWN_WORKSPACE,
   }));
 
   const authRef = useRef<GoogleAuth | null>(null);
@@ -226,6 +247,15 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   /** Set only while what is open belongs to someone else. */
   const guestRef = useRef<GuestSession | null>(null);
   const guestKeyRef = useRef<CryptoKey | null>(null);
+  /** The person's own vault, parked while a shared one is on screen. */
+  const ownSessionRef = useRef<{
+    payload: VaultPayload;
+    file: VaultFile | null;
+    driveFileId: string | undefined;
+    revision: string | undefined;
+  } | null>(null);
+  /** `lock` is defined below; this lets the workspace switch reach it. */
+  const lockRef = useRef<(() => void) | null>(null);
   const driveRef = useRef<DriveClient | null>(null);
   const derivedRef = useRef<DerivedKey | null>(null);
   /**
@@ -247,6 +277,20 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const patch = useCallback((next: Partial<KeeperState>) => {
     setState((current) => ({ ...current, ...next }));
   }, []);
+
+  /** What is on screen, described for the switcher. */
+  const describeWorkspaces = useCallback((active: string) => {
+    const known = storage.loadSharedVaults();
+    const workspaces: Workspace[] = [
+      { id: OWN_WORKSPACE, label: 'Meu cofre', kind: 'own' },
+      ...known.map((entry) => ({
+        id: `shared:${entry.vaultFileId}`,
+        label: entry.label || 'Cofre partilhado',
+        kind: 'shared' as const,
+      })),
+    ];
+    patch({ workspaces, activeWorkspace: active });
+  }, [patch]);
 
   const fail = useCallback(
     (error: unknown, fallback = 'Algo deu errado.') => {
@@ -665,6 +709,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         adoptVaultFile(file);
         setPayload(emptyPayload());
         storage.saveCachedVault({ file, cachedAt: new Date().toISOString() });
+        describeWorkspaces(OWN_WORKSPACE);
         patch({ phase: 'unlocked', busy: false, notice: 'Cofre criado. Guarde bem a sua senha mestra.' });
         void runSync({ silent: true });
       } catch (error) {
@@ -716,6 +761,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         const opened = await unlockVault(file, password);
         const keys = await adoptKeys(opened);
         setPayload(payloadRef.current ?? opened.payload);
+        describeWorkspaces(OWN_WORKSPACE);
         patch({ phase: 'unlocked', busy: false });
         syncKeystore(opened.derived, opened.payload.preferences.autoLockMinutes);
         await pullAfterUnlock(keys, payloadRef.current ?? opened.payload);
@@ -757,6 +803,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       const opened = await unlockVaultWithDerived(file, derived);
       const keys = await adoptKeys(opened);
       setPayload(payloadRef.current ?? opened.payload);
+      describeWorkspaces(OWN_WORKSPACE);
       patch({ phase: 'unlocked', busy: false });
       syncKeystore(derived, opened.payload.preferences.autoLockMinutes);
       await pullAfterUnlock(keys, payloadRef.current ?? opened.payload);
@@ -812,6 +859,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
   const lock = useCallback(() => {
     window.clearTimeout(syncTimerRef.current);
+    ownSessionRef.current = null;
     derivedRef.current = null;
     payloadRef.current = null;
     // Nothing of a guest session survives a lock: there is no local copy of
@@ -833,6 +881,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const touchItem = (item: VaultItem): VaultItem => ({ ...item, updatedAt: new Date().toISOString() });
+
+  lockRef.current = lock;
 
   const saveItem = useCallback(
     async (item: VaultItem) => {
@@ -1457,6 +1507,78 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * three missing is a different sentence to the user, because they are three
    * different problems with three different fixes.
    */
+  /**
+   * Opens a shared vault whose files this device has already been let into.
+   *
+   * The Drive grant a pick creates belongs to the account, not the tab, so
+   * coming back later needs no picker — only the ids, which are remembered, and
+   * the key, which still comes from the owner's share record and stops working
+   * the moment they revoke it.
+   */
+  const enterSharedVault = useCallback(
+    async (entry: storage.KnownSharedVault) => {
+      const { drive } = services();
+      const client = entry.folderId ? drive.withSpace({ kind: 'folder', id: entry.folderId }) : drive;
+
+      const { identity } = await ensureIdentity();
+      const sharesFileId = entry.folderId
+        ? ((await client.listAll().catch(() => [])).find((file) => file.name === SHARES_FILE_NAME)?.id ?? null)
+        : null;
+      if (!sharesFileId) {
+        throw new Error(
+          'Não consegui achar a lista de convites deste cofre. Abra-o de novo pelo seletor de arquivos.',
+        );
+      }
+      const shares = await client.readJsonById(sharesFileId, isSharesFile);
+      const record = await findOwnShare(shares, identity);
+      if (!record) {
+        throw new Error(
+          'O seu acesso a este cofre foi retirado, ou o convite era para outro aparelho. Peça um convite novo.',
+        );
+      }
+
+      const dataKey = await unwrapWithIdentity(record, identity);
+      const file = await client.download(entry.vaultFileId);
+      const payload = await openVaultWithDataKey(file, dataKey);
+
+      // The owner's own session stays where it is, in memory: switching back is
+      // a click, not a master password.
+      if (!guestRef.current && payloadRef.current) {
+        ownSessionRef.current = {
+          payload: payloadRef.current,
+          file: fileRef.current,
+          driveFileId: driveIdRef.current,
+          revision: revisionRef.current,
+        };
+      }
+
+      const session: GuestSession = {
+        role: record.role,
+        label: record.label,
+        folderId: entry.folderId,
+        vaultFileId: entry.vaultFileId,
+      };
+      guestKeyRef.current = dataKey;
+      guestRef.current = session;
+      fileRef.current = file;
+      driveIdRef.current = entry.vaultFileId;
+      setPayload(payload);
+      storage.rememberSharedVault({ ...entry, label: record.label || entry.label });
+      describeWorkspaces(`shared:${entry.vaultFileId}`);
+      patch({ phase: 'unlocked', busy: false, guest: session, sync: { status: 'idle' } });
+    },
+    [describeWorkspaces, patch, services, setPayload],
+  );
+
+  /**
+   * Opens a vault that belongs to someone else, from scratch.
+   *
+   * Three things have to line up: the Drive has to hand this account the files
+   * (which is what the picker is for), the shares file has to carry a record
+   * addressed to this device's key, and that record has to open. Any of the
+   * three missing is a different sentence to the user, because they are three
+   * different problems with three different fixes.
+   */
   const openSharedVault = useCallback(async () => {
     patch({ busy: true, error: null });
     try {
@@ -1465,7 +1587,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       // over; asking here rather than at sign-in keeps it out of the way of
       // people who never open someone else's vault.
       if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
-      const token = await auth.requestToken(false);
+      const token = await auth.requestToken(true);
 
       const picked = await pickSharedItems(token, storage.getPickerApiKey());
       if (picked.length === 0) {
@@ -1498,38 +1620,73 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      const { identity } = await ensureIdentity();
-      const shares = await client.readJsonById(sharesFileId, isSharesFile);
-      const record = await findOwnShare(shares, identity);
-      if (!record) {
-        throw new Error(
-          'Esta pasta não tem um convite para este aparelho. Envie o seu código de convite para a pessoa que ' +
-            'tem o cofre e peça para ela dar acesso de novo.',
-        );
-      }
-
-      const dataKey = await unwrapWithIdentity(record, identity);
-      const file = await client.download(vaultFileId);
-      const payload = await openVaultWithDataKey(file, dataKey);
-
-      guestKeyRef.current = dataKey;
-      derivedRef.current = null;
-      keysRef.current = null;
-      fileRef.current = file;
-      driveIdRef.current = vaultFileId;
-      const session: GuestSession = {
-        role: record.role,
-        label: record.label,
+      await enterSharedVault({
         folderId: folder?.id ?? null,
         vaultFileId,
-      };
-      guestRef.current = session;
-      setPayload(payload);
-      patch({ phase: 'unlocked', busy: false, guest: session, sync: { status: 'idle' } });
+        label: folder?.name ?? 'Cofre partilhado',
+      });
     } catch (error) {
       fail(error, 'Não foi possível abrir o cofre partilhado.');
     }
-  }, [fail, patch, services, setPayload]);
+  }, [enterSharedVault, fail, patch, services]);
+
+  /** Back to the person's own vault, which never left memory. */
+  const returnToOwnVault = useCallback(() => {
+    const own = ownSessionRef.current;
+    if (!own || !keysRef.current) {
+      throw new Error('O seu cofre não está aberto neste dispositivo. Desbloqueie com a sua senha mestra.');
+    }
+    guestRef.current = null;
+    guestKeyRef.current = null;
+    fileRef.current = own.file;
+    driveIdRef.current = own.driveFileId;
+    revisionRef.current = own.revision;
+    setPayload(own.payload);
+    describeWorkspaces(OWN_WORKSPACE);
+    patch({ guest: null, phase: 'unlocked', error: null });
+  }, [describeWorkspaces, patch, setPayload]);
+
+  const switchWorkspace = useCallback(
+    async (id: string) => {
+      if (id === OWN_WORKSPACE) {
+        try {
+          returnToOwnVault();
+        } catch (error) {
+          fail(error, 'Não foi possível voltar ao seu cofre.');
+        }
+        return;
+      }
+      const vaultFileId = id.replace(/^shared:/, '');
+      if (guestRef.current?.vaultFileId === vaultFileId) return;
+      const entry = storage.loadSharedVaults().find((known) => known.vaultFileId === vaultFileId);
+      if (!entry) return;
+      patch({ busy: true, error: null });
+      try {
+        await enterSharedVault(entry);
+      } catch (error) {
+        fail(error, 'Não foi possível abrir esse cofre partilhado.');
+      }
+    },
+    [enterSharedVault, fail, patch, returnToOwnVault],
+  );
+
+  const forgetShared = useCallback(
+    (id: string) => {
+      const vaultFileId = id.replace(/^shared:/, '');
+      storage.forgetSharedVault(vaultFileId);
+      if (guestRef.current?.vaultFileId === vaultFileId) {
+        try {
+          returnToOwnVault();
+          return;
+        } catch {
+          lockRef.current?.();
+          return;
+        }
+      }
+      describeWorkspaces(guestRef.current ? `shared:${guestRef.current.vaultFileId}` : OWN_WORKSPACE);
+    },
+    [describeWorkspaces, returnToOwnVault],
+  );
 
   const refreshSharedVault = useCallback(async () => {
     const guest = guestRef.current;
@@ -1647,6 +1804,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
             const keys = await adoptKeys(opened);
             const payload = payloadRef.current ?? opened.payload;
             setPayload(payload);
+            describeWorkspaces(OWN_WORKSPACE);
             patch({ phase: 'unlocked' });
             // Reopening counts as activity: the window restarts.
             syncKeystore(stored.derived, payload.preferences.autoLockMinutes);
@@ -1806,6 +1964,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       listShares,
       revokeShare,
       openSharedVault,
+      switchWorkspace,
+      forgetSharedVault: forgetShared,
       refreshSharedVault,
       sweepDriveOrphans,
       driveUsage: readDriveUsage,
@@ -1852,6 +2012,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       listShares,
       revokeShare,
       openSharedVault,
+      switchWorkspace,
+      forgetShared,
       refreshSharedVault,
       sweepDriveOrphans,
       readDriveUsage,
