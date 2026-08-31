@@ -4,6 +4,7 @@ import { getFamily, getType, isSecretKind, type VaultItem } from './model';
 import { originByCode } from './documents';
 import { isWithinFolder } from './folders';
 import { blocksToPlainText } from './blocks';
+import { stripMask } from './mask';
 
 export interface Filters {
   query: string;
@@ -75,7 +76,14 @@ function haystack(item: VaultItem, holderName = ''): string {
   for (const field of type.fields) {
     if (!isSecretKind(field.kind)) {
       const value = item.fields[field.id];
-      if (value) parts.push(value);
+      if (value) {
+        parts.push(value);
+        // Masked numbers are stored as they are written — "123.456.789-00" —
+        // and people search for them as they remember them, which is usually a
+        // run of digits. Both forms go in the haystack so either one finds it.
+        const bare = stripMask(value);
+        if (bare && bare !== value) parts.push(bare);
+      }
     }
   }
   for (const custom of item.customFields) {

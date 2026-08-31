@@ -64,6 +64,8 @@ interface DocsView {
   setSelectFolderEnabled(value: boolean): DocsView;
   setOwnedByMe(value: boolean): DocsView;
   setLabel(label: string): DocsView;
+  setQuery(query: string): DocsView;
+  setMimeTypes(mimeTypes: string): DocsView;
 }
 
 export interface PickerApi {
@@ -114,7 +116,13 @@ function loadPicker(): Promise<void> {
  * the guest can select the vault and the shares file together in one go instead
  * of being sent round the loop twice.
  */
-export async function pickSharedItems(token: string, apiKey: string): Promise<PickedItem[]> {
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+export async function pickSharedItems(
+  token: string,
+  apiKey: string,
+  folderName: string,
+): Promise<PickedItem[]> {
   if (!apiKey) {
     throw new PickerError(
       'Falta a chave de API do Google para abrir o seletor de arquivos. Ela é configurada em ' +
@@ -127,19 +135,39 @@ export async function pickSharedItems(token: string, apiKey: string): Promise<Pi
   if (!picker) throw new PickerError('O seletor do Google não ficou disponível.', 'unavailable');
 
   return new Promise<PickedItem[]>((resolve) => {
-    // Shared with me, folders included and selectable: the vault a guest is
-    // looking for lives in someone else's Drive, never in their own.
-    const shared = new picker.DocsView(picker.ViewId.DOCS)
-      .setOwnedByMe(false)
-      .setIncludeFolders(true)
+    /*
+     * Three views, narrowest first. Opening on everything the person has ever
+     * been shared — holiday photos, a spreadsheet from work — and asking them
+     * to find a folder in it is not a choice, it is a search party. The first
+     * view is the folder by name and usually holds exactly one thing.
+     *
+     * The other two are escape hatches: the owner may have renamed the folder,
+     * and picking files directly is the fallback if a picked folder turns out
+     * not to carry its contents.
+     */
+    const shared = () =>
+      new picker.DocsView(picker.ViewId.DOCS).setOwnedByMe(false).setIncludeFolders(true);
+
+    const theFolder = shared()
       .setSelectFolderEnabled(true)
-      .setLabel('Partilhados comigo');
+      .setMimeTypes(FOLDER_MIME)
+      .setQuery(folderName)
+      .setLabel('Pasta do cofre');
+
+    const anyFolder = shared()
+      .setSelectFolderEnabled(true)
+      .setMimeTypes(FOLDER_MIME)
+      .setLabel('Todas as pastas');
+
+    const theFiles = shared().setMimeTypes('application/json').setQuery('keeper').setLabel('Arquivos do cofre');
 
     const built = new picker.PickerBuilder()
-      .addView(shared)
+      .addView(theFolder)
+      .addView(anyFolder)
+      .addView(theFiles)
       .setOAuthToken(token)
       .setDeveloperKey(apiKey)
-      .setTitle('Escolha a pasta do cofre partilhado')
+      .setTitle(`Escolha a pasta “${folderName}” partilhada com você`)
       .enableFeature(picker.Feature.MULTISELECT_ENABLED)
       .setOrigin(window.location.origin)
       .setCallback((data) => {

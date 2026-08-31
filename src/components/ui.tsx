@@ -11,6 +11,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { applyMask, countTyped, maskedCaret } from '../lib/mask';
 import { Icon } from './icons';
 import { useCloseOnBack } from './use-close-on-back';
 
@@ -133,6 +134,53 @@ const inputClass =
 
 export function TextInput({ className = '', ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={`${inputClass} ${className}`} {...rest} />;
+}
+
+/**
+ * A text field that formats what is typed: `123456789` becomes `123.456.789`
+ * under a CPF's mask.
+ *
+ * The caret is the whole difficulty. Inserting a digit in the middle of a
+ * number pushes the punctuation along, and putting the caret back where the
+ * browser left it would drop it on the wrong side of a dot. So the position is
+ * measured in TYPED characters either side of the caret, not in string offsets,
+ * and restored the same way after the value is re-formatted.
+ */
+export function MaskedInput({
+  mask,
+  value,
+  onChange,
+  className = '',
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  mask: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const caret = caretRef.current;
+    if (caret === null || !ref.current) return;
+    caretRef.current = null;
+    ref.current.setSelectionRange(caret, caret);
+  });
+
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      value={applyMask(mask, value)}
+      onChange={(event) => {
+        const typed = countTyped(event.target.value, event.target.selectionStart ?? event.target.value.length);
+        const next = applyMask(mask, event.target.value);
+        caretRef.current = maskedCaret(next, typed);
+        onChange(next);
+      }}
+      className={`${inputClass} ${className}`}
+    />
+  );
 }
 
 /**
@@ -271,18 +319,58 @@ export function PasswordInput({
   revealLabel = 'Mostrar senha',
   hideLabel = 'Ocultar senha',
   defaultRevealed = false,
+  mask,
+  onValueChange,
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   revealLabel?: string;
   hideLabel?: string;
   /** Starts legible — for values copied off a physical card, not passwords. */
   defaultRevealed?: boolean;
+  /**
+   * A card number is a secret that is still written in groups of four. With a
+   * mask the caller takes `onValueChange` instead of `onChange`: the formatted
+   * value is what gets stored, exactly as in `MaskedInput`.
+   */
+  mask?: string;
+  onValueChange?: (value: string) => void;
 }) {
   const [revealed, setRevealed] = useState(defaultRevealed);
+  const ref = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const caret = caretRef.current;
+    if (caret === null || !ref.current) return;
+    caretRef.current = null;
+    // A password-typed input refuses setSelectionRange in some browsers; while
+    // it is concealed the caret sits at the end anyway.
+    try {
+      ref.current.setSelectionRange(caret, caret);
+    } catch {
+      /* concealed input, nothing to place */
+    }
+  });
+
   return (
     <div className="relative">
       <input
         {...rest}
+        ref={ref}
+        {...(mask
+          ? {
+              value: applyMask(mask, String(rest.value ?? '')),
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+                const typed = countTyped(
+                  event.target.value,
+                  event.target.selectionStart ?? event.target.value.length,
+                );
+                const next = applyMask(mask, event.target.value);
+                caretRef.current = maskedCaret(next, typed);
+                onValueChange?.(next);
+              },
+            }
+          : {})}
         type={revealed ? 'text' : 'password'}
         className={`${inputClass} pr-10 font-mono ${className}`}
       />
@@ -645,6 +733,161 @@ export function Select({
           )
         : null}
     </>
+  );
+}
+
+
+/* ------------------------------------------------------------------------- *
+ * Context menu
+ * ------------------------------------------------------------------------- */
+
+export interface MenuItem {
+  id: string;
+  label: string;
+  icon?: string;
+  hint?: string;
+  danger?: boolean;
+  /** Shows a tick — for options that describe the item's current state. */
+  checked?: boolean;
+  /** Opens a second panel instead of acting: "move to", "assign to". */
+  children?: MenuItem[];
+  onSelect?: () => void;
+}
+
+/**
+ * The right-click menu on a list row.
+ *
+ * Drill-down rather than fly-out submenus: a panel that replaces the previous
+ * one, with a way back at the top. Fly-outs need diagonal-travel tolerance to
+ * be usable with a mouse and are hopeless with a keyboard, and the lists here
+ * (folders, people) are exactly the kind that grow past what a fly-out can hold.
+ */
+export function ContextMenu({
+  at,
+  items,
+  onClose,
+  label,
+}: {
+  at: { x: number; y: number };
+  items: MenuItem[];
+  onClose: () => void;
+  label?: string;
+}) {
+  const [stack, setStack] = useState<MenuItem[][]>([items]);
+  const [title, setTitle] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = stack[stack.length - 1] ?? items;
+
+  // `onClose` is an inline arrow at every call site, so it changes identity on
+  // every render of the parent. Keyed on it, this effect re-ran constantly and
+  // its cleanup cancelled the focus timer before it could fire — leaving a menu
+  // that never took focus, and an Escape key that went nowhere.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => ref.current?.focus(), 0);
+    const close = () => closeRef.current();
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    const onPointerDown = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) closeRef.current();
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, []);
+
+  // Keep it on screen: near the right edge or the bottom it opens the other way.
+  const width = 232;
+  const height = Math.min(current.length * 38 + 16, 360);
+  const left = Math.min(at.x, window.innerWidth - width - 8);
+  const top = Math.min(at.y, window.innerHeight - height - 8);
+
+  const back = () => {
+    setStack((panels) => (panels.length > 1 ? panels.slice(0, -1) : panels));
+    setTitle(null);
+    setActive(0);
+  };
+
+  const pick = (item: MenuItem) => {
+    if (item.children) {
+      setStack((panels) => [...panels, item.children!]);
+      setTitle(item.label);
+      setActive(0);
+      return;
+    }
+    item.onSelect?.();
+    onClose();
+  };
+
+  return createPortal(
+    <div
+      ref={ref}
+      role="menu"
+      tabIndex={-1}
+      aria-label={label ?? 'Ações'}
+      data-context-menu
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          setActive((index) => (index + delta + current.length) % Math.max(current.length, 1));
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          const item = current[active];
+          if (item) pick(item);
+        } else if (event.key === 'Escape' || event.key === 'ArrowLeft') {
+          event.preventDefault();
+          event.stopPropagation();
+          if (stack.length > 1) back();
+          else onClose();
+        }
+      }}
+      style={{ position: 'fixed', top: Math.max(8, top), left: Math.max(8, left), width }}
+      className="animate-in card z-[70] max-h-[min(22rem,70dvh)] overflow-y-auto p-1 shadow-xl focus:outline-none"
+    >
+      {stack.length > 1 ? (
+        <button
+          type="button"
+          onClick={back}
+          className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted transition hover:bg-raised"
+        >
+          <Icon name="chevronLeft" size={13} />
+          {title}
+        </button>
+      ) : null}
+
+      {current.map((item, index) => (
+        <button
+          key={item.id}
+          type="button"
+          role="menuitem"
+          data-menu-item={item.id}
+          data-active={index === active}
+          onMouseEnter={() => setActive(index)}
+          onClick={() => pick(item)}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm transition ${
+            index === active ? 'bg-raised' : ''
+          } ${item.danger ? 'text-danger' : 'text-ink'}`}
+        >
+          {item.icon ? (
+            <Icon name={item.icon} size={14} className={item.danger ? '' : 'text-muted'} />
+          ) : (
+            <span className="w-[14px]" />
+          )}
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {item.checked ? <Icon name="check" size={13} className="shrink-0 text-accent" /> : null}
+          {item.children ? <Icon name="chevron" size={12} className="shrink-0 text-faint" /> : null}
+        </button>
+      ))}
+    </div>,
+    document.body,
   );
 }
 

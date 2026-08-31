@@ -1592,7 +1592,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
       const token = await auth.requestToken(true);
 
-      const picked = await pickSharedItems(token, storage.getPickerApiKey());
+      const picked = await pickSharedItems(token, storage.getPickerApiKey(), KEEPER_FOLDER_NAME);
       if (picked.length === 0) {
         patch({ busy: false });
         return;

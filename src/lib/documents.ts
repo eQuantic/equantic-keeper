@@ -153,12 +153,18 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'idCard',
     accent: '#22d3ee',
     fields: [
-      { id: 'civilId', label: 'Nº de identificação civil', kind: 'text', numeric: true },
-      { id: 'documentNumber', label: 'Nº do documento', kind: 'text', hint: 'Inclui a versão, ex.: 12345678 9 ZZ1' },
+      { id: 'civilId', label: 'Nº de identificação civil', kind: 'text', numeric: true, mask: '00000000' },
+      {
+        id: 'documentNumber',
+        label: 'Nº do documento',
+        kind: 'text',
+        hint: 'Inclui a versão, ex.: 12345678 9 ZZ1',
+        mask: '00000000 0 AA0',
+      },
       { id: 'expiresAt', label: 'Válido até', kind: 'date' },
-      { id: 'nif', label: 'NIF', kind: 'text', numeric: true },
-      { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
-      { id: 'sns', label: 'Nº de utente (SNS)', kind: 'text', numeric: true },
+      { id: 'nif', label: 'NIF', kind: 'text', numeric: true, mask: '000 000 000' },
+      { id: 'niss', label: 'NISS', kind: 'text', numeric: true, mask: '00000000000' },
+      { id: 'sns', label: 'Nº de utente (SNS)', kind: 'text', numeric: true, mask: '000 000 000' },
     ],
   },
   {
@@ -172,7 +178,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#fbbf24',
     fields: [
-      { id: 'nif', label: 'NIF', kind: 'text', placeholder: '123456789', numeric: true },
+      { id: 'nif', label: 'NIF', kind: 'text', placeholder: '123 456 789', numeric: true, mask: '000 000 000' },
       { id: 'servicoFinancas', label: 'Serviço de finanças', kind: 'text' },
       { id: 'representante', label: 'Representante fiscal', kind: 'text' },
       { id: 'issuedAt', label: 'Atribuído em', kind: 'date' },
@@ -189,7 +195,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#a3e635',
     fields: [
-      { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
+      { id: 'niss', label: 'NISS', kind: 'text', numeric: true, mask: '00000000000' },
       { id: 'issuedAt', label: 'Atribuído em', kind: 'date' },
     ],
   },
@@ -204,7 +210,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'health',
     accent: '#f472b6',
     fields: [
-      { id: 'numeroUtente', label: 'Nº de utente', kind: 'text', numeric: true },
+      { id: 'numeroUtente', label: 'Nº de utente', kind: 'text', numeric: true, mask: '000 000 000' },
       { id: 'centroSaude', label: 'Centro de saúde', kind: 'text' },
       { id: 'medicoFamilia', label: 'Médico de família', kind: 'text' },
     ],
@@ -275,7 +281,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#34d399',
     fields: [
-      { id: 'cpf', label: 'CPF', kind: 'text', placeholder: '000.000.000-00', numeric: true },
+      { id: 'cpf', label: 'CPF', kind: 'text', placeholder: '000.000.000-00', numeric: true, mask: '000.000.000-00' },
       { id: 'situacao', label: 'Situação cadastral', kind: 'text', placeholder: 'Regular', options: ['Regular', 'Pendente de regularização', 'Suspensa', 'Cancelada', 'Nula', 'Titular falecido'] },
       { id: 'issuedAt', label: 'Inscrição em', kind: 'date' },
     ],
@@ -327,7 +333,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'stamp',
     accent: '#818cf8',
     fields: [
-      { id: 'numero', label: 'Nº de inscrição', kind: 'text', numeric: true },
+      { id: 'numero', label: 'Nº de inscrição', kind: 'text', numeric: true, mask: '0000 0000 0000' },
       { id: 'zona', label: 'Zona', kind: 'text', numeric: true },
       { id: 'secao', label: 'Seção', kind: 'text', numeric: true },
       { id: 'municipio', label: 'Município', kind: 'text' },
@@ -346,7 +352,15 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#c084fc',
     fields: [
       { id: 'tipo', label: 'Tipo', kind: 'text', placeholder: 'Nascimento · Casamento · Óbito', options: ['Nascimento', 'Casamento', 'Óbito', 'Averbação', 'Inteiro teor'] },
-      { id: 'matricula', label: 'Matrícula', kind: 'text', hint: '32 dígitos das certidões novas', numeric: true },
+      {
+        id: 'matricula',
+        label: 'Matrícula',
+        kind: 'text',
+        hint: '32 dígitos das certidões novas',
+        numeric: true,
+        // O formato oficial: 6.2.2.4.1.5.3.7-2.
+        mask: '000000 00 00 0000 0 00000 000 0000000-00',
+      },
       { id: 'cartorio', label: 'Cartório', kind: 'text' },
       { id: 'livro', label: 'Livro', kind: 'text' },
       { id: 'folha', label: 'Folha', kind: 'text' },
@@ -618,7 +632,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     accent: '#fb7185',
     fields: [
       { id: 'holder', label: 'Nome no cartão', kind: 'text' },
-      { id: 'number', label: 'Número do cartão', kind: 'secret', numeric: true },
+      { id: 'number', label: 'Número do cartão', kind: 'secret', numeric: true, dynamicMask: 'card' },
       { id: 'brand', label: 'Bandeira', kind: 'text', placeholder: 'Visa · Mastercard · Amex', options: ['Visa', 'Mastercard', 'American Express', 'Elo', 'Hipercard', 'Diners Club', 'Discover', 'UnionPay'] },
       {
         id: 'expiresAt',
@@ -721,7 +735,7 @@ export const DOCUMENT_TYPES: SecretTypeDef[] = [
     icon: 'file',
     accent: '#2dd4bf',
     fields: [
-      { id: 'niss', label: 'NISS', kind: 'text', numeric: true },
+      { id: 'niss', label: 'NISS', kind: 'text', numeric: true, mask: '00000000000' },
       { id: 'numero', label: 'Nº / referência', kind: 'text' },
       { id: 'situacao', label: 'Situação', kind: 'text', placeholder: 'Regularizada', options: ['Regularizada', 'Com dívida', 'Dívida em plano prestacional'] },
       { id: 'issuedAt', label: 'Emitida em', kind: 'date' },

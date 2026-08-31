@@ -206,3 +206,14 @@ describe('documentos e titulares', () => {
     expect(applyFilters(items, { ...EMPTY_FILTERS, holderId: 'p-ninguem' }, 'name')).toEqual([]);
   });
 });
+
+describe('números com máscara', () => {
+  it('acha pelo número formatado e pelos dígitos soltos', () => {
+    const item = { ...createItem('br-cpf'), name: 'CPF', fields: { cpf: '123.456.789-00' } };
+
+    expect(matches(item, '123.456.789-00')).toBe(true);
+    // Como a pessoa lembra dele, sem a pontuação.
+    expect(matches(item, '12345678900')).toBe(true);
+    expect(matches(item, '98765432100')).toBe(false);
+  });
+});
