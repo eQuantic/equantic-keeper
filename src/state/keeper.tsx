@@ -182,6 +182,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   }));
 
   const authRef = useRef<GoogleAuth | null>(null);
+  /** Mirrors `driveMovedElsewhere` for the sync loop, which reads refs. */
+  const movedElsewhereRef = useRef(false);
   const driveRef = useRef<DriveClient | null>(null);
   const derivedRef = useRef<DerivedKey | null>(null);
   /**
@@ -343,6 +345,23 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
             message: navigator.onLine
               ? 'Sem conexão com o Drive — tentaremos de novo sozinhos.'
               : 'Sem internet. As alterações sobem assim que a conexão voltar.',
+          },
+        });
+        return;
+      }
+
+      // The vault moved into a folder this device cannot see, and the copy in
+      // the app folder is a snapshot nobody reads any more. Writing to it would
+      // bury today's edits in a file the other devices abandoned — better to
+      // stop and say so. A forced sync is still the way out, deliberately.
+      if (movedElsewhereRef.current && drive.space.kind === 'appdata' && !options.force) {
+        pendingSyncRef.current = true;
+        patch({
+          sync: {
+            status: 'conflict',
+            message:
+              'Este cofre foi movido para uma pasta do Drive em outro aparelho. Este aqui ainda usa a pasta ' +
+              'oculta, então parou de enviar para não gravar na cópia antiga.',
           },
         });
         return;
@@ -518,7 +537,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           const marker = await drive
             .listFiles(`name = '${MOVED_MARKER_NAME}' and trashed = false`)
             .catch(() => []);
-          patch({ driveMovedElsewhere: readMovedMarker(marker) });
+          movedElsewhereRef.current = readMovedMarker(marker);
+          patch({ driveMovedElsewhere: movedElsewhereRef.current });
         }
 
         const account = await auth.fetchAccount();
@@ -1217,6 +1237,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
       storage.saveDriveFolder(report.folderId);
       drive.useSpace({ kind: 'folder', id: report.folderId });
+      movedElsewhereRef.current = false;
       // The vault's copy is a different file: syncing before this line would
       // write the migrated vault straight back into the app folder.
       driveIdRef.current = report.vaultFileId ?? undefined;

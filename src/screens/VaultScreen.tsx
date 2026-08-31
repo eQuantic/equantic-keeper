@@ -84,12 +84,14 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account, connected } = useKeeper();
+  const { payload, actions, account, connected, driveMovedElsewhere } = useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ item: VaultItem | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Set when something on screen sends the user to a particular pane. */
+  const [settingsPane, setSettingsPane] = useState<string | undefined>(undefined);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -945,6 +947,28 @@ export function VaultScreen() {
         ) : null}
 
         <main className="flex min-w-0 flex-1 flex-col">
+          {/* The vault moved and this device did not follow. It is still writing
+              to a copy nobody else reads, so this cannot live behind a settings
+              screen the user has no reason to open. */}
+          {driveMovedElsewhere ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-warn/40 bg-warn/10 px-4 py-2.5 text-sm text-ink">
+              <Icon name="warning" size={15} className="shrink-0 text-warn" />
+              <span className="min-w-0 flex-1">
+                Este cofre foi movido para uma pasta do Drive em outro aparelho. Este aqui parou de sincronizar
+                para não gravar na cópia antiga.
+              </span>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSettingsPane('conta');
+                  setSettingsOpen(true);
+                }}
+              >
+                Conectar à pasta
+              </Button>
+            </div>
+          ) : null}
+
           {expiring.list.length > 0 ? (
             /* The sidebar carries these filters, but on a phone it hides behind
                the menu button — and expiry is the one signal that must not wait
@@ -1332,7 +1356,14 @@ export function VaultScreen() {
       ) : null}
 
       <GeneratorDialog open={generatorOpen} onClose={() => setGeneratorOpen(false)} />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        initialPane={settingsPane}
+        onClose={() => {
+          setSettingsOpen(false);
+          setSettingsPane(undefined);
+        }}
+      />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
 
