@@ -33,7 +33,7 @@ import {
   webAuthnPrf,
   wrapMasterBits,
 } from '../lib/biometric';
-import { DriveClient, driveUsage, KEEPER_FOLDER_NAME, type DriveUsage } from '../lib/drive';
+import { DriveClient, driveUsage, KEEPER_FOLDER_NAME, VAULT_FILE_NAME, type DriveUsage } from '../lib/drive';
 import {
   MOVED_MARKER_NAME,
   discardAppDataCopy,
@@ -41,7 +41,16 @@ import {
   readMovedMarker,
   repointAttachments,
 } from '../lib/drive-migration';
-import { rewrapShare, type ShareRecord } from '../lib/invites';
+import {
+  findOwnShare,
+  isSharesFile,
+  rewrapShare,
+  SHARES_FILE_NAME,
+  unwrapWithIdentity,
+  type ShareRecord,
+} from '../lib/invites';
+import { ensureIdentity } from '../lib/identity';
+import { pickSharedItems } from '../lib/picker';
 import { grantAccess, readShares, removeAccess, writeShares, type StoredShares } from '../lib/sharing';
 import type { DrivePermission } from '../lib/drive';
 import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError } from '../lib/google-auth';
@@ -70,6 +79,7 @@ import {
   createVault as buildVault,
   emptyPayload,
   mergePayloads,
+  openVaultWithDataKey,
   sealVault,
   unlockVault,
   unlockVaultWithDerived,
@@ -110,6 +120,21 @@ export interface KeeperState {
   driveMove: { done: number; total: number } | null;
   /** The app folder says this vault has moved — this device has not followed. */
   driveMovedElsewhere: boolean;
+  /**
+   * Set when what is open belongs to someone else: a vault reached through a
+   * share record instead of a password. There is no master password here and no
+   * local cache — the guest reads what the owner published, and nothing else.
+   */
+  guest: GuestSession | null;
+}
+
+export interface GuestSession {
+  /** What the owner granted. Editing is not wired yet, so both read for now. */
+  role: 'reader' | 'writer';
+  /** The name the owner gave this invite, echoed back so it is recognisable. */
+  label: string;
+  folderId: string | null;
+  vaultFileId: string;
 }
 
 export interface KeeperActions {
@@ -155,6 +180,10 @@ export interface KeeperActions {
   listShares(): Promise<{ shares: ShareRecord[]; permissions: DrivePermission[] }>;
   /** Takes one person's access away and rotates the key so a kept copy dies. */
   revokeShare(recordId: string): Promise<void>;
+  /** Opens a vault someone else shared: pick the folder, find our key, read. */
+  openSharedVault(): Promise<void>;
+  /** Reads the shared vault again — a guest has no sync, only a refresh. */
+  refreshSharedVault(): Promise<void>;
   /** What this vault costs the Drive account, or null when not connected. */
   driveUsage(): Promise<DriveUsage | null>;
   currentVaultFile(): VaultFile | null;
@@ -188,11 +217,15 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     driveFolderId: storage.loadDriveFolder(),
     driveMove: null,
     driveMovedElsewhere: false,
+    guest: null,
   }));
 
   const authRef = useRef<GoogleAuth | null>(null);
   /** Mirrors `driveMovedElsewhere` for the sync loop, which reads refs. */
   const movedElsewhereRef = useRef(false);
+  /** Set only while what is open belongs to someone else. */
+  const guestRef = useRef<GuestSession | null>(null);
+  const guestKeyRef = useRef<CryptoKey | null>(null);
   const driveRef = useRef<DriveClient | null>(null);
   const derivedRef = useRef<DerivedKey | null>(null);
   /**
@@ -447,6 +480,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     async (updater: (payload: VaultPayload) => VaultPayload) => {
       const current = payloadRef.current;
       if (!current) throw new Error('O cofre está bloqueado.');
+      // A guest reads. Editing someone else's vault needs a write path of its
+      // own (the header is the owner's), and until that exists this is the one
+      // place that has to say no — every action funnels through here.
+      if (guestRef.current) {
+        throw new Error('Este cofre é de outra pessoa: por enquanto o acesso partilhado é só de leitura.');
+      }
       const next = updater(current);
       setPayload(next);
       await persistLocal(next);
@@ -753,14 +792,19 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(syncTimerRef.current);
     derivedRef.current = null;
     payloadRef.current = null;
+    // Nothing of a guest session survives a lock: there is no local copy of
+    // someone else's vault to come back to, by design.
+    guestRef.current = null;
+    guestKeyRef.current = null;
     // A deliberate lock always demands a credential next, whatever the
     // auto-lock preference says.
     void clearDerivedKey();
     void clearClipboard();
     setState((current) => ({
       ...current,
-      phase: current.hasLocalVault || fileRef.current ? 'locked' : 'signin',
+      phase: current.guest ? 'signin' : current.hasLocalVault || fileRef.current ? 'locked' : 'signin',
       payload: null,
+      guest: null,
       error: null,
       notice: null,
     }));
@@ -1018,6 +1062,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const readAttachment = useCallback(async (ref: AttachmentRef) => {
+    // A guest holds the data key and nothing else: attachment keys hang off it,
+    // so the same call works with no password anywhere in sight.
+    const guestKey = guestKeyRef.current;
+    if (guestKey) return openAttachment(driveRef.current, guestKey, ref);
     const keys = keysRef.current;
     if (!keys) throw new Error('O cofre está bloqueado.');
     try {
@@ -1378,6 +1426,111 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [fail, patch, rotateDataKey, sharingContext],
   );
 
+  /**
+   * Opens a vault that belongs to someone else.
+   *
+   * Three things have to line up: the Drive has to hand this account the files
+   * (which is what the picker is for), the shares file has to carry a record
+   * addressed to this device's key, and that record has to open. Any of the
+   * three missing is a different sentence to the user, because they are three
+   * different problems with three different fixes.
+   */
+  const openSharedVault = useCallback(async () => {
+    patch({ busy: true, error: null });
+    try {
+      const { auth, drive } = services();
+      // A guest needs the per-file scope before the picker can hand anything
+      // over; asking here rather than at sign-in keeps it out of the way of
+      // people who never open someone else's vault.
+      if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
+      const token = await auth.requestToken(false);
+
+      const picked = await pickSharedItems(token, storage.getPickerApiKey());
+      if (picked.length === 0) {
+        patch({ busy: false });
+        return;
+      }
+
+      const folder = picked.find((item) => item.isFolder) ?? null;
+      const client = folder ? drive.withSpace({ kind: 'folder', id: folder.id }) : drive;
+
+      // Picked a folder: read what is inside it. Whether Drive lets us is the
+      // open question this flow was built to answer, so a folder that comes
+      // back empty is reported as itself rather than as "vault not found".
+      const inside = folder ? await client.listAll().catch(() => []) : [];
+      const named = (name: string) =>
+        inside.find((file) => file.name === name)?.id ??
+        picked.find((item) => item.name === name)?.id ??
+        null;
+
+      const vaultFileId = named(VAULT_FILE_NAME);
+      const sharesFileId = named(SHARES_FILE_NAME);
+
+      if (!vaultFileId || !sharesFileId) {
+        throw new Error(
+          folder && inside.length === 0
+            ? `A pasta "${folder.name}" abriu, mas o Drive não listou nada dentro dela. Escolha os arquivos ` +
+              `"${VAULT_FILE_NAME}" e "${SHARES_FILE_NAME}" diretamente no seletor.`
+            : `Não encontrei "${VAULT_FILE_NAME}" e "${SHARES_FILE_NAME}" no que foi escolhido. Selecione a ` +
+              'pasta do cofre que a outra pessoa partilhou com você.',
+        );
+      }
+
+      const { identity } = await ensureIdentity();
+      const shares = await client.readJsonById(sharesFileId, isSharesFile);
+      const record = await findOwnShare(shares, identity);
+      if (!record) {
+        throw new Error(
+          'Esta pasta não tem um convite para este aparelho. Envie o seu código de convite para a pessoa que ' +
+            'tem o cofre e peça para ela dar acesso de novo.',
+        );
+      }
+
+      const dataKey = await unwrapWithIdentity(record, identity);
+      const file = await client.download(vaultFileId);
+      const payload = await openVaultWithDataKey(file, dataKey);
+
+      guestKeyRef.current = dataKey;
+      derivedRef.current = null;
+      keysRef.current = null;
+      fileRef.current = file;
+      driveIdRef.current = vaultFileId;
+      const session: GuestSession = {
+        role: record.role,
+        label: record.label,
+        folderId: folder?.id ?? null,
+        vaultFileId,
+      };
+      guestRef.current = session;
+      setPayload(payload);
+      patch({ phase: 'unlocked', busy: false, guest: session, sync: { status: 'idle' } });
+    } catch (error) {
+      fail(error, 'Não foi possível abrir o cofre partilhado.');
+    }
+  }, [fail, patch, services, setPayload]);
+
+  const refreshSharedVault = useCallback(async () => {
+    const guest = guestRef.current;
+    const dataKey = guestKeyRef.current;
+    const drive = driveRef.current;
+    if (!guest || !dataKey || !drive) return;
+    patch({ sync: { status: 'syncing' } });
+    try {
+      const client = guest.folderId ? drive.withSpace({ kind: 'folder', id: guest.folderId }) : drive;
+      const file = await client.download(guest.vaultFileId);
+      fileRef.current = file;
+      setPayload(await openVaultWithDataKey(file, dataKey));
+      patch({ sync: { status: 'saved', at: new Date().toISOString() } });
+    } catch (error) {
+      patch({
+        sync: {
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Falha ao ler o cofre partilhado.',
+        },
+      });
+    }
+  }, [patch, setPayload]);
+
   const discardOldDriveCopy = useCallback(async () => {
     const drive = driveRef.current;
     const folderId = storage.loadDriveFolder();
@@ -1631,6 +1784,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       shareVault,
       listShares,
       revokeShare,
+      openSharedVault,
+      refreshSharedVault,
       sweepDriveOrphans,
       driveUsage: readDriveUsage,
       currentVaultFile,
@@ -1675,6 +1830,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       shareVault,
       listShares,
       revokeShare,
+      openSharedVault,
+      refreshSharedVault,
       sweepDriveOrphans,
       readDriveUsage,
       syncNow,

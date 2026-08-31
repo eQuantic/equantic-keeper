@@ -9,6 +9,7 @@ import { isVaultFile, type VaultFile } from './vault';
 
 const KEY_CACHE = 'keeper.vault.cache.v1';
 const KEY_CLIENT_ID = 'keeper.google.clientId';
+const KEY_PICKER_KEY = 'keeper.google.pickerKey';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
@@ -88,6 +89,23 @@ export function setClientId(clientId: string): void {
   const value = clientId.trim();
   if (value) safeSet(KEY_CLIENT_ID, value);
   else safeRemove(KEY_CLIENT_ID);
+}
+
+/**
+ * Browser API key for the Google Picker — public like the client id, and needed
+ * only by a guest opening someone else's folder. Same shape as the client id:
+ * baked in for the official build, overridable on a fork.
+ */
+export function getPickerApiKey(): string {
+  const override = safeGet(KEY_PICKER_KEY)?.trim();
+  if (override) return override;
+  return (import.meta.env.VITE_GOOGLE_PICKER_KEY ?? '').trim();
+}
+
+export function setPickerApiKey(key: string): void {
+  const value = key.trim();
+  if (value) safeSet(KEY_PICKER_KEY, value);
+  else safeRemove(KEY_PICKER_KEY);
 }
 
 export function isClientIdOverridden(): boolean {

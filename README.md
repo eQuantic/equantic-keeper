@@ -42,7 +42,8 @@ is never transmitted, never stored, and cannot be recovered.
 | Header integrity | The public header is fed in as *additional authenticated data* — tampering with it invalidates the tag |
 | Key at rest | Non-extractable `CryptoKey`, wiped on manual lock and when the auto-lock window ends. While the window is open (or forever, with auto-lock "Never") a non-extractable copy sits in IndexedDB stamped with the deadline, so tab discards, app updates and reloads reopen the vault without the password; boot deletes an expired record and asks for the password again |
 | Biometric unlock (optional) | Master bits AES-GCM-wrapped under a key derived from a platform passkey's WebAuthn PRF output — per device, gated by Face ID / fingerprint / device PIN, invalidated by a password change |
-| Google scope | `drive.appdata` (the app's own hidden folder) + email/profile. `drive.file` — files this app created, and nothing else — is asked for only if you move the vault into a folder of your own |
+| Google scope | `drive.appdata` (the app's own hidden folder) + email/profile. `drive.file` — files this app created or that the user picked, and nothing else — is asked for only if you move the vault into a folder of your own, or open one shared with you |
+| Sharing | The vault's data key wrapped to a recipient's ECDH public key (ephemeral ECDH + HKDF + AES-GCM). The invite code carries no secret; revoking rotates the data key so a kept copy dies |
 | OAuth token | Short-lived access token, held in memory only |
 | Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
 | CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
@@ -70,6 +71,29 @@ A device that has not been granted the wider permission cannot even see the new 
 the move leaves a marker file behind in the app folder. Any device still syncing the old
 way reads it and says so, instead of quietly drifting away from the vault everyone else is
 using.
+
+### Sharing a vault
+
+Two things have to line up, and they are deliberately separate.
+
+**The Drive permission** decides who can download the bytes. The owner adds the
+other person's Google account to the folder — which is why the vault has to leave
+`appDataFolder` first, since Drive refuses to share anything kept there.
+
+**The key** decides who can read them. The guest's device generates an ECDH
+keypair and shows the public half as an **invite code**; nothing secret travels,
+so the code can go by WhatsApp or be read out loud. The owner pastes it, and the
+vault's data key is wrapped to that public key and published as a share record
+beside the vault. Only the private key that never left the guest's device opens
+it, and the owner's master password is never involved on either side.
+
+**Revoking** removes the permission *and* rotates the vault's data key:
+attachments move onto the new one and everyone who stays gets their record
+rewritten around it, so a copy the removed person kept stops opening.
+
+The guest's app reaches the folder through the Google Picker — under
+`drive.file` it can see only what its user pointed at. Guest access is read-only
+for now.
 
 ### Biometric unlock
 
@@ -180,15 +204,21 @@ wraps the vault's master bits into a record kept in `localStorage`.
    vault into a folder of your own (which is what makes sharing possible later) — the app
    never asks for it at sign-in, only when you press the button, and it falls back to the
    app folder if the scope is missing.
-5. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
-6. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
+5. To let someone open a vault **shared with them**, also enable the **Google
+   Picker API** (*APIs & Services → Library*) and create an **API key** under
+   *Credentials* — restrict it to your origin and to the Picker API. Under
+   `drive.file` a guest's browser can only reach files they pointed at through
+   that picker, so without the key the guest side does nothing; everything else
+   works without it.
+6. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
+7. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
    trailing slash and no path. For the official instance: `https://keeper.equantic.tech`;
    on a fork without a custom domain, `https://<username>.github.io`. No redirect URI is
    needed: the flow uses Google Identity Services in a popup.
 
    > If the origin does not exactly match the address bar, Google's popup refuses with
    > `origin_mismatch` — the most common error in this setup.
-7. Copy the **Client ID** (something like `1234567890-abc.apps.googleusercontent.com`).
+8. Copy the **Client ID** (something like `1234567890-abc.apps.googleusercontent.com`).
    It is a **public** identifier, not a secret.
 
 > At sign-in the only Drive scope requested is `drive.appdata`. Google presents it as "See
@@ -220,9 +250,11 @@ fails.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
    - Name: `GOOGLE_OAUTH_CLIENT_ID`
    - Value: the client id from the previous step.
+   - And, for the guest side, `GOOGLE_PICKER_API_KEY` with the API key.
 
-If you prefer not to bake the client id into the build, leave the variable empty: the app
-asks for the client id on first run and keeps it in that browser's `localStorage`.
+Neither is a secret. If you prefer not to bake them into the build, leave the variables
+empty: the app asks for the client id on first run and keeps both in that browser's
+`localStorage` (*Configurações → Avançado*).
 
 ### 3. Deploy
 

@@ -54,6 +54,8 @@ declare global {
           hasGrantedAllScopes?(token: TokenResponse, ...scopes: string[]): boolean;
         };
       };
+      /** Loaded on demand by `picker.ts`, absent until a guest asks for it. */
+      picker?: import('./picker').PickerApi;
     };
   }
 }

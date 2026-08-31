@@ -6,7 +6,7 @@ import { useKeeper } from '../state/keeper';
 import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
-import { getClientId } from '../lib/storage';
+import { getClientId, getPickerApiKey, setPickerApiKey } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
 import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
 import type { ShareRecord } from '../lib/invites';
@@ -952,7 +952,30 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
         <p className="mb-2 text-xs text-muted">
           OAuth Client ID em uso: <code className="text-ink">{getClientId() || 'nenhum'}</code>
         </p>
+        <p className="mb-2 text-xs text-muted">
+          Chave de API do Google (seletor de arquivos):{' '}
+          <code className="text-ink">{getPickerApiKey() || 'nenhuma'}</code>
+          <span className="mt-0.5 block text-faint">
+            Só é usada para abrir um cofre que outra pessoa partilhou com você.
+          </span>
+        </p>
         <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const value = prompt(
+                'Chave de API do Google para o seletor de arquivos (deixe vazio para voltar ao padrão do app):',
+                getPickerApiKey(),
+              );
+              if (value !== null) {
+                setPickerApiKey(value);
+                actions.notify('Chave de API salva neste dispositivo.');
+              }
+            }}
+          >
+            Trocar a chave de API
+          </Button>
           <Button
             size="sm"
             variant="ghost"

@@ -847,6 +847,13 @@ const run = async () => {
   });
   await page.screenshot({ path: `${OUT}/05c-convite.png` });
 
+  // The picker key is what a guest needs and nobody else: it has to be visible
+  // and changeable without being in anyone's way.
+  await openSettings(page, 'Avançado');
+  await check('a chave do seletor de arquivos aparece em Avançado', async () =>
+    (await page.locator('[role="dialog"] >> text=Chave de API do Google').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Trocar a chave de API")').count()) === 1);
+
   await openSettings(page, 'Conta e Drive');
   await page.waitForSelector('[role="dialog"] >> text=Espaço no Google Drive', { timeout: 5000 });
   await check('as configurações têm a seção de espaço no Drive', async () =>

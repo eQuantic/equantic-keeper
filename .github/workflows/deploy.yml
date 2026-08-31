@@ -48,6 +48,10 @@ jobs:
           # (Settings > Secrets and variables > Actions > Variables). When it is
           # empty the app asks each user for their own client id on first run.
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+          # Browser API key for the Google Picker, also public and also a
+          # repository variable. Only a guest opening a shared folder needs it;
+          # without it the rest of the app works exactly as before.
+          VITE_GOOGLE_PICKER_KEY: ${{ vars.GOOGLE_PICKER_API_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
