@@ -20,6 +20,7 @@ import { buildDocExtensions } from '../../lib/editor/extensions';
 import '../../lib/editor/tiptap-commands';
 import { SlashCommand } from './slash-command';
 import { BubbleToolbar } from './bubble-toolbar';
+import { BlockToolbar } from './block-toolbar';
 import {
   CalloutView,
   CodeBlockView,
@@ -46,10 +47,13 @@ export function NoteEditor({
   blocks,
   onChange,
   editable = true,
+  toolbar = false,
 }: {
   blocks: Block[] | undefined;
   onChange?: (blocks: Block[]) => void;
   editable?: boolean;
+  /** The block bar above the page — every block type one click away. */
+  toolbar?: boolean;
 }) {
   // Built once per mount: re-deriving it on every keystroke would reset the
   // document under the caret.
@@ -94,7 +98,7 @@ export function NoteEditor({
 
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       // The pane is a sheet of paper: a click on the blank space under the last
       // line puts the caret at the end, instead of doing nothing because the
       // pointer missed the text node by a few pixels.
@@ -107,7 +111,8 @@ export function NoteEditor({
       }}
     >
       {editable ? <BubbleToolbar editor={editor} /> : null}
-      <EditorContent editor={editor} className="flex min-h-0 flex-1 flex-col" />
+      {editable && toolbar ? <BlockToolbar editor={editor} /> : null}
+      <EditorContent editor={editor} className="flex min-h-0 flex-1 flex-col overflow-y-auto" />
     </div>
   );
 }

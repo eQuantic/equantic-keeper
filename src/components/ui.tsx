@@ -376,6 +376,7 @@ export function Modal({
   title,
   subtitle,
   leading,
+  actions,
   children,
   footer,
   wide,
@@ -387,13 +388,16 @@ export function Modal({
   subtitle?: string;
   /** Slot before the title — a wizard's back button lives here. */
   leading?: ReactNode;
+  /** Slot before the close button — the note's column toggles live here. */
+  actions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
   /**
-   * A document-shaped dialog: as wide and as tall as the screen sensibly
-   * allows, with the body laid out by the caller instead of scrolled as one
-   * column — the note editor puts the form beside the page.
+   * A document-shaped dialog: the whole screen bar a 24px margin (capped at
+   * 1760px so a line of text never grows past reading length on an ultrawide),
+   * with the body laid out by the caller instead of scrolled as one column —
+   * the note editor puts its details and its summary beside the page.
    */
   split?: boolean;
 }) {
@@ -454,7 +458,11 @@ export function Modal({
             : undefined
         }
         className={`animate-in card relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom,0px)] sm:rounded-card sm:pb-0 ${
-          split ? 'sm:h-[92dvh] sm:max-w-6xl' : wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
+          split
+            ? 'sm:h-full sm:max-w-[1760px]'
+            : wide
+              ? 'sm:max-w-3xl'
+              : 'sm:max-w-lg'
         }`}
       >
         <div
@@ -500,6 +508,7 @@ export function Modal({
               <h2 className="truncate text-base font-semibold text-ink">{title}</h2>
               {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
             </div>
+            {actions}
             <IconButton icon="x" label="Fechar" onClick={onClose} />
           </header>
         </div>

@@ -881,20 +881,41 @@ const run = async () => {
     (await page.locator('[data-note-editor="edit"] li:has-text("agendar AIMA")').count()) === 1);
   // On a wide screen the note is a page: the details in a column of their own,
   // the content beside them, both filling the dialog's height.
-  await check('a nota abre em duas colunas no desktop', async () => {
-    const panes = await page.evaluate(() => {
-      const form = document.querySelector('[role="dialog"] form');
-      if (!form) return null;
-      const boxes = [...form.children].map((node) => node.getBoundingClientRect());
+  // The note is a document: details, page and summary side by side, with the
+  // dialog taking the screen. The number that governs it is the page's width.
+  await check('a nota abre em três colunas no desktop', async () => {
+    const shape = await page.evaluate(() => {
+      const panes = [...document.querySelectorAll('[data-note-pane]')].filter(
+        (node) => node.getBoundingClientRect().width > 0,
+      );
       const dialog = document.querySelector('[role="dialog"]').getBoundingClientRect();
+      const sheet = document.querySelector('[data-note-editor="edit"]')?.getBoundingClientRect();
       return {
-        columns: boxes.length,
-        sideBySide: boxes.length === 2 && boxes[1].left >= boxes[0].right - 1,
-        tall: dialog.height > window.innerHeight * 0.8,
+        panes: panes.map((node) => node.getAttribute('data-note-pane')).sort(),
+        inline: panes.every((node) => getComputedStyle(node).position !== 'absolute'),
+        wide: dialog.width > window.innerWidth * 0.9,
+        sheet: sheet ? Math.round(sheet.width) : 0,
       };
     });
-    return !!panes && panes.columns === 2 && panes.sideBySide && panes.tall;
+    return (
+      shape.panes.join(',') === 'details,outline' && shape.inline && shape.wide && shape.sheet >= 560
+    );
   });
+  await check('a barra de blocos oferece os tipos em aberto', async () =>
+    (await page.locator('[role="toolbar"][aria-label="Blocos"] button').count()) >= 10);
+  // The toolbar converts the block under the caret, and a heading is what the
+  // summary is made of — so one gesture proves both.
+  // The caret is inside the list item by now; the toolbar converts the block it
+  // is IN, so put it back on the first line before asking for a heading.
+  await page.click('[data-note-editor="edit"] p:has-text("Pendências da semana")');
+  await page.click('[role="toolbar"][aria-label="Blocos"] button[aria-label="Título 1"]');
+  await page.waitForTimeout(300);
+  await check('a barra converte o bloco em título', async () =>
+    (await page.locator('[data-note-editor="edit"] h1:has-text("Pendências da semana")').count()) === 1);
+  await check('o sumário lista os títulos da nota', async () =>
+    (await page.locator('[data-note-pane="outline"] button:has-text("Pendências da semana")').count()) === 1);
+  await page.click('[role="toolbar"][aria-label="Blocos"] button[aria-label="Título 1"]');
+  await page.waitForTimeout(200);
   await check('o formulário da nota não mostra seção de campos vazia', async () =>
     (await page.locator('[role="dialog"] >> text=Campos de Nota').filter({ visible: true }).count()) === 0);
   await page.click('footer button:has-text("Salvar")');

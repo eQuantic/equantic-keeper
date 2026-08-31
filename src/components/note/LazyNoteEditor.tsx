@@ -14,9 +14,10 @@ export function LazyNoteEditor(props: {
   blocks: Block[] | undefined;
   onChange?: (blocks: Block[]) => void;
   editable?: boolean;
+  toolbar?: boolean;
 }) {
   return (
-    <Suspense fallback={<p className="py-4 text-sm text-faint">Abrindo o editor…</p>}>
+    <Suspense fallback={<p className="p-4 text-sm text-faint">Abrindo o editor…</p>}>
       <NoteEditorImpl {...props} />
     </Suspense>
   );
