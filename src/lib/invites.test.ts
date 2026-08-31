@@ -62,6 +62,17 @@ describe('código de convite', () => {
     await expect(readInviteCode('')).rejects.toBeInstanceOf(InviteCodeError);
   });
 
+  it('o checksum não é um pedaço da confirmação', async () => {
+    const identity = await createIdentity();
+    const code = await inviteCode(identity);
+    const given = code.slice(code.lastIndexOf('-') + 1);
+    const print = await fingerprint(identity.publicKey);
+
+    // Os dois aparecem lado a lado na tela; se um fosse prefixo do outro,
+    // pareceriam a mesma coisa escrita com erro.
+    expect(given).not.toBe(print.slice(0, given.length).toUpperCase());
+  });
+
   it('a chave privada não é exportável', async () => {
     const identity = await createIdentity();
     expect(identity.privateKey.extractable).toBe(false);
