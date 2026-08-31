@@ -103,6 +103,13 @@ export interface KeeperState {
   error: string | null;
   notice: string | null;
   account: storage.RememberedAccount | null;
+  /**
+   * This device is linked to a Google account — not that a token is in hand.
+   * The two used to be the same thing because the app authenticated at boot;
+   * now that signing in needs a tap, a screen that waits for a live token is a
+   * screen nobody can reach. Whether a request works right now is what the sync
+   * status says.
+   */
   connected: boolean;
   online: boolean;
   payload: VaultPayload | null;
@@ -225,7 +232,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     error: null,
     notice: null,
     account: storage.loadAccount(),
-    connected: false,
+    connected: !!storage.loadAccount(),
     online: navigator.onLine,
     payload: null,
     hasLocalVault: !!storage.loadCachedVault(),
@@ -351,6 +358,19 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     }
     return { auth: authRef.current, drive: driveRef.current! };
   }, []);
+
+  /**
+   * Tops up the Google token from inside a gesture.
+   *
+   * The Drive client only ever asks for a token it already has, because a
+   * request with no click behind it opens a window the browser may refuse or
+   * turn into a navigation. Every action a person actually pressed calls this
+   * first: the click is the permission to open that window.
+   */
+  const ensureToken = useCallback(async () => {
+    const { auth } = services();
+    if (!auth.isSignedIn) await auth.requestToken(true, storage.loadAccount()?.email);
+  }, [services]);
 
   /** Persist the encrypted vault locally so the app works offline. */
   const persistLocal = useCallback(async (payload: VaultPayload) => {
@@ -682,8 +702,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         if (!interactive && error instanceof GoogleAuthError) {
-          // Silent renewal failed: stay where we are and let the user click.
-          patch({ busy: false, connected: false });
+          // Nothing was attempted, so nothing was lost: the account is still
+          // linked, and the sync status carries the "needs a tap" part.
+          patch({ busy: false });
           return;
         }
         fail(error, 'Não foi possível conectar à conta Google.');
@@ -1364,6 +1385,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
     patch({ busy: true, error: null, driveMove: { done: 0, total: 0 } });
     try {
+      await ensureToken();
       await auth.requestScope(DRIVE_FILE_SCOPE);
       const report = await migrateToFolder(drive, ({ done, total }) => patch({ driveMove: { done, total } }));
 
@@ -1394,7 +1416,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       patch({ driveMove: null });
       fail(error, 'Não foi possível mover o cofre para uma pasta do Drive.');
     }
-  }, [fail, mutate, patch, runSync]);
+  }, [ensureToken, fail, mutate, patch, runSync]);
 
   /**
    * Deletes the app-folder copy left behind by the move.
@@ -1433,9 +1455,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const shareVault = useCallback(
     async (input: { code: string; label: string; email: string; role: 'reader' | 'writer' }) => {
       const { drive, keys, folderId } = sharingContext();
+      await ensureToken();
       await grantAccess(drive, folderId, keys.data, input);
     },
-    [sharingContext],
+    [ensureToken, sharingContext],
   );
 
   /**
@@ -1485,6 +1508,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       const { drive, folderId } = sharingContext();
       patch({ busy: true, error: null });
       try {
+        await ensureToken();
         const plan = await removeAccess(drive, folderId, recordId);
         await rotateDataKey(drive, plan.keep, plan.stored);
         patch({
@@ -1498,7 +1522,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         fail(error, 'Não foi possível revogar o acesso.');
       }
     },
-    [fail, patch, rotateDataKey, sharingContext],
+    [ensureToken, fail, patch, rotateDataKey, sharingContext],
   );
 
   /**
@@ -1698,6 +1722,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     if (!guest || !dataKey || !drive) return;
     patch({ sync: { status: 'syncing' } });
     try {
+      await ensureToken();
       const client = guest.folderId ? drive.withSpace({ kind: 'folder', id: guest.folderId }) : drive;
       const file = await client.download(guest.vaultFileId);
       fileRef.current = file;
@@ -1711,20 +1736,22 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         },
       });
     }
-  }, [patch, setPayload]);
+  }, [ensureToken, patch, setPayload]);
 
   const discardOldDriveCopy = useCallback(async () => {
     const drive = driveRef.current;
     const folderId = storage.loadDriveFolder();
     if (!drive || !folderId) throw new Error('O cofre ainda não foi movido para uma pasta do Drive.');
+    await ensureToken();
     return discardAppDataCopy(drive, folderId);
-  }, []);
+  }, [ensureToken]);
 
   const sweepDriveOrphans = useCallback(async () => {
     const drive = driveRef.current;
     const payload = payloadRef.current;
     if (!drive || !payload) throw new Error('Conecte a conta Google para liberar espaço.');
 
+    await ensureToken();
     const orphans = await findOrphans(drive, referencedAttachments(payload));
     for (const id of orphans) await drive.delete(id).catch(() => undefined);
     return orphans.length;

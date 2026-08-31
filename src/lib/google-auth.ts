@@ -73,6 +73,11 @@ export class GoogleAuthError extends Error {
   }
 }
 
+/** The session is gone and only a tap can bring it back. */
+export function needsGesture(error: unknown): boolean {
+  return error instanceof GoogleAuthError && error.code === 'needs_gesture';
+}
+
 /** Tells "this client may not ask for that" apart from "the user said no". */
 function isScopeRefusal(error: unknown): boolean {
   if (!(error instanceof GoogleAuthError)) return false;

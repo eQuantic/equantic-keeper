@@ -11,6 +11,7 @@ import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vaul
 import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
 import type { ShareRecord } from '../lib/invites';
 import { unmatchedPermissions } from '../lib/sharing';
+import { needsGesture } from '../lib/google-auth';
 import { InviteCodePanel } from './InviteCode';
 import { formatBytes } from '../lib/attachments';
 import { TypeBuilder } from './TypeBuilder';
@@ -287,6 +288,7 @@ function DriveUsageSection() {
   const [usage, setUsage] = useState<DriveUsage | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [expired, setExpired] = useState(false);
 
   const read = async () => {
     setBusy(true);
@@ -295,8 +297,9 @@ function DriveUsageSection() {
       const result = await actions.driveUsage();
       setUsage(result);
       setFailed(!result);
-    } catch {
-      setFailed(true);
+    } catch (error) {
+      if (needsGesture(error)) setExpired(true);
+      else setFailed(true);
     } finally {
       setBusy(false);
     }
@@ -340,11 +343,29 @@ function DriveUsageSection() {
                 : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
           </p>
         </div>
-        <Button size="sm" icon="refresh" loading={busy} onClick={() => void read()}>
+        <Button
+          size="sm"
+          icon="refresh"
+          loading={busy}
+          onClick={() => {
+            const go = () => {
+              setExpired(false);
+              void read();
+            };
+            if (expired) void actions.connectGoogle(true).then(go);
+            else go();
+          }}
+        >
           Recalcular
         </Button>
       </div>
 
+      {expired ? (
+        <p className="text-xs text-muted">
+          A sessão com o Google expirou — toque em <strong className="text-ink">Recalcular</strong> para
+          reconectar.
+        </p>
+      ) : null}
       {failed ? (
         <p className="text-xs text-warn">Não foi possível ler o espaço agora. Tente de novo.</p>
       ) : null}
@@ -1046,6 +1067,7 @@ function SharingPane() {
   const [permissions, setPermissions] = useState<DrivePermission[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
 
   const [label, setLabel] = useState('');
   const [email, setEmail] = useState('');
@@ -1061,7 +1083,10 @@ function SharingPane() {
       setShares(result.shares);
       setPermissions(result.permissions);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível ler as partilhas.');
+      // Nothing was attempted without a gesture, so this is not a failure of
+      // the feature — it is a session waiting for a tap.
+      if (needsGesture(failure)) setExpired(true);
+      else setError(failure instanceof Error ? failure.message : 'Não foi possível ler as partilhas.');
     } finally {
       setLoading(false);
     }
@@ -1175,6 +1200,25 @@ function SharingPane() {
             </div>
           </div>
         ))}
+        {expired ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-canvas p-3">
+            <span className="min-w-0 flex-1 text-xs text-muted">
+              A sessão com o Google expirou neste dispositivo — ela não fica guardada, por opção.
+            </span>
+            <Button
+              size="sm"
+              icon="refresh"
+              onClick={() => {
+                void actions.connectGoogle(true).then(() => {
+                  setExpired(false);
+                  void load();
+                });
+              }}
+            >
+              Reconectar
+            </Button>
+          </div>
+        ) : null}
         {error ? <p className="text-xs text-danger">{error}</p> : null}
       </div>
 
