@@ -1152,6 +1152,15 @@ const run = async () => {
   // Google will not let an app leave Testing without these, and anyone deciding
   // whether to sign in deserves to read them first — so they have to be
   // reachable, and reachable WITHOUT signing in.
+  // A worker that installs and then waits for every tab to close means the app
+  // a person has open never updates. That is how a page added in one deploy was
+  // still missing days later.
+  await check('o service worker assume o comando sozinho', async () => {
+    const sw = await page.request.get(`${BASE}sw.js`);
+    const source = await sw.text();
+    return source.includes('clientsClaim()') && source.includes('skipWaiting()');
+  });
+
   // Through the service worker, not around it. Note what this does NOT prove:
   // the way this actually broke for someone was an OLD worker still in charge,
   // from a build before these pages existed, and a suite that always starts
