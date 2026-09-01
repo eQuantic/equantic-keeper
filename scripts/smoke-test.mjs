@@ -1149,6 +1149,30 @@ const run = async () => {
     return Math.abs(after - before.top) <= 1 && Math.abs(before.bottom - before.navBottom) <= 2;
   });
 
+  // Google will not let an app leave Testing without these, and anyone deciding
+  // whether to sign in deserves to read them first — so they have to be
+  // reachable, and reachable WITHOUT signing in.
+  for (const [file, heading, ...required] of [
+    // The Limited Use wording is what a Google verification looks for, and it
+    // belongs to the privacy policy — the terms page has its own job.
+    [
+      'privacidade.html',
+      'Política de privacidade',
+      'Google API Services User Data Policy',
+      'Limited Use',
+      'drive.appdata',
+    ],
+    ['termos.html', 'Termos de uso', 'MIT', 'sem garantia', 'senha mestra'],
+  ]) {
+    const response = await page.request.get(`${BASE}${file}`);
+    const html = await response.text();
+    await check(`${file} é servida e diz o que precisa dizer`, async () => {
+      const missing = required.filter((needle) => !html.includes(needle));
+      if (missing.length) console.log(`      (falta na página: ${missing.join(', ')})`);
+      return response.status() === 200 && html.includes(heading) && missing.length === 0;
+    });
+  }
+
   // 11c-quinquies-bis. Masks: a CPF is written 000.000.000-00 on every form the
   // person has ever filled, and a run of digits is where a transposed pair hides.
   await page.click('header button:has-text("Novo")');
