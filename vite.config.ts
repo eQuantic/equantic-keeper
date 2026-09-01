@@ -131,6 +131,15 @@ export default defineConfig({
         // from then on.
         globIgnores: [`${WASM_DIR}/**`, 'assets/AttachmentViewer-*.js', 'assets/pdf.worker*'],
         navigateFallback: 'index.html',
+        /*
+         * Belt and braces for the pages that are not the app. They are already
+         * precached, and a precache route wins over the navigation fallback —
+         * which is why a page that reports this as broken is usually running an
+         * OLD worker, from before those pages existed, whose precache has never
+         * heard of them. This line is what keeps it working if they ever leave
+         * the precache.
+         */
+        navigateFallbackDenylist: [/\/(privacidade|termos)\.html$/],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {

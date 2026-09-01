@@ -1152,6 +1152,36 @@ const run = async () => {
   // Google will not let an app leave Testing without these, and anyone deciding
   // whether to sign in deserves to read them first — so they have to be
   // reachable, and reachable WITHOUT signing in.
+  // Through the service worker, not around it. Note what this does NOT prove:
+  // the way this actually broke for someone was an OLD worker still in charge,
+  // from a build before these pages existed, and a suite that always starts
+  // from a fresh one cannot stage that. It proves the pages survive a worker
+  // that knows about them, which is the part that stays true from now on.
+  await check('o service worker não sequestra as páginas legais', async () => {
+    // "Active" is not "in charge": a worker that has not claimed this client
+    // intercepts nothing, and the check would pass on a broken build. A reload
+    // is what puts a fresh registration in control.
+    const controlling = async () =>
+      page.evaluate(async () => {
+        if (!('serviceWorker' in navigator)) return false;
+        await navigator.serviceWorker.ready;
+        return !!navigator.serviceWorker.controller;
+      });
+    if (!(await controlling())) {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    }
+    if (!(await controlling())) {
+      console.log('      (nenhum service worker no comando: a checagem não prova nada aqui)');
+      return false;
+    }
+    await page.goto(`${BASE}privacidade.html`);
+    const title = await page.title();
+    await page.goto(BASE);
+    await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+    return title.includes('Política de privacidade');
+  });
+
   for (const [file, heading, ...required] of [
     // The Limited Use wording is what a Google verification looks for, and it
     // belongs to the privacy policy — the terms page has its own job.
