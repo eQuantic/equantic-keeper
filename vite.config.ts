@@ -130,6 +130,15 @@ export default defineConfig({
         // fetched once, on the first document opened, and available offline
         // from then on.
         globIgnores: [`${WASM_DIR}/**`, 'assets/AttachmentViewer-*.js', 'assets/pdf.worker*'],
+        /*
+         * `registerType: 'autoUpdate'` above says what should happen; these two
+         * are what makes it happen. Without them a new worker installs and then
+         * waits for every tab to close, so the app a person has open stays on an
+         * old build indefinitely — which is how a page added in one deploy could
+         * still be missing days later.
+         */
+        skipWaiting: true,
+        clientsClaim: true,
         navigateFallback: 'index.html',
         /*
          * Belt and braces for the pages that are not the app. They are already
