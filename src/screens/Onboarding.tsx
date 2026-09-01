@@ -126,6 +126,18 @@ export function SignInScreen() {
               Trocar o Client ID
             </button>
           ) : null}
+          {/* Public pages, reachable without signing in — which is what a Google
+              verification asks for, and what anyone deciding whether to sign in
+              deserves to be able to read first. */}
+          <span className="mt-2 block">
+            <a className="text-muted hover:text-ink hover:underline" href="./privacidade.html">
+              Política de privacidade
+            </a>
+            {' · '}
+            <a className="text-muted hover:text-ink hover:underline" href="./termos.html">
+              Termos de uso
+            </a>
+          </span>
         </>
       }
     >

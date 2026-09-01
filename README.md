@@ -227,6 +227,12 @@ wraps the vault's master bits into a record kept in `localStorage`.
    > Drive API alone makes the picker refuse with **"The API developer key is
    > invalid"** — the key is fine, the picker is simply not on its list.
 6. Under *Credentials*, create an **OAuth client ID** of type **Web application**.
+   The consent screen also asks for a **privacy policy** and a **terms of use**
+   URL before an app can leave *Testing*. This repository ships both, served
+   from the same origin as the app and readable without signing in:
+   `/privacidade.html` and `/termos.html`. They describe what this app actually
+   does — read them before pointing Google at them, and edit them if you change
+   what it does.
 7. Under **Authorized JavaScript origins**, add the exact origin where the app runs — no
    trailing slash and no path. For the official instance: `https://keeper.equantic.tech`;
    on a fork without a custom domain, `https://<username>.github.io`. No redirect URI is

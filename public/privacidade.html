@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Política de privacidade — eQuantic Keeper</title>
+    <meta
+      name="description"
+      content="O que o eQuantic Keeper guarda, onde guarda e o que nunca sai do seu navegador."
+    />
+    <link rel="icon" href="./favicon.svg" />
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #0b0d12;
+        --surface: #11141b;
+        --ink: #e7e9ee;
+        --muted: #a3a9b7;
+        --faint: #6f7688;
+        --line: #232838;
+        --accent: #6f8cff;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fa;
+          --surface: #ffffff;
+          --ink: #14171f;
+          --muted: #4a5162;
+          --faint: #7b8296;
+          --line: #e2e5ec;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 2.5rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin: 0 0 0.25rem;
+      }
+      h2 {
+        font-size: 1.15rem;
+        margin: 2.25rem 0 0.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--line);
+      }
+      h3 {
+        font-size: 1rem;
+        margin: 1.5rem 0 0.4rem;
+      }
+      p,
+      li {
+        color: var(--muted);
+      }
+      strong {
+        color: var(--ink);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+        color: var(--ink);
+      }
+      a {
+        color: var(--accent);
+      }
+      .date {
+        color: var(--faint);
+        font-size: 0.85rem;
+        margin: 0 0 2rem;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        margin: 1.25rem 0;
+      }
+      .en {
+        margin-top: 3.5rem;
+        padding-top: 1.5rem;
+        border-top: 2px solid var(--line);
+      }
+      footer {
+        margin-top: 3rem;
+        color: var(--faint);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Política de privacidade</h1>
+      <p class="date">eQuantic Keeper · em vigor desde 1 de setembro de 2026</p>
+
+      <div class="card">
+        <p>
+          <strong>O resumo:</strong> o Keeper não tem servidor. Nada do que você guarda passa por nós, porque
+          não há um "nós" no caminho — o cofre é cifrado no seu navegador e guardado na sua própria conta do
+          Google Drive. Não há analytics, não há rastreamento, não há publicidade, e não vendemos nem
+          partilhamos dados com ninguém.
+        </p>
+      </div>
+
+      <h2>Quem opera este app</h2>
+      <p>
+        O eQuantic Keeper é um aplicativo de código aberto publicado como site estático em
+        <code>keeper.equantic.tech</code>. O código está em
+        <a href="https://github.com/eQuantic/equantic-keeper">github.com/eQuantic/equantic-keeper</a> e pode ser
+        auditado por qualquer pessoa. Para falar connosco, abra uma questão no repositório ou use o e-mail de
+        contato indicado na tela de consentimento do Google.
+      </p>
+
+      <h2>O que o app guarda, e onde</h2>
+      <h3>No seu navegador</h3>
+      <ul>
+        <li>Uma cópia <strong>cifrada</strong> do cofre, para funcionar sem internet.</li>
+        <li>
+          Os anexos (PDFs, fotos de documentos) também <strong>cifrados</strong>, em IndexedDB.
+        </li>
+        <li>
+          Preferências que não são segredo: tema, tempo de bloqueio automático, quais colunas ficam abertas.
+        </li>
+        <li>
+          O nome, o e-mail e a foto da conta Google conectada — só para mostrar na tela qual conta está em uso.
+        </li>
+        <li>
+          Quando você ativa o desbloqueio por biometria, um registo cifrado ligado ao autenticador do
+          aparelho.
+        </li>
+        <li>
+          Um par de chaves deste aparelho, usado para receber convites de cofres partilhados. A metade privada
+          é gerada como não exportável: nem o app consegue lê-la.
+        </li>
+      </ul>
+
+      <h3>Na sua conta do Google Drive</h3>
+      <ul>
+        <li>O arquivo do cofre, cifrado, e os anexos, cada um cifrado com a sua própria chave.</li>
+        <li>Cópias de segurança diárias do mesmo arquivo cifrado.</li>
+        <li>
+          Quando você partilha o cofre com alguém, uma lista de convites: chaves embrulhadas para cada pessoa,
+          o nome que você deu e o e-mail dela.
+        </li>
+      </ul>
+
+      <h3>Em servidor nenhum</h3>
+      <p>
+        A <strong>senha mestra</strong> nunca sai do seu navegador, não é transmitida e não é guardada em lado
+        nenhum. Ela deriva a chave que cifra o cofre (PBKDF2-SHA256 com 720 000 iterações, depois AES-GCM-256).
+        Isso tem uma consequência que você precisa saber: <strong>não há como recuperá-la</strong>. Se você a
+        esquecer, ninguém — nem você, nem nós, nem o Google — consegue abrir o cofre.
+      </p>
+
+      <h2>O que o Google vê</h2>
+      <p>
+        Bytes cifrados, o nome dos arquivos e o tamanho deles. O conteúdo é cifrado antes de subir, com uma
+        chave que o Google não tem.
+      </p>
+
+      <h2>As permissões que pedimos, e por quê</h2>
+      <ul>
+        <li>
+          <code>drive.appdata</code> — uma pasta oculta e exclusiva do app, onde o cofre nasce. É o acesso mais
+          restrito que o Drive oferece.
+        </li>
+        <li>
+          <code>drive.file</code> — pedido só quando você move o cofre para uma pasta sua (para poder
+          partilhá-la) ou abre um cofre que alguém partilhou com você. Dá acesso <strong>apenas</strong> aos
+          arquivos que este app criou ou que você apontou; o resto do seu Drive continua invisível para ele.
+        </li>
+        <li>
+          <code>userinfo.email</code> e <code>userinfo.profile</code> — para mostrar qual conta está conectada.
+        </li>
+      </ul>
+      <p>
+        Não pedimos nenhuma permissão que permita ler os seus outros arquivos, o seu e-mail, os seus contatos ou
+        a sua agenda.
+      </p>
+
+      <h2>Partilha</h2>
+      <p>
+        Quando você dá acesso a alguém, duas coisas acontecem: o Drive passa a permitir que a conta Google
+        daquela pessoa baixe os arquivos, e uma cópia da chave do cofre é embrulhada para ela. Um convite por
+        link carrega essa chave dentro do endereço, na parte depois do <code>#</code>, que nenhum navegador
+        envia a servidor nenhum. Revogar o acesso remove a permissão no Drive e troca a chave do cofre, para
+        que uma cópia guardada antes deixe de abrir.
+      </p>
+
+      <h2>O que não fazemos</h2>
+      <ul>
+        <li>Não usamos cookies próprios, analytics, pixels ou qualquer forma de rastreamento.</li>
+        <li>Não vendemos, alugamos nem partilhamos dados com terceiros.</li>
+        <li>Não treinamos modelos com o que você guarda.</li>
+        <li>Não temos acesso ao conteúdo do seu cofre — nem se quiséssemos.</li>
+      </ul>
+
+      <h2>Como apagar tudo</h2>
+      <ul>
+        <li>
+          <strong>Neste aparelho:</strong> Configurações → Avançado → “Apagar deste dispositivo”.
+        </li>
+        <li>
+          <strong>No Drive:</strong> apague a pasta <code>eQuantic Keeper</code>, se você moveu o cofre para
+          lá. A pasta oculta do app é removida quando você retira o acesso do app à sua conta.
+        </li>
+        <li>
+          <strong>A permissão:</strong> em
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>, remova o
+          acesso do eQuantic Keeper.
+        </li>
+      </ul>
+
+      <h2>Uso limitado dos dados do Google</h2>
+      <p>
+        O uso e a transferência, pelo eQuantic Keeper, de informação recebida das APIs do Google seguem a
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API Services User Data Policy</a
+        >, incluindo os requisitos de <em>Limited Use</em>.
+      </p>
+
+      <h2>Crianças</h2>
+      <p>O app não se destina a menores de 13 anos e não recolhe dados deles deliberadamente.</p>
+
+      <h2>Mudanças nesta política</h2>
+      <p>
+        Se algo mudar, a data no topo muda com ele, e o histórico fica público no repositório — cada alteração
+        desta página é um commit que qualquer pessoa pode ler.
+      </p>
+
+      <section class="en" lang="en">
+        <h2 style="border: 0; padding-top: 0">Privacy policy (English)</h2>
+        <p>
+          <strong>In short:</strong> eQuantic Keeper has no server. Nothing you store passes through us,
+          because there is no "us" in the path — the vault is encrypted in your browser and kept in your own
+          Google Drive. No analytics, no tracking, no advertising, and no data sold or shared with anyone.
+        </p>
+        <p>
+          <strong>What is stored, and where.</strong> In your browser: an encrypted copy of the vault, the
+          encrypted attachments, non-secret preferences, the connected account's name and e-mail for display, an
+          optional biometric record, and a non-extractable keypair used to receive sharing invitations. In your
+          Google Drive: the encrypted vault, the encrypted attachments, daily encrypted backups, and — if you
+          share — a list of invitations holding keys wrapped for each recipient. On a server of ours: nothing,
+          because there is no server.
+        </p>
+        <p>
+          <strong>Your master password never leaves the device.</strong> It derives the encryption key
+          (PBKDF2-SHA256, 720,000 iterations, then AES-GCM-256) and is never transmitted or stored. It cannot be
+          recovered by anyone, including us and Google.
+        </p>
+        <p>
+          <strong>Scopes.</strong> <code>drive.appdata</code> for the app's own hidden folder;
+          <code>drive.file</code> — requested only when you move the vault into a folder of your own or open one
+          shared with you — which grants access solely to files this app created or that you selected;
+          <code>userinfo.email</code> and <code>userinfo.profile</code> to show which account is connected. No
+          scope here can read your other files, mail, contacts or calendar.
+        </p>
+        <p>
+          <strong>Deleting your data.</strong> Configurações → Avançado → “Apagar deste dispositivo” clears this
+          browser; deleting the <code>eQuantic Keeper</code> folder removes the Drive copy; revoking the app at
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> ends all
+          access.
+        </p>
+        <p>
+          <strong>Limited Use.</strong> eQuantic Keeper's use and transfer of information received from Google
+          APIs to any other app will adhere to the
+          <a href="https://developers.google.com/terms/api-services-user-data-policy"
+            >Google API Services User Data Policy</a
+          >, including the Limited Use requirements.
+        </p>
+        <p>
+          <strong>Contact.</strong> Open an issue at
+          <a href="https://github.com/eQuantic/equantic-keeper">github.com/eQuantic/equantic-keeper</a>, or use
+          the support e-mail shown on the Google consent screen.
+        </p>
+      </section>
+
+      <footer>
+        <a href="./">← Voltar ao app</a> · <a href="./termos.html">Termos de uso</a>
+      </footer>
+    </main>
+  </body>
+</html>
