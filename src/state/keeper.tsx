@@ -34,6 +34,7 @@ import {
   wrapMasterBits,
 } from '../lib/biometric';
 import { DriveClient, driveUsage, KEEPER_FOLDER_NAME, VAULT_FILE_NAME, type DriveUsage } from '../lib/drive';
+import { canShare, type SharesFolder, type VaultStorage } from '../lib/storage-provider';
 import {
   MOVED_MARKER_NAME,
   discardAppDataCopy,
@@ -312,7 +313,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   /** `lock` is defined below; this lets the workspace switch reach it. */
   const lockRef = useRef<(() => void) | null>(null);
-  const driveRef = useRef<DriveClient | null>(null);
+  /** Whichever provider holds the vault. Google is the only one today. */
+  const driveRef = useRef<VaultStorage | null>(null);
   const derivedRef = useRef<DerivedKey | null>(null);
   /**
    * The content key, unwrapped from the vault's envelope. Kept beside the
@@ -448,7 +450,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * its empty id and is retried on the next sync.
    */
   const pushPendingAttachments = useCallback(
-    async (drive: DriveClient, payload: VaultPayload): Promise<VaultPayload> => {
+    async (drive: VaultStorage, payload: VaultPayload): Promise<VaultPayload> => {
       const pending = payload.items.filter((item) =>
         item.attachments.some((ref) => !ref.driveFileId),
       );
@@ -1483,13 +1485,20 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     const keys = keysRef.current;
     const folderId = storage.loadDriveFolder();
     if (!drive || !keys) throw new Error('Abra o cofre e conecte a conta Google para partilhar.');
+    // Not every provider can hand a folder to another account. Asking here
+    // keeps a provider that cannot from ever showing a form that ends in an
+    // error the person cannot act on.
+    if (!canShare(drive)) {
+      throw new Error(`Partilhar ainda não está disponível no ${drive.label}.`);
+    }
     if (!folderId) {
       throw new Error(
         'O cofre ainda está na pasta oculta do app, que o Drive não deixa partilhar. Mova-o para uma pasta ' +
           'do seu Drive em Configurações → Onde o cofre fica.',
       );
     }
-    return { drive, keys, folderId };
+    const shareable: VaultStorage & SharesFolder = drive;
+    return { drive: shareable, keys, folderId };
   }, []);
 
   const listShares = useCallback(async () => {
@@ -1540,7 +1549,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
    * kept before this runs stops opening with the key they hold.
    */
   const rotateDataKey = useCallback(
-    async (drive: DriveClient, keep: ShareRecord[], stored: StoredShares) => {
+    async (drive: VaultStorage & SharesFolder, keep: ShareRecord[], stored: StoredShares) => {
       const keys = keysRef.current;
       const payload = payloadRef.current;
       if (!keys || !payload) throw new Error('O cofre está bloqueado.');

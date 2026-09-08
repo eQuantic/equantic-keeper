@@ -13,6 +13,14 @@
  * hold a key.
  */
 import type { GoogleAuth } from './google-auth';
+import type {
+  RemoteVaultFile,
+  SharesFolder,
+  StorageSpace,
+  StoragePermission,
+  StoredFileMeta,
+  VaultStorage,
+} from './storage-provider';
 import { isVaultFile, type VaultFile } from './vault';
 
 export const VAULT_FILE_NAME = 'vault.keeper.json';
@@ -29,33 +37,18 @@ const FILE_FIELDS = 'id,name,modifiedTime,size,headRevisionId';
 const ABOUT_API = 'https://www.googleapis.com/drive/v3/about';
 const PERMISSION_FIELDS = 'id,emailAddress,role,type,displayName';
 
-export interface DriveFileMeta {
-  id: string;
-  name: string;
-  modifiedTime: string;
-  size?: string;
-  headRevisionId?: string;
-}
-
 /**
- * Where a client reads and writes: the hidden app folder, or a folder of the
- * user's own. Everything else about the client is identical.
+ * The Drive names are aliases of the provider-neutral ones now. Keeping them
+ * means every existing import still reads naturally where the code is talking
+ * to Google specifically, without a second vocabulary for the same thing.
  */
-export type DriveSpace = { kind: 'appdata' } | { kind: 'folder'; id: string };
+export type DriveFileMeta = StoredFileMeta;
 
-/** Who else can reach the folder, as Drive sees it. */
-export interface DrivePermission {
-  id: string;
-  role: 'owner' | 'writer' | 'reader' | 'commenter' | 'organizer' | 'fileOrganizer';
-  type: 'user' | 'group' | 'domain' | 'anyone';
-  emailAddress?: string;
-  displayName?: string;
-}
+export type DriveSpace = StorageSpace;
 
-export interface RemoteVault {
-  meta: DriveFileMeta;
-  file: VaultFile;
-}
+export type DrivePermission = StoragePermission;
+
+export type RemoteVault = RemoteVaultFile;
 
 export class DriveError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -86,11 +79,16 @@ export interface DriveApi {
   rotateBackups(file: VaultFile): Promise<void>;
 }
 
-export class DriveClient implements DriveApi, DriveBlobApi {
+export class DriveClient implements DriveApi, DriveBlobApi, VaultStorage, SharesFolder {
+  readonly label = 'Google Drive';
+
   constructor(
     private readonly auth: GoogleAuth,
     private location: DriveSpace = { kind: 'appdata' },
   ) {}
+
+  /** Drive can hand a folder to another account, so the sharing screens apply. */
+  readonly shares = true;
 
   get space(): DriveSpace {
     return this.location;
@@ -432,7 +430,7 @@ export const ATTACHMENT_PREFIX = 'attachment-';
  * folder the user could count it themselves, but the breakdown by purpose is
  * still ours to give.
  */
-export async function driveUsage(client: DriveClient): Promise<DriveUsage> {
+export async function driveUsage(client: VaultStorage): Promise<DriveUsage> {
   const usage: DriveUsage = { vault: 0, backups: 0, attachments: 0, other: 0, total: 0, files: 0 };
   for (const file of await client.listAll()) {
     const size = Number(file.size ?? 0);

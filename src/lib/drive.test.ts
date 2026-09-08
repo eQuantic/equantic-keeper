@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
-import { driveUsage, type DriveClient, type DriveFileMeta } from './drive';
+import { driveUsage, type DriveFileMeta } from './drive';
+import type { StoredFileMeta, VaultStorage } from './storage-provider';
 
-function clientWith(files: DriveFileMeta[], quota: { used: number; limit: number } | null = null): DriveClient {
-  return {
+/**
+ * A provider that is not Google, built by hand. It exists to prove that
+ * counting what a vault occupies asks nothing of Drive in particular: the two
+ * methods below are the whole contract, and a second provider that answers them
+ * gets the same numbers.
+ */
+function providerWith(
+  files: StoredFileMeta[],
+  quota: { used: number; limit: number } | null = null,
+): VaultStorage {
+  const provider: Partial<VaultStorage> = {
+    label: 'Provedor de teste',
     listAll: async () => files,
     storageQuota: async () => quota,
-  } as unknown as DriveClient;
+    shares: false,
+  };
+  // Only the two methods above are reachable from here; anything else this
+  // test touched by accident would throw rather than pass quietly.
+  return new Proxy(provider as VaultStorage, {
+    get(target, property) {
+      if (property in target) return target[property as keyof VaultStorage];
+      throw new Error(`driveUsage não deveria chamar ${String(property)}`);
+    },
+  });
 }
 
 describe('espaço ocupado no Drive', () => {
@@ -21,7 +41,7 @@ describe('espaço ocupado no Drive', () => {
   ];
 
   it('separa cofre, backups e anexos, e soma tudo', async () => {
-    const usage = await driveUsage(clientWith(files));
+    const usage = await driveUsage(providerWith(files));
     expect(usage).toMatchObject({
       vault: 4096,
       backups: 7800,
@@ -33,9 +53,9 @@ describe('espaço ocupado no Drive', () => {
   });
 
   it('inclui a cota da conta quando o Drive a informa', async () => {
-    const usage = await driveUsage(clientWith(files, { used: 5_000_000, limit: 15_000_000_000 }));
+    const usage = await driveUsage(providerWith(files, { used: 5_000_000, limit: 15_000_000_000 }));
     expect(usage.quota).toEqual({ used: 5_000_000, limit: 15_000_000_000 });
     // Uma recusa é silenciosa: a cota é contexto, não a resposta.
-    expect((await driveUsage(clientWith(files))).quota).toBeUndefined();
+    expect((await driveUsage(providerWith(files))).quota).toBeUndefined();
   });
 });
