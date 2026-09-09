@@ -266,19 +266,47 @@ only requires basic verification. Publishing (*Audience → Publish app*) remove
 expiring test authorization that forces a fresh interactive consent whenever silent renewal
 fails.
 
-### 2. Configure the repository
+### 2. Register the app on Microsoft (optional, for OneDrive)
+
+Only if you want OneDrive as an alternative to Google Drive. Skip it and the app
+behaves exactly as before.
+
+1. Open the [Entra portal](https://entra.microsoft.com) → *App registrations* → **New
+   registration**.
+2. Under **Supported account types**, choose *Accounts in any organizational directory
+   and personal Microsoft accounts*. A personal `@outlook.com` account cannot sign in to
+   a registration limited to one directory, and that is who most people are here.
+3. Add a **Single-page application** redirect URI — the origin where the app runs, with
+   no trailing slash and no path: `https://keeper.equantic.tech`, or
+   `https://<username>.github.io` on a fork. It must be the *SPA* kind: a *Web* platform
+   requires a client secret at the token endpoint, and a static site has nowhere to keep
+   one.
+4. Under *API permissions*, add the delegated Microsoft Graph permission
+   **`Files.ReadWrite.AppFolder`**. It is the exact counterpart of Drive's `appDataFolder`
+   — the app's own folder and nothing else in the person's OneDrive. `User.Read` comes by
+   default and only names the account on screen.
+5. Copy the **Application (client) ID** from *Overview*. Public, like the Google one, and
+   there is no secret to go with it: the sign-in uses OAuth 2 with PKCE.
+
+> **Do not create a client secret.** Anything a static site can read, so can everyone who
+> opens it. PKCE is what replaces the secret here: a random verifier stays in the tab,
+> only its hash travels to Microsoft, and the code that comes back is useless to anyone
+> who did not generate the verifier.
+
+### 3. Configure the repository
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
    - Name: `GOOGLE_OAUTH_CLIENT_ID`
    - Value: the client id from the previous step.
    - And, for the guest side, `GOOGLE_PICKER_API_KEY` with the API key.
+   - If you did step 2, `MICROSOFT_CLIENT_ID` with the application id.
 
-Neither is a secret. If you prefer not to bake them into the build, leave the variables
-empty: the app asks for the client id on first run and keeps both in that browser's
-`localStorage` (*Configurações → Avançado*).
+None of them is a secret. If you prefer not to bake them into the build, leave the
+variables empty: the app asks for the client id on first run and keeps them in that
+browser's `localStorage` (*Configurações → Avançado*).
 
-### 3. Deploy
+### 4. Deploy
 
 Under *Settings → Pages → Build and deployment*, choose **Source: GitHub Actions**. This
 is not a detail: with *Deploy from a branch*, GitHub runs its own Jekyll build of the
@@ -335,7 +363,9 @@ offline and connect Drive later.
 ### Structure
 
 ```
-src/lib/       crypto · vault · sync · drive · google-auth · totp · generator · search · storage
+src/lib/       crypto · vault · sync · totp · generator · search · storage
+               storage-provider (what a place to keep a vault has to do)
+               drive · google-auth (Google Drive) · onedrive · ms-auth (OneDrive)
                model (secret types) · documents (personal document types)
                attachments (key envelope) · blobstore (encrypted IndexedDB cache)
                expiry (what expired and what is about to) · zip (backup bundle)
@@ -436,6 +466,9 @@ can decrypt the vault without this app. The repository's integration test does e
   sync.
 - While the consent screen is in *Testing*, Google caps the app at 100 test users and the
   consent expires every 7 days.
+- **OneDrive is built but not yet selectable.** The client and the Microsoft sign-in are
+  in the tree and covered by tests, and Google Drive is still the only provider the app
+  picks. Choosing one, and moving a vault between them, comes next.
 
 ## License
 

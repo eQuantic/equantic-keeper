@@ -10,6 +10,7 @@ import { isVaultFile, type VaultFile } from './vault';
 const KEY_CACHE = 'keeper.vault.cache.v1';
 const KEY_CLIENT_ID = 'keeper.google.clientId';
 const KEY_PICKER_KEY = 'keeper.google.pickerKey';
+const KEY_MS_CLIENT_ID = 'keeper.microsoft.clientId';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
@@ -108,6 +109,24 @@ export function setPickerApiKey(key: string): void {
   const value = key.trim();
   if (value) safeSet(KEY_PICKER_KEY, value);
   else safeRemove(KEY_PICKER_KEY);
+}
+
+/**
+ * Application id of the Entra registration behind OneDrive. Public like the
+ * Google one, and for the same reason overridable: a fork points at its own
+ * registration without rebuilding. There is no secret to go with it — the sign
+ * in uses PKCE precisely because a static site has nowhere to keep one.
+ */
+export function getMsClientId(): string {
+  const override = safeGet(KEY_MS_CLIENT_ID)?.trim();
+  if (override) return override;
+  return (import.meta.env.VITE_MS_CLIENT_ID ?? '').trim();
+}
+
+export function setMsClientId(clientId: string): void {
+  const value = clientId.trim();
+  if (value) safeSet(KEY_MS_CLIENT_ID, value);
+  else safeRemove(KEY_MS_CLIENT_ID);
 }
 
 export function isClientIdOverridden(): boolean {

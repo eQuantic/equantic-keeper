@@ -52,6 +52,10 @@ jobs:
           # repository variable. Only a guest opening a shared folder needs it;
           # without it the rest of the app works exactly as before.
           VITE_GOOGLE_PICKER_KEY: ${{ vars.GOOGLE_PICKER_API_KEY }}
+          # Application id of the Entra registration used for OneDrive. Public
+          # too, and there is no secret beside it: the sign in uses PKCE.
+          # Without it the OneDrive option simply does not appear.
+          VITE_MS_CLIENT_ID: ${{ vars.MICROSOFT_CLIENT_ID }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
