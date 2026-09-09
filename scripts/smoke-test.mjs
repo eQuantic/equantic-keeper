@@ -1907,6 +1907,25 @@ const run = async () => {
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
+  /*
+   * E agora sem dar tempo nenhum entre uma coisa e outra.
+   *
+   * Apagar a chave guardada é uma transação do IndexedDB, e uma página que
+   * desaparece antes de ela confirmar leva o apagamento consigo. Isto reabria
+   * o cofre sozinho, sem senha — e como a versão de cima espera pelo ecrã de
+   * desbloqueio antes de recarregar, dava tempo suficiente para passar quase
+   * sempre. Esta não dá.
+   */
+  await page.locator('button[aria-label="Bloquear (Ctrl+L)"]').click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2000);
+  await check('bloquear resiste a um refresh imediato', async () =>
+    (await page.locator('text=Desbloquear cofre').count()) === 1 &&
+    (await page.locator('text=GitHub PAT').count()) === 0);
+  await page.fill('input[type="password"]', PASSWORD);
+  await page.click('button:has-text("Desbloquear")');
+  await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
+
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
   const phone = await browser.newPage({
