@@ -936,6 +936,10 @@ const run = async () => {
   await check('trocar de serviço renomeia o que está à volta', async () =>
     (await page.locator('[role="dialog"] >> text=Conta Microsoft').count()) === 1 &&
     (await page.locator('[role="dialog"] >> text=Espaço no OneDrive').count()) === 1);
+  // Uma seção renomeada com o texto de dentro por renomear é pior que nenhuma.
+  await check('o texto de dentro das seções também troca de serviço', async () =>
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do OneDrive para ver o espaço').count()) === 1 &&
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para ver o espaço').count()) === 0);
   await check('a pasta do Drive some quando o cofre não está no Drive', async () =>
     (await page.locator('[role="dialog"] >> text=A pasta no Google Drive').count()) === 0);
   await page.screenshot({ path: `${OUT}/05-onedrive.png` });

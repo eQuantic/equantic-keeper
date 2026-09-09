@@ -285,7 +285,7 @@ function DriveFolderSection() {
 }
 
 function DriveUsageSection() {
-  const { actions, connected, driveFolderId } = useKeeper();
+  const { actions, connected, driveFolderId, provider } = useKeeper();
   const [usage, setUsage] = useState<DriveUsage | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -313,10 +313,14 @@ function DriveUsageSection() {
   }, [connected]);
 
   if (!connected) {
-    return <p className="text-xs text-muted">Conecte a conta do Google para ver o espaço ocupado.</p>;
+    return (
+      <p className="text-xs text-muted">
+        Conecte a conta do {provider === 'microsoft' ? 'OneDrive' : 'Google'} para ver o espaço ocupado.
+      </p>
+    );
   }
 
-  const inFolder = !!driveFolderId;
+  const inFolder = provider === 'google' && !!driveFolderId;
   const rows: { label: string; bytes: number }[] = usage
     ? [
         { label: 'Cofre cifrado', bytes: usage.vault },
@@ -341,7 +345,9 @@ function DriveUsageSection() {
               ? `A conta usa ${formatBytes(usage.quota.used)} de ${formatBytes(usage.quota.limit)} no total.`
               : inFolder
                 ? `Na pasta "${KEEPER_FOLDER_NAME}" do seu Drive.`
-                : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
+                : provider === 'microsoft'
+                  ? 'Na pasta do próprio app — não aparece na sua lista do OneDrive.'
+                  : 'Na pasta oculta do app — não aparece no Drive nem conta como arquivo seu.'}
           </p>
         </div>
         <Button
