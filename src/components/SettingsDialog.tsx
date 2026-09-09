@@ -6,7 +6,7 @@ import { useKeeper } from '../state/keeper';
 import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
-import { getClientId, getPickerApiKey, setPickerApiKey } from '../lib/storage';
+import { getClientId, getMsClientId, getPickerApiKey, setMsClientId, setPickerApiKey } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
 import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
 import type { ShareRecord } from '../lib/invites';
@@ -353,7 +353,7 @@ function DriveUsageSection() {
               setExpired(false);
               void read();
             };
-            if (expired) void actions.connectGoogle(true).then(go);
+            if (expired) void actions.connect(true).then(go);
             else go();
           }}
         >
@@ -413,22 +413,93 @@ function DriveUsageSection() {
  * settings no longer mounts every form in the dialog to show one of them.
  * ------------------------------------------------------------------------- */
 
+/**
+ * Where the vault is kept, and the switch between the two.
+ *
+ * The warning is the point of this section. Switching moves the DEVICE, not the
+ * vault: the local copy goes up to the new account on the next sync, but the
+ * attachments already uploaded keep ids that belong to the service being left,
+ * and nothing here can reach across. The backup bundle is what carries bytes
+ * between services — it re-uploads every attachment wherever the app is
+ * pointed — so that is what this offers instead of a migration it cannot do.
+ */
+function ProviderSection() {
+  const { actions, provider, hasLocalVault } = useKeeper();
+  const options = [
+    { id: 'google' as const, label: 'Google Drive', icon: 'google' as const, ready: true },
+    { id: 'microsoft' as const, label: 'OneDrive', icon: 'microsoft' as const, ready: !!getMsClientId() },
+  ].filter((option) => option.ready || option.id === provider);
+
+  const choose = (next: 'google' | 'microsoft') => {
+    if (next === provider) return;
+    const leaving = next === 'google' ? 'OneDrive' : 'Google Drive';
+    if (
+      hasLocalVault &&
+      !confirm(
+        `Trocar para ${next === 'google' ? 'Google Drive' : 'OneDrive'}?\n\n` +
+          `O cofre deste dispositivo sobe para a nova conta na próxima sincronização, mas os anexos já enviados ficam no ${leaving}.\n\n` +
+          'Para levar tudo: exporte um backup completo (.keeper.zip) antes de trocar e importe depois.',
+      )
+    ) {
+      return;
+    }
+    void actions.switchProvider(next);
+  };
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {options.map((option) => {
+        const active = option.id === provider;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => choose(option.id)}
+            aria-pressed={active}
+            className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${
+              active ? 'border-accent bg-accent/10' : 'border-line bg-canvas hover:border-line-strong'
+            }`}
+          >
+            <Icon name={option.icon} size={18} className={active ? 'text-accent' : 'text-muted'} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-ink">{option.label}</span>
+              <span className="block text-xs text-muted">{active ? 'Em uso neste dispositivo' : 'Trocar para este'}</span>
+            </span>
+            {active ? <Icon name="check" size={14} className="text-accent" /> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function AccountPane() {
-  const { actions, account, connected, driveFolderId, sync } = useKeeper();
+  const { actions, account, connected, driveFolderId, provider, sync } = useKeeper();
+  const google = provider === 'google';
+  const label = google ? 'Google Drive' : 'OneDrive';
   return (
     <>
       <Section
-        title="Conta Google"
+        title="Onde o cofre fica"
+        description="O serviço que guarda o arquivo cifrado. A troca vale só para este dispositivo."
+      >
+        <ProviderSection />
+      </Section>
+
+      <Section
+        title={`Conta ${google ? 'Google' : 'Microsoft'}`}
         description={
-          driveFolderId
-            ? `Usada apenas para guardar o arquivo cifrado na pasta "${KEEPER_FOLDER_NAME}" do seu Drive.`
-            : 'Usada apenas para guardar o arquivo cifrado na pasta oculta do app.'
+          google
+            ? driveFolderId
+              ? `Usada apenas para guardar o arquivo cifrado na pasta "${KEEPER_FOLDER_NAME}" do seu Drive.`
+              : 'Usada apenas para guardar o arquivo cifrado na pasta oculta do app.'
+            : 'Usada apenas para guardar o arquivo cifrado na pasta do próprio app no OneDrive.'
         }
       >
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-muted">
-              <Icon name={connected ? 'google' : 'cloudOff'} size={16} />
+              <Icon name={connected ? (google ? 'google' : 'microsoft') : 'cloudOff'} size={16} />
             </span>
             <div className="min-w-0">
               <p className="truncate text-sm text-ink">{account?.email ?? 'Não conectado'}</p>
@@ -447,7 +518,7 @@ function AccountPane() {
                 Desconectar
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => void actions.connectGoogle(true)}>
+              <Button size="sm" variant="outline" onClick={() => void actions.connect(true)}>
                 Conectar
               </Button>
             )}
@@ -464,26 +535,28 @@ function AccountPane() {
               variant="danger"
               className="mt-2"
               onClick={() => {
-                if (confirm('Sobrescrever o cofre do Drive com a versão deste dispositivo?')) {
+                if (confirm(`Sobrescrever o cofre do ${label} com a versão deste dispositivo?`)) {
                   void actions.syncNow(true);
                 }
               }}
             >
-              Sobrescrever o Drive com esta versão
+              Sobrescrever o {label} com esta versão
             </Button>
           </div>
         ) : null}
       </Section>
 
-      <Section
-        title="Onde o cofre fica"
-        description="A pasta do Google Drive que guarda o arquivo cifrado e os anexos."
-      >
-        <DriveFolderSection />
-      </Section>
+      {google ? (
+        <Section
+          title="A pasta no Google Drive"
+          description="A pasta do Google Drive que guarda o arquivo cifrado e os anexos."
+        >
+          <DriveFolderSection />
+        </Section>
+      ) : null}
 
       <Section
-        title="Espaço no Google Drive"
+        title={`Espaço no ${label}`}
         description="Quanto este cofre ocupa na conta conectada, item por item."
       >
         <DriveUsageSection />
@@ -965,7 +1038,8 @@ function BackupPane() {
 }
 
 function AdvancedPane({ onClose }: { onClose: () => void }) {
-  const { actions, connected } = useKeeper();
+  const { actions, connected, provider } = useKeeper();
+  const service = provider === 'microsoft' ? 'OneDrive' : 'Google Drive';
   const [sweeping, setSweeping] = useState(false);
   return (
     <>
@@ -979,6 +1053,10 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
           <span className="mt-0.5 block text-faint">
             Só é usada para abrir um cofre que outra pessoa partilhou com você.
           </span>
+        </p>
+        <p className="mb-2 text-xs text-muted">
+          Application (client) ID da Microsoft: <code className="text-ink">{getMsClientId() || 'nenhum'}</code>
+          <span className="mt-0.5 block text-faint">Só é usado se você guardar o cofre no OneDrive.</span>
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1009,6 +1087,22 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
           </Button>
           <Button
             size="sm"
+            variant="ghost"
+            onClick={() => {
+              const value = prompt(
+                'Application (client) ID da Microsoft (deixe vazio para voltar ao padrão do app):',
+                getMsClientId(),
+              );
+              if (value !== null) {
+                setMsClientId(value);
+                actions.notify('Application ID da Microsoft salvo neste dispositivo.');
+              }
+            }}
+          >
+            Trocar o ID da Microsoft
+          </Button>
+          <Button
+            size="sm"
             icon="cloud"
             loading={sweeping}
             disabled={!connected}
@@ -1019,10 +1113,10 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
                 actions.notify(
                   removed === 0
                     ? 'Nenhum anexo órfão para remover.'
-                    : `${removed} anexo(s) órfão(s) removido(s) do Drive.`,
+                    : `${removed} anexo(s) órfão(s) removido(s) do ${service}.`,
                 );
               } catch (error) {
-                actions.notify(error instanceof Error ? error.message : 'Falha ao limpar o Drive.');
+                actions.notify(error instanceof Error ? error.message : `Falha ao limpar o ${service}.`);
               } finally {
                 setSweeping(false);
               }
@@ -1037,7 +1131,7 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
             onClick={() => {
               if (
                 confirm(
-                  'Apagar o cofre salvo neste navegador? A cópia no Google Drive permanece intacta e pode ser baixada de novo.',
+                  `Apagar o cofre salvo neste navegador? A cópia no ${service} permanece intacta e pode ser baixada de novo.`,
                 )
               ) {
                 actions.wipeDevice();
@@ -1309,7 +1403,7 @@ function SharingPane() {
               size="sm"
               icon="refresh"
               onClick={() => {
-                void actions.connectGoogle(true).then(() => {
+                void actions.connect(true).then(() => {
                   setExpired(false);
                   void load();
                 });
@@ -1406,7 +1500,7 @@ function SharingPane() {
  * has no way in, so this list is the whole map of the dialog.
  */
 const TABS: { id: string; label: string; icon: string; render: (onClose: () => void) => ReactNode }[] = [
-  { id: 'conta', label: 'Conta e Drive', icon: 'cloud', render: () => <AccountPane /> },
+  { id: 'conta', label: 'Conta e nuvem', icon: 'cloud', render: () => <AccountPane /> },
   { id: 'seguranca', label: 'Segurança', icon: 'shield', render: () => <SecurityPane /> },
   { id: 'pessoas', label: 'Pessoas e tipos', icon: 'users', render: () => <PeoplePane /> },
   { id: 'partilha', label: 'Partilha', icon: 'share', render: () => <SharingPane /> },

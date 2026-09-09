@@ -18,6 +18,41 @@
  */
 import type { VaultFile } from './vault';
 
+/** Which service a vault lives in. */
+export type ProviderId = 'google' | 'microsoft';
+
+/** Who is signed in, as much of it as the app shows on screen. */
+export interface ProviderAccount {
+  email: string;
+  name: string;
+  picture?: string;
+}
+
+/**
+ * What the app needs from the account behind a provider.
+ *
+ * Deliberately smaller than either implementation. Scopes are the clearest
+ * example of what stays out: Google widens a grant at the moment a person asks
+ * to move the vault into a folder, and Microsoft has no equivalent because the
+ * registration fixes its permissions up front. Code that needs that reaches for
+ * the Google client by name, through `isGoogleAuth`, instead of pretending
+ * every provider has scopes.
+ */
+export interface AccountAuth {
+  readonly isSignedIn: boolean;
+  /**
+   * @param interactive `false` means "use or renew what is already here" — it
+   * must never open a window, because a window with no gesture behind it is
+   * blocked, or on a phone navigates the whole page away.
+   */
+  requestToken(interactive: boolean, hint?: string): Promise<string>;
+  fetchAccount(): Promise<ProviderAccount>;
+  invalidate(): void;
+  signOut(): Promise<void> | void;
+  /** Gets whatever the provider needs in place, without asking for anything. */
+  preload?(): Promise<void>;
+}
+
 /** One file, as every provider can describe it. */
 export interface StoredFileMeta {
   id: string;
@@ -43,6 +78,8 @@ export type StorageSpace = { kind: 'appdata' } | { kind: 'folder'; id: string };
 export interface VaultStorage {
   /** A name for the person: "Google Drive", "OneDrive". */
   readonly label: string;
+  /** A name for the code, and for what gets written to storage. */
+  readonly id: ProviderId;
 
   /* -- where we are ------------------------------------------------------- */
   readonly space: StorageSpace;

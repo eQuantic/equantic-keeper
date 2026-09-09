@@ -61,6 +61,7 @@ function asMeta(item: GraphItem): StoredFileMeta {
 }
 
 export class OneDriveClient implements VaultStorage {
+  readonly id = 'microsoft' as const;
   readonly label = 'OneDrive';
   /** Graph can invite an account, but the guest half is not built. */
   readonly shares = false;

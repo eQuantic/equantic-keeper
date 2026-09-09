@@ -6,11 +6,13 @@
  */
 import { isBiometricRecord, type BiometricRecord } from './biometric';
 import { isVaultFile, type VaultFile } from './vault';
+import type { ProviderId } from './storage-provider';
 
 const KEY_CACHE = 'keeper.vault.cache.v1';
 const KEY_CLIENT_ID = 'keeper.google.clientId';
 const KEY_PICKER_KEY = 'keeper.google.pickerKey';
 const KEY_MS_CLIENT_ID = 'keeper.microsoft.clientId';
+const KEY_PROVIDER = 'keeper.storage.provider';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
@@ -109,6 +111,23 @@ export function setPickerApiKey(key: string): void {
   const value = key.trim();
   if (value) safeSet(KEY_PICKER_KEY, value);
   else safeRemove(KEY_PICKER_KEY);
+}
+
+/**
+ * Which service this device syncs with.
+ *
+ * Per device, not per vault, and Google by default — every install that existed
+ * before OneDrive did has nothing written here and has to keep working exactly
+ * as it did. An unrecognised value falls back the same way rather than leaving
+ * the app with no provider at all.
+ */
+export function getProvider(): ProviderId {
+  return safeGet(KEY_PROVIDER) === 'microsoft' ? 'microsoft' : 'google';
+}
+
+export function setProvider(provider: ProviderId): void {
+  if (provider === 'google') safeRemove(KEY_PROVIDER);
+  else safeSet(KEY_PROVIDER, provider);
 }
 
 /**

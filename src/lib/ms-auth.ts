@@ -17,6 +17,7 @@
  * Entra is the app's own address and not a page of its own.
  */
 import { randomBytes, toBase64 } from './crypto';
+import type { AccountAuth, ProviderAccount } from './storage-provider';
 
 const AUTHORITY = 'https://login.microsoftonline.com/common/oauth2/v2.0';
 const GRAPH_ME = 'https://graph.microsoft.com/v1.0/me';
@@ -39,11 +40,6 @@ export class MicrosoftAuthError extends Error {
   }
 }
 
-export interface MicrosoftAccount {
-  email: string;
-  name: string;
-}
-
 function base64url(bytes: Uint8Array): string {
   return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -62,7 +58,7 @@ async function challengeFor(verifier: string): Promise<string> {
  * files, and that trade deserves to be decided on its own rather than smuggled
  * in with a new provider.
  */
-export class MicrosoftAuth {
+export class MicrosoftAuth implements AccountAuth {
   private token: string | null = null;
   private refresh: string | null = null;
   private expiresAt = 0;
@@ -182,7 +178,7 @@ export class MicrosoftAuth {
     this.refresh = null;
   }
 
-  async fetchAccount(): Promise<MicrosoftAccount> {
+  async fetchAccount(): Promise<ProviderAccount> {
     const token = await this.requestToken(false);
     const response = await fetch(GRAPH_ME, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) throw new MicrosoftAuthError('Não foi possível ler o perfil da conta Microsoft.');

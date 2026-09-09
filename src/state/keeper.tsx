@@ -34,7 +34,7 @@ import {
   wrapMasterBits,
 } from '../lib/biometric';
 import { DriveClient, driveUsage, KEEPER_FOLDER_NAME, VAULT_FILE_NAME, type DriveUsage } from '../lib/drive';
-import { canShare, type SharesFolder, type VaultStorage } from '../lib/storage-provider';
+import { canShare, type AccountAuth, type ProviderId, type SharesFolder, type VaultStorage } from '../lib/storage-provider';
 import {
   MOVED_MARKER_NAME,
   discardAppDataCopy,
@@ -65,7 +65,9 @@ import {
   type StoredShares,
 } from '../lib/sharing';
 import type { DrivePermission } from '../lib/drive';
-import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError } from '../lib/google-auth';
+import { DRIVE_FILE_SCOPE, GoogleAuth, GoogleAuthError, isGoogleAuth } from '../lib/google-auth';
+import { MicrosoftAuth, MicrosoftAuthError } from '../lib/ms-auth';
+import { OneDriveClient } from '../lib/onedrive';
 import { createFolder, registerCustomTypes } from '../lib/model';
 import {
   folderLeaf,
@@ -133,6 +135,8 @@ export interface KeeperState {
   biometricEnrolled: boolean;
   /** The record opens the vault currently loaded — show the unlock button. */
   biometricReady: boolean;
+  /** Which service this device syncs with. */
+  provider: ProviderId;
   /** Drive folder holding the vault, or null while it lives in the app folder. */
   driveFolderId: string | null;
   /** Live count while files are being copied into the folder. */
@@ -174,7 +178,10 @@ export interface GuestSession {
 }
 
 export interface KeeperActions {
-  connectGoogle(interactive?: boolean): Promise<void>;
+  /** Signs in to whichever service this device is pointed at. */
+  connect(interactive?: boolean): Promise<void>;
+  /** Points this device at a different service. */
+  switchProvider(next: ProviderId): Promise<void>;
   continueOffline(): void;
   createVault(password: string): Promise<void>;
   unlock(password: string): Promise<void>;
@@ -274,6 +281,17 @@ function takePendingInvite(): InviteLink | null {
   }
 }
 
+/**
+ * What to call the service in a message.
+ *
+ * Reads the choice rather than a built client, because half these messages are
+ * written on paths where there is no client yet — or where building one is the
+ * very thing that failed.
+ */
+function serviceName(): string {
+  return storage.getProvider() === 'microsoft' ? 'OneDrive' : 'Google Drive';
+}
+
 export function KeeperProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<KeeperState>(() => ({
     phase: 'boot',
@@ -289,6 +307,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     biometricAvailable: false,
     biometricEnrolled: !!storage.loadBiometricRecord(),
     biometricReady: false,
+    provider: storage.getProvider(),
     driveFolderId: storage.loadDriveFolder(),
     driveMove: null,
     driveMovedElsewhere: false,
@@ -298,7 +317,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     activeWorkspace: OWN_WORKSPACE,
   }));
 
-  const authRef = useRef<GoogleAuth | null>(null);
+  const authRef = useRef<AccountAuth | null>(null);
+  /** Which provider `authRef`/`driveRef` were built for, so a switch rebuilds them. */
+  const providerRef = useRef<ProviderId | null>(null);
   /** Mirrors `driveMovedElsewhere` for the sync loop, which reads refs. */
   const movedElsewhereRef = useRef(false);
   /** Set only while what is open belongs to someone else. */
@@ -396,18 +417,41 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   }, [patch]);
 
   const services = useCallback(() => {
-    const clientId = storage.getClientId();
-    if (!clientId) throw new Error('Configure o Google OAuth Client ID antes de conectar.');
-    if (!authRef.current || authRef.current.clientId !== clientId) {
-      const auth = new GoogleAuth(clientId);
-      const folderId = storage.loadDriveFolder();
-      // A device that already moved has to renew with the wider permission, or
-      // its first request lands in a folder it is no longer allowed to open.
-      if (folderId) auth.include(DRIVE_FILE_SCOPE);
-      authRef.current = auth;
-      driveRef.current = new DriveClient(auth, folderId ? { kind: 'folder', id: folderId } : { kind: 'appdata' });
+    const provider = storage.getProvider();
+    const clientId = provider === 'google' ? storage.getClientId() : storage.getMsClientId();
+    if (!clientId) {
+      throw new Error(
+        provider === 'google'
+          ? 'Configure o Google OAuth Client ID antes de conectar.'
+          : 'Configure o Application (client) ID da Microsoft antes de conectar.',
+      );
     }
-    return { auth: authRef.current, drive: driveRef.current! };
+
+    // Rebuilt when the id changes and when the provider does: a OneDrive
+    // client holding a Google token would fail on every request, in a way
+    // nobody could read.
+    const current = authRef.current;
+    const stale =
+      !current || providerRef.current !== provider || (current instanceof GoogleAuth && current.clientId !== clientId);
+
+    if (stale) {
+      if (provider === 'microsoft') {
+        const auth = new MicrosoftAuth(clientId);
+        authRef.current = auth;
+        driveRef.current = new OneDriveClient(auth);
+      } else {
+        const auth = new GoogleAuth(clientId);
+        const folderId = storage.loadDriveFolder();
+        // A device that already moved has to renew with the wider permission,
+        // or its first request lands in a folder it is no longer allowed to
+        // open.
+        if (folderId) auth.include(DRIVE_FILE_SCOPE);
+        authRef.current = auth;
+        driveRef.current = new DriveClient(auth, folderId ? { kind: 'folder', id: folderId } : { kind: 'appdata' });
+      }
+      providerRef.current = provider;
+    }
+    return { auth: authRef.current!, drive: driveRef.current! };
   }, []);
 
   /**
@@ -500,7 +544,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           sync: {
             status: 'pending',
             message: navigator.onLine
-              ? 'Sem conexão com o Drive — tentaremos de novo sozinhos.'
+              ? `Sem conexão com o ${serviceName()} — tentaremos de novo sozinhos.`
               : 'Sem internet. As alterações sobem assim que a conexão voltar.',
           },
         });
@@ -563,7 +607,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
             sync: {
               status: 'conflict',
               message:
-                'O cofre no Drive usa outra senha mestra. Desbloqueie com ela ou sobrescreva o Drive com esta versão.',
+                `O cofre no ${serviceName()} usa outra senha mestra. Desbloqueie com ela ou sobrescreva o ${serviceName()} com esta versão.`,
             },
           });
           return;
@@ -575,7 +619,9 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // An expired Google session is not a failure to retry — no timer can
         // fix it, because reconnecting needs a tap. Say that instead of
         // blinking an error every few minutes.
-        const expired = error instanceof GoogleAuthError && error.code === 'needs_gesture';
+        const expired =
+          (error instanceof GoogleAuthError || error instanceof MicrosoftAuthError) &&
+          error.code === 'needs_gesture';
         patch({ sync: { status: expired ? 'pending' : 'error', message } });
         if (!options.silent && !expired) patch({ error: message });
       }
@@ -688,13 +734,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const warmUpGoogle = useCallback(async () => {
     try {
       const { auth } = services();
-      await auth.preload();
+      await auth.preload?.();
     } catch {
       // No client id configured yet: the setup screen handles that.
     }
   }, [services]);
 
-  const connectGoogle = useCallback(
+  const connect = useCallback(
     async (interactive = true) => {
       // A silent renewal runs in the background: it must never put the unlock
       // button into a loading state the user cannot dismiss.
@@ -708,7 +754,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // The wider permission can be taken back from the Google account page.
         // If it is gone, the folder is unreachable and every request would fail
         // in a way nobody could read: fall back to where the vault started.
-        if (drive.space.kind === 'folder' && !auth.hasScope(DRIVE_FILE_SCOPE)) {
+        if (isGoogleAuth(auth) && drive.space.kind === 'folder' && !auth.hasScope(DRIVE_FILE_SCOPE)) {
           drive.useSpace({ kind: 'appdata' });
           storage.clearDriveFolder();
           patch({
@@ -721,7 +767,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // Another device may have moved this vault into a folder. Until this one
         // is granted the wider permission it cannot even see that folder, so the
         // app folder is left holding a note saying where everything went.
-        if (drive.space.kind === 'appdata') {
+        if (drive.id === 'google' && drive.space.kind === 'appdata') {
           const marker = await drive
             .listFiles(`name = '${MOVED_MARKER_NAME}' and trashed = false`)
             .catch(() => []);
@@ -752,13 +798,13 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           await runSync({ silent: true });
         }
       } catch (error) {
-        if (!interactive && error instanceof GoogleAuthError) {
+        if (!interactive && (error instanceof GoogleAuthError || error instanceof MicrosoftAuthError)) {
           // Nothing was attempted, so nothing was lost: the account is still
           // linked, and the sync status carries the "needs a tap" part.
           patch({ busy: false });
           return;
         }
-        fail(error, 'Não foi possível conectar à conta Google.');
+        fail(error, `Não foi possível conectar à conta do ${serviceName()}.`);
       }
     },
     [adoptVaultFile, fail, patch, runSync, services],
@@ -767,7 +813,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const continueOffline = useCallback(() => {
     const cached = storage.loadCachedVault();
     if (!cached) {
-      patch({ error: 'Nenhum cofre salvo neste dispositivo. Conecte-se ao Google para baixar o seu.' });
+      patch({ error: `Nenhum cofre salvo neste dispositivo. Conecte-se ao ${serviceName()} para baixar o seu.` });
       return;
     }
     adoptVaultFile(cached.file, cached.driveFileId, cached.driveRevision);
@@ -1249,12 +1295,12 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const syncNow = useCallback(
     async (force = false) => {
       if (!authRef.current?.isSignedIn) {
-        await connectGoogle(true);
+        await connect(true);
         if (!authRef.current?.isSignedIn) return;
       }
       await runSync({ ...(force ? { force: true } : {}) });
     },
-    [connectGoogle, runSync],
+    [connect, runSync],
   );
 
   const changeMasterPassword = useCallback(
@@ -1290,7 +1336,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         refreshBiometric();
         patch({
           busy: false,
-          notice: `Senha mestra alterada. Sincronizando com o Drive…${
+          notice: `Senha mestra alterada. Sincronizando com o ${serviceName()}…${
             hadBiometrics ? ' O desbloqueio por biometria foi desativado; reative-o nas Configurações.' : ''
           }`,
         });
@@ -1431,7 +1477,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const moveToDriveFolder = useCallback(async () => {
     const drive = driveRef.current;
     const auth = authRef.current;
-    if (!drive || !auth) throw new Error('Conecte a conta Google antes de mover o cofre.');
+    if (!drive || !auth) throw new Error('Conecte a conta antes de mover o cofre.');
+    if (!isGoogleAuth(auth)) throw new Error(`Mover o cofre para uma pasta ainda é uma função do Google Drive.`);
     if (!payloadRef.current) throw new Error('Abra o cofre antes de mover.');
 
     patch({ busy: true, error: null, driveMove: { done: 0, total: 0 } });
@@ -1691,6 +1738,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     patch({ busy: true, error: null });
     try {
       const { auth, drive } = services();
+      if (!isGoogleAuth(auth)) throw new Error(`Abrir um cofre partilhado ainda não existe no ${drive.label}.`);
       // A guest needs the per-file scope before the picker can hand anything
       // over; asking here rather than at sign-in keeps it out of the way of
       // people who never open someone else's vault.
@@ -1833,7 +1881,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     if (!invite) return;
     patch({ busy: true, error: null });
     try {
-      const { auth } = services();
+      const { auth, drive } = services();
+      if (!isGoogleAuth(auth)) throw new Error(`Aceitar um convite ainda não existe no ${drive.label}.`);
       await ensureToken();
       if (!auth.hasScope(DRIVE_FILE_SCOPE)) await auth.requestScope(DRIVE_FILE_SCOPE);
 
@@ -1959,7 +2008,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const sweepDriveOrphans = useCallback(async () => {
     const drive = driveRef.current;
     const payload = payloadRef.current;
-    if (!drive || !payload) throw new Error('Conecte a conta Google para liberar espaço.');
+    if (!drive || !payload) throw new Error(`Conecte a conta do ${serviceName()} para liberar espaço.`);
 
     await ensureToken();
     const orphans = await findOrphans(drive, referencedAttachments(payload));
@@ -1967,10 +2016,59 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     return orphans.length;
   }, []);
 
+  /**
+   * Points this device at a different service.
+   *
+   * What moves is the device, not the vault: the local copy and its keys stay
+   * exactly where they are, and the next sync pushes the vault up to the new
+   * account. Attachments already uploaded stay behind, because their ids belong
+   * to the service we just left — the backup bundle is what carries the bytes
+   * across, and it re-uploads them wherever the app is pointed. The screen that
+   * offers this says so before anyone presses it.
+   */
+  const switchProvider = useCallback(
+    async (next: ProviderId) => {
+      if (next === storage.getProvider()) return;
+      // Not awaited on purpose. Revoking is best effort, and a switch pressed
+      // on the sign-in screen is followed straight away by a sign-in that opens
+      // a window: waiting on a network round trip first is how a browser
+      // decides the click has gone stale and blocks it.
+      void Promise.resolve(authRef.current?.signOut()).catch(() => undefined);
+      authRef.current = null;
+      driveRef.current = null;
+      providerRef.current = null;
+
+      storage.setProvider(next);
+      storage.saveAccount(null);
+      // The Drive folder is NOT cleared: it is a fact about the Google account,
+      // meaningless to OneDrive and still true when someone comes back. Wiping
+      // it here would cost them the folder binding for a round trip, and land
+      // them on "this vault moved somewhere this device cannot see".
+      driveIdRef.current = undefined;
+      revisionRef.current = undefined;
+      movedElsewhereRef.current = false;
+
+      patch({
+        provider: next,
+        connected: false,
+        account: null,
+        driveFolderId: storage.loadDriveFolder(),
+        driveMovedElsewhere: false,
+        sync: { status: 'idle' },
+        notice: `Este dispositivo passou a usar o ${next === 'microsoft' ? 'OneDrive' : 'Google Drive'}. Conecte a conta para sincronizar.`,
+      });
+    },
+    [patch],
+  );
+
   const signOut = useCallback(async () => {
     await authRef.current?.signOut();
     storage.saveAccount(null);
-    patch({ connected: false, account: null, notice: 'Conta Google desconectada deste navegador.' });
+    patch({
+      connected: false,
+      account: null,
+      notice: `Conta ${driveRef.current?.label ?? 'do Google Drive'} desconectada deste navegador.`,
+    });
   }, [patch]);
 
   const wipeDevice = useCallback(() => {
@@ -1990,7 +2088,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       hasLocalVault: false,
       biometricEnrolled: false,
       biometricReady: false,
-      notice: 'Dados locais apagados. O cofre no Google Drive permanece intacto.',
+      notice: `Dados locais apagados. O cofre no ${serviceName()} permanece intacto.`,
     }));
   }, []);
 
@@ -2184,7 +2282,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo<KeeperActions>(
     () => ({
-      connectGoogle,
+      connect,
+      switchProvider,
       continueOffline,
       createVault,
       unlock,
@@ -2239,7 +2338,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [
       changeMasterPassword,
       collectAttachments,
-      connectGoogle,
+      connect,
+      switchProvider,
       continueOffline,
       createVault,
       currentVaultFile,
