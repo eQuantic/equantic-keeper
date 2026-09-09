@@ -33,6 +33,17 @@ export const MS_SCOPES = ['Files.ReadWrite.AppFolder', 'User.Read', 'offline_acc
 /** Marks a callback as ours, and ties it to the request that started it. */
 export const MS_STATE_PREFIX = 'keeper-ms:';
 
+const MESSAGE_TYPE = 'keeper-ms-auth';
+/** A way home that does not depend on who opened whom. See `waitForCode`. */
+const CHANNEL_NAME = 'keeper-ms-auth';
+
+interface CallbackPayload {
+  type: typeof MESSAGE_TYPE;
+  state: string;
+  code?: string;
+  error?: string;
+}
+
 export class MicrosoftAuthError extends Error {
   constructor(message: string, readonly code?: string) {
     super(message);
@@ -110,27 +121,48 @@ export class MicrosoftAuth implements AccountAuth {
   }
 
   private async signIn(): Promise<string> {
-    const verifier = base64url(randomBytes(48));
-    const state = `${MS_STATE_PREFIX}${base64url(randomBytes(12))}`;
-    const redirectUri = window.location.origin;
+    /*
+     * The window opens FIRST, empty, and is given its address afterwards.
+     *
+     * A browser honours `window.open` while the click that asked for it is
+     * still fresh, and the challenge below is a real SHA-256 — which the
+     * platform settles off the event loop, not in a microtask. Building the
+     * address first and opening after put a whole task between the click and
+     * the window, which is long enough for a browser to decide nobody asked
+     * for it. The window then never appears, or appears only after the person
+     * has pressed the button enough times to convince the browser.
+     */
+    const popup = window.open('', 'keeper-microsoft', 'width=520,height=680');
+    if (!popup) {
+      throw new MicrosoftAuthError('A janela da Microsoft foi bloqueada pelo navegador.', 'popup_blocked');
+    }
 
-    const url = new URL(`${AUTHORITY}/authorize`);
-    url.searchParams.set('client_id', this.clientId);
-    url.searchParams.set('response_type', 'code');
-    url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('response_mode', 'query');
-    url.searchParams.set('scope', MS_SCOPES.join(' '));
-    url.searchParams.set('state', state);
-    url.searchParams.set('code_challenge', await challengeFor(verifier));
-    url.searchParams.set('code_challenge_method', 'S256');
+    try {
+      const verifier = base64url(randomBytes(48));
+      const state = `${MS_STATE_PREFIX}${base64url(randomBytes(12))}`;
+      const redirectUri = window.location.origin;
 
-    const code = await waitForCode(url.toString(), state);
-    return this.exchange({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: verifier,
-    });
+      const url = new URL(`${AUTHORITY}/authorize`);
+      url.searchParams.set('client_id', this.clientId);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('redirect_uri', redirectUri);
+      url.searchParams.set('response_mode', 'query');
+      url.searchParams.set('scope', MS_SCOPES.join(' '));
+      url.searchParams.set('state', state);
+      url.searchParams.set('code_challenge', await challengeFor(verifier));
+      url.searchParams.set('code_challenge_method', 'S256');
+
+      const code = await waitForCode(popup, url.toString(), state);
+      return await this.exchange({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+      });
+    } catch (error) {
+      popup.close();
+      throw error;
+    }
   }
 
   private async exchange(fields: Record<string, string>): Promise<string> {
@@ -189,44 +221,63 @@ export class MicrosoftAuth implements AccountAuth {
 }
 
 /**
- * Opens the popup and waits for the callback to report back.
+ * Points the (already open) window at Microsoft and waits for the code.
  *
- * Two ways it can end badly and both are handled: the person closes the window,
- * which nothing would otherwise tell us, and the browser refuses to open it at
- * all — which is why this is only ever reached from a click.
+ * Two ways home, and the second is not belt and braces — it is the one that
+ * will still be there tomorrow. `postMessage` through `opener` needs an opener,
+ * and a Cross-Origin-Opener-Policy on the sign-in page severs it. Microsoft
+ * sends that header today in report-only mode, which is how a site announces
+ * what it is about to enforce. A BroadcastChannel does not care who opened
+ * whom, only that both sides are this origin.
+ *
+ * The address is set last, after both listeners are in place, so a fast
+ * callback cannot arrive before anyone is listening for it.
  */
-function waitForCode(authorizeUrl: string, state: string): Promise<string> {
+function waitForCode(popup: Window, authorizeUrl: string, state: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const popup = window.open(authorizeUrl, 'keeper-microsoft', 'width=520,height=680');
-    if (!popup) {
-      return reject(
-        new MicrosoftAuthError('A janela da Microsoft foi bloqueada pelo navegador.', 'popup_blocked'),
-      );
-    }
+    const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL_NAME);
 
     const finish = (fn: () => void) => {
       window.removeEventListener('message', onMessage);
+      channel?.close();
       window.clearInterval(closedTimer);
       window.clearTimeout(timeout);
       fn();
     };
 
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string; state?: string; code?: string; error?: string } | null;
-      if (!data || data.type !== 'keeper-ms-auth' || data.state !== state) return;
+    const accept = (data: unknown) => {
+      const payload = data as Partial<CallbackPayload> | null;
+      if (!payload || payload.type !== MESSAGE_TYPE || payload.state !== state) return;
       finish(() => {
         popup.close();
-        if (data.code) resolve(data.code);
-        else reject(new MicrosoftAuthError(data.error || 'Autenticação cancelada.', data.error));
+        if (payload.code) resolve(payload.code);
+        else reject(new MicrosoftAuthError(payload.error || 'Autenticação cancelada.', payload.error));
       });
     };
-    window.addEventListener('message', onMessage);
 
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      accept(event.data);
+    };
+    window.addEventListener('message', onMessage);
+    // A BroadcastChannel only ever carries this origin, so there is no origin
+    // to check here — that is the whole point of using one.
+    if (channel) channel.onmessage = (event: MessageEvent) => accept(event.data);
+
+    /*
+     * Noticing that the person closed the window, without inventing it.
+     *
+     * Under an enforced COOP the handle is a disconnected stub whose `closed`
+     * reads true from the start, and treating that as a cancellation would
+     * abandon a sign-in the person is in the middle of. Nobody can have closed
+     * a window that has not finished opening, so one synchronous look right
+     * here tells a stub from a real window — after which a close means what it
+     * says, immediately, with no grace period to sit through.
+     */
+    const watchable = !popup.closed;
     const closedTimer = window.setInterval(() => {
-      if (popup.closed) {
-        finish(() => reject(new MicrosoftAuthError('Janela da Microsoft fechada antes de concluir.', 'popup_closed')));
-      }
+      if (!watchable || !popup.closed) return;
+      finish(() => reject(new MicrosoftAuthError('Janela da Microsoft fechada antes de concluir.', 'popup_closed')));
     }, 500);
 
     const timeout = window.setTimeout(() => {
@@ -235,27 +286,52 @@ function waitForCode(authorizeUrl: string, state: string): Promise<string> {
         reject(new MicrosoftAuthError('Tempo esgotado ao falar com a Microsoft.', 'timeout'));
       });
     }, 180_000);
+
+    popup.location.replace(authorizeUrl);
   });
 }
 
 /**
  * Called from the popup, which is this same app booted at the redirect URI.
  *
+ * An opener is no longer required to recognise the callback. When COOP has
+ * severed it, the old check said "not ours", and the window went on to boot a
+ * whole vault — so what the person saw was the sign-in screen again, inside a
+ * popup, and they pressed it again. The state prefix is ours and nothing else
+ * writes it, so that alone is the test.
+ *
  * Returns true when it handled a callback, so the caller stops before rendering
- * a whole vault into a window that is about to close.
+ * anything into a window that is about to close.
  */
 export function completeMicrosoftAuthCallback(): boolean {
   const params = new URLSearchParams(window.location.search);
   const state = params.get('state');
-  if (!window.opener || !state?.startsWith(MS_STATE_PREFIX)) return false;
+  if (!state?.startsWith(MS_STATE_PREFIX)) return false;
 
-  const payload = {
-    type: 'keeper-ms-auth',
+  const code = params.get('code');
+  const error = params.get('error_description') ?? params.get('error');
+  const payload: CallbackPayload = {
+    type: MESSAGE_TYPE,
     state,
-    ...(params.get('code') ? { code: params.get('code') } : {}),
-    ...(params.get('error') ? { error: params.get('error_description') ?? params.get('error') } : {}),
+    ...(code ? { code } : {}),
+    ...(code || !error ? {} : { error }),
   };
-  window.opener.postMessage(payload, window.location.origin);
-  window.close();
+
+  try {
+    window.opener?.postMessage(payload, window.location.origin);
+  } catch {
+    /* opener severed, or gone: the channel below is the way home */
+  }
+  try {
+    new BroadcastChannel(CHANNEL_NAME).postMessage(payload);
+  } catch {
+    /* no BroadcastChannel here: the opener above was the way home */
+  }
+
+  // Said before closing, because a browser may refuse to close a window whose
+  // opener it severed — and a window left sitting there should say what it is,
+  // not boot a vault into itself.
+  document.body.textContent = 'Autenticação concluída. Pode fechar esta janela.';
+  window.setTimeout(() => window.close(), 50);
   return true;
 }

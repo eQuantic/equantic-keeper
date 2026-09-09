@@ -25,9 +25,18 @@ interface Posted {
 function stubWindow(over: Record<string, unknown> = {}) {
   const listeners = new Set<(event: { origin: string; data: unknown }) => void>();
   const opened: string[] = [];
+  const navigated: string[] = [];
   const posted: Posted[] = [];
-  const popup = { closed: false, close: () => undefined };
   let closed = false;
+
+  // A janela abre vazia e só depois recebe o endereço, tal como no código.
+  const popup = {
+    closed: false,
+    close: () => {
+      popup.closed = true;
+    },
+    location: { replace: (url: string) => navigated.push(url) },
+  };
 
   const win = {
     location: { origin: ORIGIN, search: '' },
@@ -51,9 +60,12 @@ function stubWindow(over: Record<string, unknown> = {}) {
     ...over,
   };
   vi.stubGlobal('window', win);
+  vi.stubGlobal('document', { body: { textContent: '' } });
+  stubChannel();
 
   return {
     opened,
+    navigated,
     posted,
     popup,
     get closed() {
@@ -65,8 +77,40 @@ function stubWindow(over: Record<string, unknown> = {}) {
   };
 }
 
+interface Bus {
+  name: string;
+  onmessage: ((event: { data: unknown }) => void) | null;
+}
+
 /**
- * Waits until the popup is actually open, rather than for a fixed tick.
+ * Um BroadcastChannel de mentira: um barramento em memória.
+ *
+ * O real do node manteria o event loop vivo e não deixaria ver o que passou por
+ * ele. Este entrega a quem estiver à escuta do mesmo nome, que é exatamente o
+ * contrato de que o código depende.
+ */
+function stubChannel(): void {
+  const live: Bus[] = [];
+  class FakeChannel implements Bus {
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    constructor(readonly name: string) {
+      live.push(this);
+    }
+    postMessage(data: unknown): void {
+      for (const other of [...live]) {
+        if (other !== this && other.name === this.name) other.onmessage?.({ data });
+      }
+    }
+    close(): void {
+      const at = live.indexOf(this);
+      if (at >= 0) live.splice(at, 1);
+    }
+  }
+  vi.stubGlobal('BroadcastChannel', FakeChannel);
+}
+
+/**
+ * Waits until the popup has been pointed at Microsoft.
  *
  * The challenge is a real SHA-256 digest, which node settles on its threadpool
  * whenever it settles — a tick or two is usually enough and sometimes is not.
@@ -81,10 +125,10 @@ function stubWindow(over: Record<string, unknown> = {}) {
  */
 async function untilOpen(win: ReturnType<typeof stubWindow>): Promise<void> {
   for (let attempt = 0; attempt < 500; attempt += 1) {
-    if (win.opened.length > 0) return;
+    if (win.navigated.length > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
-  throw new Error('a janela da Microsoft nunca foi aberta');
+  throw new Error('a janela nunca foi apontada para a Microsoft');
 }
 
 function stubToken(reply: () => { status?: number; body?: unknown } = () => ({})): URLSearchParams[] {
@@ -116,7 +160,7 @@ async function digestOf(verifier: string): Promise<string> {
 async function signIn(auth: MicrosoftAuth, win: ReturnType<typeof stubWindow>): Promise<string> {
   const pending = auth.requestToken(true);
   await untilOpen(win);
-  win.deliver({ type: 'keeper-ms-auth', state: paramsOf(win.opened[0]!).get('state'), code: 'code-1' });
+  win.deliver({ type: 'keeper-ms-auth', state: paramsOf(win.navigated[0]!).get('state'), code: 'code-1' });
   return pending;
 }
 
@@ -130,13 +174,34 @@ describe('o pedido que vai para a Microsoft', () => {
     const posts = stubToken();
     await signIn(new MicrosoftAuth('client-1'), win);
 
-    const authorize = paramsOf(win.opened[0]!);
+    const authorize = paramsOf(win.navigated[0]!);
     expect(authorize.get('code_challenge_method')).toBe('S256');
     // O verificador é o segredo que fica neste separador. Se ele viajasse, o
     // PKCE não estaria a proteger de nada.
     const verifier = posts[0]!.get('code_verifier')!;
-    expect(win.opened[0]).not.toContain(verifier);
+    expect(win.navigated[0]).not.toContain(verifier);
     expect(authorize.get('code_challenge')).toBe(await digestOf(verifier));
+  });
+
+  it('abre a janela no mesmo instante do clique, antes de qualquer espera', async () => {
+    const win = stubWindow();
+    stubToken();
+    const pending = new MicrosoftAuth('client-1').requestToken(true);
+
+    /*
+     * Nem um await pelo meio: a janela já existe e ainda não tem endereço.
+     *
+     * Um browser só honra window.open enquanto o clique que a pediu ainda é
+     * recente, e o desafio é um SHA-256 real, que a plataforma resolve fora do
+     * event loop. Construir a URL primeiro punha uma tarefa inteira entre o
+     * clique e a janela — e o browser decidia que ninguém a tinha pedido.
+     */
+    expect(win.opened).toHaveLength(1);
+    expect(win.navigated).toHaveLength(0);
+
+    await untilOpen(win);
+    win.deliver({ type: 'keeper-ms-auth', state: paramsOf(win.navigated[0]!).get('state'), code: 'c' });
+    await pending;
   });
 
   it('gera um verificador diferente a cada vez', async () => {
@@ -154,7 +219,7 @@ describe('o pedido que vai para a Microsoft', () => {
     stubToken();
     await signIn(new MicrosoftAuth('client-1'), win);
 
-    const scope = paramsOf(win.opened[0]!).get('scope')!.split(' ');
+    const scope = paramsOf(win.navigated[0]!).get('scope')!.split(' ');
     expect(scope).toContain('Files.ReadWrite.AppFolder');
     expect(scope).toContain('offline_access');
     // Nada aqui pode chegar ao resto do OneDrive de uma pessoa.
@@ -167,12 +232,12 @@ describe('o pedido que vai para a Microsoft', () => {
     stubToken();
     await signIn(new MicrosoftAuth('client-1'), win);
 
-    const authorize = paramsOf(win.opened[0]!);
+    const authorize = paramsOf(win.navigated[0]!);
     expect(authorize.get('redirect_uri')).toBe(ORIGIN);
     expect(authorize.get('state')!.startsWith(MS_STATE_PREFIX)).toBe(true);
     // Um site estático não tem onde guardar um segredo, e não usa nenhum.
     expect(authorize.get('client_secret')).toBeNull();
-    expect(win.opened[0]).toContain('login.microsoftonline.com/common/');
+    expect(win.navigated[0]).toContain('login.microsoftonline.com/common/');
   });
 });
 
@@ -263,6 +328,37 @@ describe('quando a janela corre mal', () => {
     await settled;
   });
 
+  it('não desiste de um login por causa de um handle que não consegue observar', async () => {
+    const win = stubWindow();
+    stubToken();
+    const pending = new MicrosoftAuth('client-1').requestToken(true);
+    // Sob um COOP imposto, a janela devolvida vem "fechada" desde o princípio.
+    // Desistir aqui abandonava um login que a pessoa está a fazer.
+    win.popup.closed = true;
+
+    await untilOpen(win);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    win.deliver({ type: 'keeper-ms-auth', state: paramsOf(win.navigated[0]!).get('state'), code: 'sobreviveu' });
+    await expect(pending).resolves.toBe('at-1');
+  });
+
+  it('aceita o código pelo canal, e não só por quem abriu', async () => {
+    const win = stubWindow();
+    stubToken();
+    const pending = new MicrosoftAuth('client-1').requestToken(true);
+    await untilOpen(win);
+
+    const channel = new BroadcastChannel('keeper-ms-auth');
+    channel.postMessage({
+      type: 'keeper-ms-auth',
+      state: paramsOf(win.navigated[0]!).get('state'),
+      code: 'pelo-canal',
+    });
+    channel.close();
+
+    await expect(pending).resolves.toBe('at-1');
+  });
+
   it('ignora uma mensagem de outra origem', async () => {
     const win = stubWindow();
     stubToken();
@@ -271,7 +367,7 @@ describe('quando a janela corre mal', () => {
     });
     await untilOpen(win);
 
-    const state = paramsOf(win.opened[0]!).get('state');
+    const state = paramsOf(win.navigated[0]!).get('state');
     win.deliver({ type: 'keeper-ms-auth', state, code: 'roubado' }, 'https://exemplo-mau.test');
     // Nada aconteceu: continua à espera até fecharem a janela.
     win.popup.closed = true;
@@ -315,7 +411,7 @@ describe('a volta, dentro da janela', () => {
     expect(completeMicrosoftAuthCallback()).toBe(false);
   });
 
-  it('entrega o código a quem abriu, só para a nossa origem', () => {
+  it('entrega o código a quem abriu, só para a nossa origem', async () => {
     const posted: Posted[] = [];
     const win = stubWindow({
       location: { origin: ORIGIN, search: `?state=${MS_STATE_PREFIX}xyz&code=abc123` },
@@ -328,7 +424,27 @@ describe('a volta, dentro da janela', () => {
     expect(posted[0]!.data).toMatchObject({ type: 'keeper-ms-auth', code: 'abc123' });
     // Um "*" aqui daria o código a qualquer página que estivesse à escuta.
     expect(posted[0]!.targetOrigin).toBe(ORIGIN);
+    await new Promise((resolve) => setTimeout(resolve, 80));
     expect(win.closed).toBe(true);
+  });
+
+  it('entrega o código mesmo quando o browser cortou o opener', () => {
+    stubWindow({ location: { origin: ORIGIN, search: `?state=${MS_STATE_PREFIX}xyz&code=abc123` } });
+    const heard: unknown[] = [];
+    const channel = new BroadcastChannel('keeper-ms-auth');
+    channel.onmessage = (event) => heard.push(event.data);
+
+    // Sem opener nenhum: é o que o COOP faz, e é o que antes fazia a app
+    // arrancar inteira dentro do popup em vez de o fechar.
+    expect(completeMicrosoftAuthCallback()).toBe(true);
+    expect(heard[0]).toMatchObject({ type: 'keeper-ms-auth', code: 'abc123' });
+    channel.close();
+  });
+
+  it('diz o que é, em vez de deixar um cofre arrancar ali dentro', () => {
+    stubWindow({ location: { origin: ORIGIN, search: `?state=${MS_STATE_PREFIX}xyz&code=abc` } });
+    completeMicrosoftAuthCallback();
+    expect(document.body.textContent).toMatch(/pode fechar esta janela/i);
   });
 
   it('leva também a recusa, para o pedido não ficar pendurado', () => {
