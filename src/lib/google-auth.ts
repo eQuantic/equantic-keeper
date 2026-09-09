@@ -6,6 +6,8 @@
  * written to storage, so closing the tab drops it.
  */
 
+import type { AccountAuth, ProviderAccount } from './storage-provider';
+
 export const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 /**
  * Lets the app create and reach files of its own anywhere in the Drive — and
@@ -60,11 +62,7 @@ declare global {
   }
 }
 
-export interface GoogleAccount {
-  email: string;
-  name: string;
-  picture?: string;
-}
+export type GoogleAccount = ProviderAccount;
 
 export class GoogleAuthError extends Error {
   constructor(message: string, readonly code?: string) {
@@ -113,7 +111,7 @@ function loadGisScript(): Promise<void> {
  * `prompt: ''` is silent whenever the user still has a Google session and has
  * already granted the scopes.
  */
-export class GoogleAuth {
+export class GoogleAuth implements AccountAuth {
   private client: TokenClient | null = null;
   private token: string | null = null;
   private expiresAt = 0;
@@ -346,4 +344,17 @@ export class GoogleAuth {
       ...(data.picture ? { picture: data.picture } : {}),
     };
   }
+}
+
+/**
+ * Narrows an account to Google's.
+ *
+ * Scopes are the reason this exists: moving the vault into a folder, sharing it
+ * and the picker all widen a Google grant at the moment a person asks for them,
+ * and no other provider has that idea. Code on those paths says so out loud
+ * here rather than putting `hasScope` into an interface every provider would
+ * have to fake.
+ */
+export function isGoogleAuth(auth: AccountAuth): auth is GoogleAuth {
+  return auth instanceof GoogleAuth;
 }

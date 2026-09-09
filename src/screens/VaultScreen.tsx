@@ -155,8 +155,18 @@ function SyncBadge() {
 }
 
 export function VaultScreen() {
-  const { payload, actions, account, connected, driveMovedElsewhere, guest, workspaces, activeWorkspace, pendingInvite } =
-    useKeeper();
+  const {
+    payload,
+    actions,
+    account,
+    connected,
+    driveMovedElsewhere,
+    guest,
+    workspaces,
+    activeWorkspace,
+    pendingInvite,
+    provider,
+  } = useKeeper();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<SortMode>('updated');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1416,7 +1426,9 @@ export function VaultScreen() {
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-[env(safe-area-inset-bottom,0px)]"
             onSync={async () => {
               if (!connected) {
-                actions.notify('Sem conexão com o Drive — conecte a conta nas Configurações para sincronizar.');
+                actions.notify(
+                  `Sem conexão com o ${provider === 'microsoft' ? 'OneDrive' : 'Google Drive'} — conecte a conta nas Configurações para sincronizar.`,
+                );
                 return;
               }
               await actions.syncNow();

@@ -56,7 +56,22 @@ password, the data is unrecoverable — by construction.
 
 ### Where the vault lives
 
-By default everything sits in Drive's `appDataFolder`: a per-app folder you never see,
+**Which service.** Google Drive or OneDrive, chosen per device under *Configurações → Conta e
+nuvem* (or simply by which button you press to sign in). OneDrive only appears where the app
+was registered on Microsoft — step 2 below — so a fork that skipped it sees exactly what it
+saw before.
+
+The choice moves the **device**, not the vault. The local copy goes up to the new account on
+the next sync, but attachments already uploaded keep ids belonging to the service you left,
+and nothing reaches across. To bring everything over, export a full backup (`.keeper.zip`)
+before switching and import it after: the bundle carries the bytes, and importing re-uploads
+every attachment wherever the app is now pointed. The switch says this before it happens.
+
+Sharing is Google Drive only. OneDrive says so rather than offering a form that ends in an
+error — the guest half of Graph sharing has its own rules, and half a sharing feature is
+worse than none.
+
+**Which folder.** On Google Drive, by default everything sits in Drive's `appDataFolder`: a per-app folder you never see,
 under the narrowest scope Drive offers. It is also the one place in Drive that **cannot be
 shared** — Google will not give another account access to it, by design.
 
@@ -466,9 +481,12 @@ can decrypt the vault without this app. The repository's integration test does e
   sync.
 - While the consent screen is in *Testing*, Google caps the app at 100 test users and the
   consent expires every 7 days.
-- **OneDrive is built but not yet selectable.** The client and the Microsoft sign-in are
-  in the tree and covered by tests, and Google Drive is still the only provider the app
-  picks. Choosing one, and moving a vault between them, comes next.
+- **Switching services does not carry the attachments.** The vault goes up to the new
+  account on the next sync; attachments already uploaded stay where they were. Export a
+  `.keeper.zip` before switching and import it after — that is the path that moves bytes,
+  and it is the one the app points at.
+- **Sharing is Google Drive only.** Every sharing screen is hidden on OneDrive rather than
+  failing when pressed.
 
 ## License
 

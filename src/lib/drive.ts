@@ -80,6 +80,7 @@ export interface DriveApi {
 }
 
 export class DriveClient implements DriveApi, DriveBlobApi, VaultStorage, SharesFolder {
+  readonly id = 'google' as const;
   readonly label = 'Google Drive';
 
   constructor(

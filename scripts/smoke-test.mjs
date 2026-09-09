@@ -720,8 +720,8 @@ const run = async () => {
   // The previous dialog has to be gone, not just closing: a click that lands
   // mid-animation is swallowed by the overlay and the next one reopens nothing.
   await page.waitForSelector('[role="dialog"]', { state: 'detached', timeout: 5000 });
-  await openSettings(page, 'Conta e Drive');
-  await page.waitForSelector('[role="dialog"] >> text=Onde o cofre fica', { timeout: 5000 });
+  await openSettings(page, 'Conta e nuvem');
+  await page.waitForSelector('[role="dialog"] >> text=A pasta no Google Drive', { timeout: 5000 });
   await check('configurações dizem onde o cofre fica', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para escolher onde o cofre fica').count()) === 1);
   await check('sem conta conectada não há botão de mover', async () =>
@@ -885,12 +885,75 @@ const run = async () => {
     (await page.locator('[role="dialog"] >> text=Chave de API do Google').count()) === 1 &&
     (await page.locator('[role="dialog"] button:has-text("Trocar a chave de API")').count()) === 1);
 
-  await openSettings(page, 'Conta e Drive');
+  await openSettings(page, 'Conta e nuvem');
   await page.waitForSelector('[role="dialog"] >> text=Espaço no Google Drive', { timeout: 5000 });
   await check('as configurações têm a seção de espaço no Drive', async () =>
     (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 1);
   await check('sem conta conectada, a seção explica em vez de mentir um número', async () =>
     (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para ver o espaço').count()) === 1);
+
+  /*
+   * 10c. The second service.
+   *
+   * It is absent until someone registers the app on Microsoft, so this proves
+   * both halves: that a fork which did not still sees one option, and that the
+   * app renames itself around the choice once there are two. The switch is
+   * driven from the settings pane rather than the sign-in screen on purpose —
+   * signing in opens a popup, and what is worth asserting here is the state,
+   * not Microsoft's login page.
+   */
+  await check('sem ID da Microsoft, não há um segundo serviço a escolher', async () =>
+    (await page.locator('[role="dialog"] button[aria-pressed]:has-text("OneDrive")').count()) === 0);
+
+  await openSettings(page, 'Avançado');
+  page.once('dialog', (dialog) => dialog.accept('00000000-0000-0000-0000-00000000teste'));
+  await page.click('[role="dialog"] button:has-text("Trocar o ID da Microsoft")');
+  await page.waitForTimeout(300);
+
+  await openSettings(page, 'Conta e nuvem');
+  await check('com o ID guardado, o OneDrive aparece como opção', async () =>
+    (await page.locator('[role="dialog"] button[aria-pressed]:has-text("OneDrive")').count()) === 1);
+
+  /*
+   * A pasta é um facto da conta Google, não do dispositivo: tem de continuar lá
+   * depois de uma ida ao OneDrive e uma volta. Apagá-la custava ao utilizador a
+   * ligação à pasta e punha-o em "este cofre foi movido para um sítio que este
+   * aparelho não vê" — barato de escrever, caro de descobrir.
+   */
+  const FOLDER_KEY = 'keeper.drive.folder.v1';
+  await page.evaluate((key) => localStorage.setItem(key, 'pasta-de-teste'), FOLDER_KEY);
+
+  // Há um cofre local, então a troca tem de avisar sobre os anexos antes.
+  let warned = '';
+  page.once('dialog', (dialog) => {
+    warned = dialog.message();
+    return dialog.accept();
+  });
+  await page.locator('[role="dialog"] button[aria-pressed]:has-text("OneDrive")').click();
+  await page.waitForTimeout(400);
+  await check('trocar com cofre local avisa que os anexos ficam para trás', async () =>
+    warned.includes('anexos') && warned.includes('backup'));
+  await check('trocar de serviço renomeia o que está à volta', async () =>
+    (await page.locator('[role="dialog"] >> text=Conta Microsoft').count()) === 1 &&
+    (await page.locator('[role="dialog"] >> text=Espaço no OneDrive').count()) === 1);
+  // Uma seção renomeada com o texto de dentro por renomear é pior que nenhuma.
+  await check('o texto de dentro das seções também troca de serviço', async () =>
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do OneDrive para ver o espaço').count()) === 1 &&
+    (await page.locator('[role="dialog"] >> text=Conecte a conta do Google para ver o espaço').count()) === 0);
+  await check('a pasta do Drive some quando o cofre não está no Drive', async () =>
+    (await page.locator('[role="dialog"] >> text=A pasta no Google Drive').count()) === 0);
+  await page.screenshot({ path: `${OUT}/05-onedrive.png` });
+
+  // De volta ao Google, para o resto da suíte correr onde começou.
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.locator('[role="dialog"] button[aria-pressed]:has-text("Google Drive")').click();
+  await page.waitForTimeout(400);
+  await check('voltar ao Google Drive traz a pasta de volta', async () =>
+    (await page.locator('[role="dialog"] >> text=A pasta no Google Drive').count()) === 1 &&
+    (await page.locator('[role="dialog"] >> text=Espaço no Google Drive').count()) === 1);
+  await check('a ligação à pasta do Drive sobrevive à ida e volta', async () =>
+    (await page.evaluate((key) => localStorage.getItem(key), FOLDER_KEY)) === 'pasta-de-teste');
+  await page.evaluate((key) => localStorage.removeItem(key), FOLDER_KEY);
 
   // The theme lives in a pane of its own, one click away.
   await page.locator('[data-settings-nav] button:has-text("Aparência")').click();
@@ -2077,7 +2140,7 @@ const run = async () => {
     );
   });
   await check('soltar sem conta Google mostra o aviso local', async () => {
-    await phone.getByText(/Sem conexão com o Drive — conecte/).waitFor({ timeout: 5000 });
+    await phone.getByText(/Sem conexão com o Google Drive — conecte/).waitFor({ timeout: 5000 });
     return true;
   });
 

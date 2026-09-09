@@ -72,12 +72,17 @@ function stubWindow(over: Record<string, unknown> = {}) {
  * whenever it settles — a tick or two is usually enough and sometimes is not.
  * Polling for the effect makes this deterministic, and says so out loud when
  * the window never opens instead of failing later as an invalid URL.
+ *
+ * Real timers throughout, deliberately. A faked clock cannot help here: winding
+ * it forward flushes microtasks and nothing else, so the digest — which settles
+ * off the event loop — may never land however far the clock is advanced. It
+ * passed locally and failed on CI, which is exactly the shape of that mistake.
+ * The price is the real 500ms the popup-closed poll takes, three times.
  */
-async function untilOpen(win: ReturnType<typeof stubWindow>, fakeClock = false): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+async function untilOpen(win: ReturnType<typeof stubWindow>): Promise<void> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
     if (win.opened.length > 0) return;
-    if (fakeClock) await vi.advanceTimersByTimeAsync(1);
-    else await new Promise((resolve) => setTimeout(resolve, 1));
+    await new Promise((resolve) => setTimeout(resolve, 1));
   }
   throw new Error('a janela da Microsoft nunca foi aberta');
 }
@@ -117,7 +122,6 @@ async function signIn(auth: MicrosoftAuth, win: ReturnType<typeof stubWindow>): 
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.useRealTimers();
 });
 
 describe('o pedido que vai para a Microsoft', () => {
@@ -246,50 +250,44 @@ describe('quando a janela corre mal', () => {
   });
 
   it('percebe quando a pessoa fecha a janela', async () => {
-    vi.useFakeTimers();
     const win = stubWindow();
     stubToken();
-    // A expectativa fica ligada antes de o relógio andar: uma rejeição sem
+    // A expectativa fica ligada antes de qualquer espera: uma rejeição sem
     // ninguém à escuta é reportada como erro solto e esconde a falha real.
     const settled = expect(new MicrosoftAuth('client-1').requestToken(true)).rejects.toMatchObject({
       code: 'popup_closed',
     });
-    await untilOpen(win, true);
+    await untilOpen(win);
 
     win.popup.closed = true;
-    await vi.advanceTimersByTimeAsync(600);
     await settled;
   });
 
   it('ignora uma mensagem de outra origem', async () => {
-    vi.useFakeTimers();
     const win = stubWindow();
     stubToken();
     const settled = expect(new MicrosoftAuth('client-1').requestToken(true)).rejects.toMatchObject({
       code: 'popup_closed',
     });
-    await untilOpen(win, true);
+    await untilOpen(win);
 
     const state = paramsOf(win.opened[0]!).get('state');
     win.deliver({ type: 'keeper-ms-auth', state, code: 'roubado' }, 'https://exemplo-mau.test');
     // Nada aconteceu: continua à espera até fecharem a janela.
     win.popup.closed = true;
-    await vi.advanceTimersByTimeAsync(600);
     await settled;
   });
 
   it('ignora uma mensagem com outro state', async () => {
-    vi.useFakeTimers();
     const win = stubWindow();
     stubToken();
     const settled = expect(new MicrosoftAuth('client-1').requestToken(true)).rejects.toMatchObject({
       code: 'popup_closed',
     });
-    await untilOpen(win, true);
+    await untilOpen(win);
 
     win.deliver({ type: 'keeper-ms-auth', state: `${MS_STATE_PREFIX}outro`, code: 'de-outro-pedido' });
     win.popup.closed = true;
-    await vi.advanceTimersByTimeAsync(600);
     await settled;
   });
 

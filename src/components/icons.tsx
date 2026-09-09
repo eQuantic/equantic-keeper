@@ -65,6 +65,8 @@ const PATHS: Record<string, string[]> = {
     'M6.4 13.9a6 6 0 0 1 0-3.8V7.5H3.1a10 10 0 0 0 0 9z',
     'M12 6.05c1.47 0 2.79.5 3.83 1.5l2.85-2.85C16.95 3.05 14.7 2 12 2 8.1 2 4.72 4.24 3.1 7.5l3.3 2.6C7.2 7.8 9.4 6.05 12 6.05Z',
   ],
+  // The Microsoft mark: four squares, which is the whole logo.
+  microsoft: ['M3 3h8.4v8.4H3z', 'M12.6 3H21v8.4h-8.4z', 'M3 12.6h8.4V21H3z', 'M12.6 12.6H21V21h-8.4z'],
   cloudOff: ['M3 3l18 18', 'M17.5 19H6.5a4.5 4.5 0 0 1-.8-8.9', 'M8.6 5.9A6 6 0 0 1 18 10.03 4.5 4.5 0 0 1 20.9 16'],
   logout: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'M16 17l5-5-5-5', 'M21 12H9'],
   clock: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M12 7v5l3 2'],
@@ -80,13 +82,13 @@ export type IconName = keyof typeof PATHS | string;
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
   size?: number;
-  /** `google` is a multi-colour brand mark and must be filled, not stroked. */
+  /** `google` and `microsoft` are brand marks and must be filled, not stroked. */
   filled?: boolean;
 }
 
 export function Icon({ name, size = 18, filled, ...rest }: IconProps) {
   const paths = PATHS[name] ?? PATHS.note!;
-  const useFill = filled ?? name === 'google';
+  const useFill = filled ?? (name === 'google' || name === 'microsoft');
   return (
     <svg
       width={size}

@@ -5,7 +5,7 @@ import { Icon, Wordmark } from '../components/icons';
 import { InviteCodeDialog, OpenSharedButton, ensurePickerKey } from '../components/InviteCode';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
-import { isClientIdOverridden } from '../lib/storage';
+import { getMsClientId, isClientIdOverridden } from '../lib/storage';
 
 function AuthShell({
   title,
@@ -110,17 +110,35 @@ export function ConfigScreen() {
 }
 
 export function SignInScreen() {
-  const { actions, busy, hasLocalVault, online, pendingInvite } = useKeeper();
+  const { actions, busy, hasLocalVault, online, pendingInvite, provider } = useKeeper();
   const [invite, setInvite] = useState(false);
+  // Only offered where someone registered the app on Microsoft. A fork that did
+  // not sees exactly the screen it saw before.
+  const microsoftReady = !!getMsClientId();
+  const google = provider === 'google';
+
+  /** Choosing is the same gesture as signing in: press one, get that one. */
+  const enter = (next: 'google' | 'microsoft') => {
+    void actions.switchProvider(next).then(() => actions.connect(true));
+  };
 
   return (
     <AuthShell
-      title="Entrar com o Google"
-      subtitle="Seus segredos são cifrados neste navegador antes de subir. O Google guarda apenas bytes que não consegue ler."
+      title={microsoftReady ? 'Entrar' : 'Entrar com o Google'}
+      subtitle="Seus segredos são cifrados neste navegador antes de subir. O serviço guarda apenas bytes que não consegue ler."
       footer={
         <>
-          O app pede somente o escopo <code className="text-muted">drive.appdata</code>: uma pasta oculta e exclusiva
-          dele. Nenhum outro arquivo do seu Drive fica visível.{' '}
+          {google ? (
+            <>
+              O app pede somente o escopo <code className="text-muted">drive.appdata</code>: uma pasta oculta e
+              exclusiva dele. Nenhum outro arquivo do seu Drive fica visível.
+            </>
+          ) : (
+            <>
+              O app pede somente <code className="text-muted">Files.ReadWrite.AppFolder</code>: a pasta do próprio
+              app. Nenhum outro arquivo do seu OneDrive fica visível.
+            </>
+          )}{' '}
           {isClientIdOverridden() ? (
             <button type="button" className="text-accent hover:underline" onClick={() => actions.setClientId('')}>
               Trocar o Client ID
@@ -171,13 +189,25 @@ export function SignInScreen() {
         <Button
           variant="primary"
           className="w-full"
-          loading={busy}
-          onClick={() => void actions.connectGoogle(true)}
+          loading={busy && google}
+          onClick={() => enter('google')}
           disabled={!online}
         >
           <Icon name="google" size={16} />
           Continuar com o Google
         </Button>
+        {microsoftReady ? (
+          <Button
+            variant="outline"
+            className="w-full"
+            loading={busy && !google}
+            onClick={() => enter('microsoft')}
+            disabled={!online}
+          >
+            <Icon name="microsoft" size={16} />
+            Continuar com a Microsoft
+          </Button>
+        ) : null}
         {!online ? (
           <p className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
             <Icon name="cloudOff" size={14} /> Você está offline.
@@ -343,7 +373,7 @@ export function UnlockScreen() {
           </Button>
         ) : null}
         {!connected && online ? (
-          <Button variant="ghost" className="w-full" onClick={() => void actions.connectGoogle(true)}>
+          <Button variant="ghost" className="w-full" onClick={() => void actions.connect(true)}>
             <Icon name="google" size={14} /> Reconectar conta Google
           </Button>
         ) : null}
