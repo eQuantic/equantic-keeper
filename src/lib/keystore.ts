@@ -15,6 +15,48 @@
  */
 import type { DerivedKey } from './crypto';
 
+/**
+ * A lock has to be true from the instant it is pressed.
+ *
+ * Deleting the record is an IndexedDB transaction, and a page that goes away
+ * before it commits takes the delete with it: a reload right after pressing
+ * Bloquear — or an iOS PWA killed in the background, or a service-worker
+ * update — could find the record intact and reopen the vault with no password.
+ * The person did everything right and the vault unlocked itself.
+ *
+ * This flag is a synchronous localStorage write, which nothing can outrun, and
+ * it is what `loadDerivedKey` actually trusts. Saving a key clears it, because
+ * a save is the one act that means the record is wanted again.
+ */
+const REVOKED_KEY = 'keeper.keystore.revoked';
+
+function markRevoked(): void {
+  try {
+    localStorage.setItem(REVOKED_KEY, '1');
+  } catch {
+    // No localStorage (a private window): the delete below is all there is,
+    // which is exactly where this started. Nothing is made worse.
+  }
+}
+
+function clearRevoked(): void {
+  try {
+    localStorage.removeItem(REVOKED_KEY);
+  } catch {
+    /* see above */
+  }
+}
+
+function isRevoked(): boolean {
+  try {
+    return localStorage.getItem(REVOKED_KEY) === '1';
+  } catch {
+    // Unreadable is not the same as revoked: refusing a key we cannot prove was
+    // revoked would demand the password for no reason.
+    return false;
+  }
+}
+
 const DB_NAME = 'keeper-keystore';
 const DB_VERSION = 1;
 const STORE = 'derived';
@@ -72,10 +114,19 @@ export interface StoredKey {
 }
 
 export async function saveDerivedKey(derived: DerivedKey, expiresAt: number | null): Promise<void> {
+  // Synchronously, and before the write: if a save and a lock overlap, whichever
+  // ran last is the one that meant it.
+  clearRevoked();
   await run('readwrite', (store) => store.put({ ...derived, expiresAt }, RECORD_KEY));
 }
 
 export async function loadDerivedKey(): Promise<StoredKey | null> {
+  if (isRevoked()) {
+    // A record that outlived its own delete. Finish the job before answering,
+    // so the next boot does not have to ask again.
+    await clearDerivedKey();
+    return null;
+  }
   const value = await run<unknown>('readonly', (store) => store.get(RECORD_KEY));
   if (!value || typeof value !== 'object') return null;
   const candidate = value as DerivedKey & { expiresAt?: unknown };
@@ -89,5 +140,6 @@ export async function loadDerivedKey(): Promise<StoredKey | null> {
 }
 
 export async function clearDerivedKey(): Promise<void> {
+  markRevoked();
   await run('readwrite', (store) => store.delete(RECORD_KEY));
 }
