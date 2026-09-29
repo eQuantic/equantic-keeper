@@ -5,6 +5,7 @@ import { Icon, Wordmark } from '../components/icons';
 import { InviteCodeDialog, OpenSharedButton, ensurePickerKey } from '../components/InviteCode';
 import { estimateStrength } from '../lib/generator';
 import { useKeeper } from '../state/keeper';
+import { signOutFlow } from '../components/sign-out-flow';
 import { getMsClientId, isClientIdOverridden } from '../lib/storage';
 
 function AuthShell({
@@ -323,7 +324,8 @@ export function CreateVaultScreen() {
 }
 
 export function UnlockScreen() {
-  const { actions, busy, account, online, connected, biometricReady } = useKeeper();
+  const { actions, busy, account, online, connected, biometricReady, provider } = useKeeper();
+  const service = provider === 'microsoft' ? 'OneDrive' : 'Google Drive';
   const [password, setPassword] = useState('');
 
   const submit = (event: FormEvent) => {
@@ -374,9 +376,21 @@ export function UnlockScreen() {
         ) : null}
         {!connected && online ? (
           <Button variant="ghost" className="w-full" onClick={() => void actions.connect(true)}>
-            <Icon name="google" size={14} /> Reconectar conta Google
+            <Icon name={provider === 'microsoft' ? 'microsoft' : 'google'} size={14} /> Reconectar conta{' '}
+            {provider === 'microsoft' ? 'Microsoft' : 'Google'}
           </Button>
         ) : null}
+        {/* For whoever is looking at someone else's lock screen, or at their own
+            on a computer they are about to hand back: no password needed to
+            leave, because leaving only ever removes. */}
+        <button
+          type="button"
+          data-sign-out
+          onClick={() => void signOutFlow(actions, 'sign-out', service)}
+          className="w-full py-1 text-center text-xs text-muted transition hover:text-ink"
+        >
+          Sair deste aparelho
+        </button>
       </form>
     </AuthShell>
   );
