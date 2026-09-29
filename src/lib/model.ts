@@ -190,6 +190,78 @@ const DEV_TYPE_LIST: BaseTypeDef[] = [
       { id: 'recoveryCodes', label: 'Códigos de recuperação', kind: 'multilineSecret' },
     ],
   },
+  /*
+   * A record of a passkey, not the passkey.
+   *
+   * The private half of a passkey never leaves its authenticator — that is the
+   * point of one — so no vault can hold it, and a web page cannot become the
+   * authenticator that signs with it. What people actually lose track of is
+   * WHERE each one lives, and what gets them back in when that device is gone.
+   * So this is that: the account, the authenticator, the device when the key
+   * does not sync, and the recovery codes.
+   *
+   * `provider` and `device` are plain text on purpose. The search indexes
+   * non-secret fields, so typing "yubikey" lists every account that key opens
+   * — which is the question someone asks the day they lose it.
+   */
+  {
+    id: 'passkey',
+    namePlaceholder: 'Passkey — GitHub',
+    label: 'Passkey',
+    description: 'Onde cada passkey está guardada, e como entrar se perder o aparelho.',
+    icon: 'fingerprint',
+    accent: '#2dd4bf',
+    // What each platform calls it in Portuguese, and what a developer types.
+    // Nothing about WHERE a passkey lives belongs here: a keyword matches every
+    // item of the type, so "yubikey" in this list would put every passkey in
+    // the answer to "what does this key open" — the iCloud ones included.
+    keywords: [
+      'chave de acesso',
+      'chaves de acesso',
+      'chave-senha',
+      'chaves-senha',
+      'webauthn',
+      'fido',
+      'fido2',
+      'sem senha',
+      'passwordless',
+    ],
+    fields: [
+      { id: 'url', label: 'Site', kind: 'url', placeholder: 'https://github.com' },
+      { id: 'username', label: 'Conta', kind: 'username', placeholder: 'voce@exemplo.com' },
+      {
+        id: 'provider',
+        label: 'Guardada em',
+        kind: 'text',
+        placeholder: 'Chaves do iCloud',
+        options: [
+          'Chaves do iCloud',
+          'Gerenciador de Senhas do Google',
+          'Windows Hello',
+          '1Password',
+          'Bitwarden',
+          'Dashlane',
+          'Proton Pass',
+          'Samsung Pass',
+          'Chave de segurança (YubiKey…)',
+        ],
+      },
+      {
+        id: 'device',
+        label: 'Aparelho',
+        kind: 'text',
+        placeholder: 'YubiKey 5C · MacBook Pro',
+        hint: 'Importa quando a passkey não sincroniza: uma chave de segurança, o Windows Hello de um PC.',
+      },
+      { id: 'registeredAt', label: 'Criada em', kind: 'date' },
+      {
+        id: 'recoveryCodes',
+        label: 'Códigos de recuperação',
+        kind: 'multilineSecret',
+        hint: 'O que usar para entrar se perder o aparelho onde a passkey vive.',
+      },
+    ],
+  },
   {
     id: 'registry',
     namePlaceholder: 'Azure Container Registry — equantic',

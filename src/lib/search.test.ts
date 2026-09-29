@@ -217,3 +217,45 @@ describe('números com máscara', () => {
     expect(matches(item, '98765432100')).toBe(false);
   });
 });
+
+describe('passkeys', () => {
+  const onKey = make({
+    id: 'pk-1',
+    type: 'passkey',
+    name: 'GitHub',
+    fields: {
+      url: 'https://github.com',
+      username: 'edgar',
+      provider: 'Chave de segurança (YubiKey…)',
+      device: 'YubiKey 5C azul',
+      recoveryCodes: 'a1b2-c3d4\ne5f6-g7h8',
+    },
+  });
+  const inCloud = make({
+    id: 'pk-2',
+    type: 'passkey',
+    name: 'Google',
+    fields: { username: 'maria', provider: 'Chaves do iCloud' },
+  });
+
+  it('is found by the name each platform gives it', () => {
+    // Apple says "chave-senha", Google and Microsoft say "chave de acesso", and a
+    // developer types the protocol.
+    for (const term of ['passkey', 'chave de acesso', 'chave-senha', 'webauthn', 'fido2']) {
+      expect(matches(inCloud, term), term).toBe(true);
+    }
+  });
+
+  it('answers "what do I lose with this key", and only that', () => {
+    const found = [onKey, inCloud].filter((item) => matches(item, 'yubikey')).map((item) => item.id);
+    // Only the one on the key. Were "yubikey" a keyword of the TYPE, every
+    // passkey would be listed, and the answer to the question would be a lie.
+    expect(found).toEqual(['pk-1']);
+    expect([onKey, inCloud].filter((item) => matches(item, 'icloud')).map((item) => item.id)).toEqual(['pk-2']);
+  });
+
+  it('never indexes the recovery codes', () => {
+    expect(matches(onKey, 'a1b2')).toBe(false);
+    expect(matches(onKey, 'e5f6-g7h8')).toBe(false);
+  });
+});

@@ -1926,6 +1926,49 @@ const run = async () => {
   await page.click('button:has-text("Desbloquear")');
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
+  /*
+   * 11c. A passkey, created through the real form.
+   *
+   * Last on this page because it adds an item, and every count asserted above
+   * would move. What it proves is the wiring: the type is offered, its form
+   * renders, it saves, and the device typed into it is what the real search
+   * finds — the reason the type exists, since the day someone loses a security
+   * key, "yubikey" is what they type.
+   *
+   * It does NOT prove "only that": this vault holds a single passkey, so a
+   * keyword on the type would still return one row here. That half lives in
+   * search.test.ts, which has an iCloud passkey beside the YubiKey one.
+   */
+  await page.click('button:has-text("Novo")');
+  await page.waitForSelector('text=O que você quer guardar?');
+  await page.click('button:has-text("Segredo de desenvolvimento")');
+  await page.waitForSelector('input[placeholder*="Filtrar tipos"]', { timeout: 5000 });
+  await check('passkey aparece entre os segredos de desenvolvimento', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Passkey")').count()) === 1);
+  await page.fill('input[placeholder*="Filtrar tipos"]', 'chave de acesso');
+  await page.waitForTimeout(200);
+  await check('o filtro acha a passkey pelo nome que o Google e a Microsoft usam', async () =>
+    (await page.locator('[role="dialog"] button:has-text("Passkey")').count()) === 1 &&
+    (await page.locator('[role="dialog"] button:has-text("Chave SSH")').count()) === 0);
+  await page.click('[role="dialog"] button:has-text("Passkey")');
+  await page.waitForSelector('text=Guardada em', { timeout: 5000 });
+  await check('o formulário da passkey traz onde ela vive e como recuperar', async () =>
+    (await page.locator('[role="dialog"] >> text=Aparelho').count()) >= 1 &&
+    (await page.locator('[role="dialog"] >> text=Códigos de recuperação').count()) >= 1);
+  await page.fill('input[aria-label="Nome"]', 'Passkey do GitHub');
+  await page.locator('label:has-text("Conta") input').first().fill('edgar');
+  await page.locator('label:has-text("Aparelho") input').first().fill('YubiKey 5C azul');
+  await page.click('footer button:has-text("Salvar")');
+  await page.waitForSelector('h2:has-text("Passkey do GitHub")', { timeout: 5000 });
+
+  await page.fill('input[type="search"]', 'yubikey');
+  await page.waitForTimeout(300);
+  await check('buscar "yubikey" mostra o que essa chave abre, e só isso', async () => {
+    const rows = await page.locator('main li').allInnerTexts();
+    return rows.length === 1 && rows[0].includes('Passkey do GitHub') && rows[0].includes('edgar');
+  });
+  await page.fill('input[type="search"]', '');
+
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
   const phone = await browser.newPage({
