@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getProvider, setProvider } from './storage';
+import { getProvider, isSyncPending, markSyncPending, setProvider, wipeLocalData } from './storage';
 
 /**
  * A localStorage, because the suite runs under node and there is none.
@@ -69,5 +69,36 @@ describe('qual serviço este dispositivo usa', () => {
     // Navegação privada em alguns browsers é literalmente isto.
     expect(getProvider()).toBe('google');
     expect(() => setProvider('microsoft')).not.toThrow();
+  });
+});
+
+describe('alterações que ainda não subiram', () => {
+  it('sobrevivem a um refresh, porque ficam gravadas', () => {
+    markSyncPending(true);
+    expect(isSyncPending()).toBe(true);
+    markSyncPending(false);
+    expect(isSyncPending()).toBe(false);
+  });
+});
+
+describe('o que sai do aparelho, e o que fica', () => {
+  it('leva tudo o que é da pessoa, e deixa configuração e aparência', () => {
+    const store = stubStorage({
+      // Da pessoa.
+      'keeper.vault.cache.v1': '{}',
+      'keeper.google.account': '{}',
+      'keeper.biometric.v1': '{}',
+      'keeper.drive.folder.v1': 'pasta',
+      'keeper.shared.v1': '[]',
+      'keeper.recentTypes.v1': '["passport"]',
+      'keeper.sync.pending': '1',
+      // Do aparelho.
+      'keeper.google.clientId': 'fork.apps.googleusercontent.com',
+      'keeper.theme': 'light',
+    });
+
+    wipeLocalData();
+
+    expect([...store.keys()].sort()).toEqual(['keeper.google.clientId', 'keeper.theme']);
   });
 });

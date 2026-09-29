@@ -54,7 +54,9 @@ import {
   unwrapWithIdentity,
   type ShareRecord,
 } from '../lib/invites';
-import { ensureIdentity } from '../lib/identity';
+import { clearIdentity, ensureIdentity } from '../lib/identity';
+import { clearCiphertext } from '../lib/blobstore';
+import { assessSignOut, type SignOutRisk } from '../lib/sign-out';
 import { pickSharedItems } from '../lib/picker';
 import {
   grantAccess,
@@ -245,7 +247,15 @@ export interface KeeperActions {
   driveUsage(): Promise<DriveUsage | null>;
   currentVaultFile(): VaultFile | null;
   signOut(): Promise<void>;
-  wipeDevice(): void;
+  /**
+   * What leaving this device would cost, after one attempt to sync the
+   * difference away. Ask this first; `signOutOfDevice` does not ask again.
+   */
+  signOutRisk(): Promise<SignOutRisk>;
+  /** Leaves this device as if the person had never used Keeper on it. */
+  signOutOfDevice(): Promise<void>;
+  /** The same as `signOutOfDevice`: one implementation, two doors. */
+  wipeDevice(): Promise<void>;
   setClientId(clientId: string): void;
   notify(message: string): void;
   dismissError(): void;
@@ -347,8 +357,18 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const driveIdRef = useRef<string | undefined>(undefined);
   const revisionRef = useRef<string | undefined>(undefined);
   const syncTimerRef = useRef<number | undefined>(undefined);
-  /** A change that has not reached the Drive yet, and the retry chasing it. */
-  const pendingSyncRef = useRef(false);
+  /**
+   * A change that has not reached the cloud yet, and the retry chasing it.
+   *
+   * Starts from storage, not from false: an edit made just before a reload is
+   * still waiting to go up, and both the retry loop and signing out need to
+   * know that. `setPending` keeps the two copies in step.
+   */
+  const pendingSyncRef = useRef(storage.isSyncPending());
+  const setPending = useCallback((pending: boolean) => {
+    pendingSyncRef.current = pending;
+    storage.markSyncPending(pending);
+  }, []);
   const retryTimerRef = useRef<number | undefined>(undefined);
   const retryAttemptRef = useRef(0);
   const bootedRef = useRef(false);
@@ -539,7 +559,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       // token aged out is what used to park the app in "somente local" until
       // someone pressed Sincronizar by hand.
       if (!drive || !auth || !navigator.onLine) {
-        pendingSyncRef.current = true;
+        setPending(true);
         patch({
           sync: {
             status: 'pending',
@@ -556,7 +576,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       // bury today's edits in a file the other devices abandoned — better to
       // stop and say so. A forced sync is still the way out, deliberately.
       if (movedElsewhereRef.current && drive.space.kind === 'appdata' && !options.force) {
-        pendingSyncRef.current = true;
+        setPending(true);
         patch({
           sync: {
             status: 'conflict',
@@ -597,7 +617,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           ...(result.revision ? { driveRevision: result.revision } : {}),
           cachedAt: new Date().toISOString(),
         });
-        pendingSyncRef.current = false;
+        setPending(false);
         retryAttemptRef.current = 0;
         window.clearTimeout(retryTimerRef.current);
         patch({ sync: { status: 'saved', at: new Date().toISOString() } });
@@ -615,7 +635,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         const message = error instanceof Error ? error.message : 'Falha ao sincronizar.';
         // A failed sync is a promise to try again, not a dead end: the change
         // is already safe on this device, and the retry loop chases it.
-        pendingSyncRef.current = true;
+        setPending(true);
         // An expired Google session is not a failure to retry — no timer can
         // fix it, because reconnecting needs a tap. Say that instead of
         // blinking an error every few minutes.
@@ -632,7 +652,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
   const scheduleSync = useCallback(() => {
     // Marked pending the moment a change happens, not when the debounce fires:
     // the retry loop is then responsible for it even if this tab goes away.
-    pendingSyncRef.current = true;
+    setPending(true);
     window.clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
       syncTimerRef.current = undefined;
@@ -2071,26 +2091,108 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     });
   }, [patch]);
 
-  const wipeDevice = useCallback(() => {
-    storage.wipeLocalData();
-    void clearDerivedKey();
+  /**
+   * What signing out would cost, measured after trying to close the gap.
+   *
+   * With the vault open, the account live and something still waiting to go
+   * up, one sync is attempted first: when it lands, the cloud holds everything
+   * and there is nothing to warn about. A locked vault cannot sync — there is no
+   * key in memory — so the stored pending flag answers instead, which is the
+   * reason that flag is stored at all.
+   */
+  const signOutRisk = useCallback(async (): Promise<SignOutRisk> => {
+    const cached = storage.loadCachedVault();
+    const ownOpen = !!payloadRef.current && !guestRef.current;
+    const hasVault = !!cached || ownOpen || !!ownSessionRef.current;
+    const hasRemote = !!(driveIdRef.current ?? cached?.driveFileId);
+
+    if (hasVault && hasRemote && pendingSyncRef.current && ownOpen && authRef.current?.isSignedIn && navigator.onLine) {
+      await runSync({ silent: true }).catch(() => undefined);
+    }
+
+    const reason = !navigator.onLine
+      ? 'Este aparelho está sem internet.'
+      : !authRef.current?.isSignedIn
+        ? `A conta do ${serviceName()} não está conectada neste aparelho.`
+        : 'A última sincronização não terminou.';
+    return assessSignOut({ hasVault, hasRemote, pending: pendingSyncRef.current, reason });
+  }, [runSync]);
+
+  /**
+   * Leaves this device as if the person had never used Keeper on it.
+   *
+   * Everything that is theirs goes: the vault cache, the stored key, the cached
+   * attachments, the invite identity, the account, the shared vaults they had
+   * been let into, the trail of recent types — and the token, revoked rather
+   * than merely forgotten. Configuration and looks stay.
+   *
+   * The wipe in Advanced used to stop at localStorage and the stored key, and
+   * left the encrypted attachment cache and the invite identity behind, with
+   * the token still live in memory. Both doors now open this one.
+   *
+   * It does not ask: by the time it runs, `signOutRisk` has been read to the
+   * person and they have said yes.
+   */
+  const signOutOfDevice = useCallback(async () => {
+    window.clearTimeout(syncTimerRef.current);
+    window.clearTimeout(retryTimerRef.current);
+    // Revoked while the auth object still exists. Not awaited: a network round
+    // trip must not stand between the click and the screen changing.
+    void Promise.resolve(authRef.current?.signOut()).catch(() => undefined);
+    authRef.current = null;
+    driveRef.current = null;
+    providerRef.current = null;
+
     derivedRef.current = null;
+    keysRef.current = null;
     payloadRef.current = null;
     fileRef.current = null;
+    guestRef.current = null;
+    guestKeyRef.current = null;
+    ownSessionRef.current = null;
     driveIdRef.current = undefined;
     revisionRef.current = undefined;
+    movedElsewhereRef.current = false;
+    retryAttemptRef.current = 0;
+
+    // Synchronous first: this is what a reload straight after would find.
+    // `wipeLocalData` also drops the stored pending flag.
+    storage.wipeLocalData();
+    pendingSyncRef.current = false;
+    storage.setProvider('google');
+    void clearClipboard();
+    // `clearDerivedKey` records the revocation synchronously before its
+    // transaction, so the key cannot come back even if this page dies here.
+    await Promise.all([
+      clearDerivedKey(),
+      clearCiphertext().catch(() => undefined),
+      clearIdentity().catch(() => undefined),
+    ]);
+
     setState((current) => ({
       ...current,
       phase: storage.getClientId() ? 'signin' : 'config',
+      busy: false,
+      error: null,
       payload: null,
       account: null,
       connected: false,
       hasLocalVault: false,
+      sync: { status: 'idle' },
       biometricEnrolled: false,
       biometricReady: false,
-      notice: `Dados locais apagados. O cofre no ${serviceName()} permanece intacto.`,
+      provider: 'google',
+      driveFolderId: null,
+      driveMove: null,
+      driveMovedElsewhere: false,
+      guest: null,
+      workspaces: [],
+      activeWorkspace: OWN_WORKSPACE,
+      notice: 'Você saiu deste aparelho. Nada seu ficou neste navegador.',
     }));
   }, []);
+
+  const wipeDevice = signOutOfDevice;
 
   const setClientId = useCallback(
     (clientId: string) => {
@@ -2330,6 +2432,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       currentVaultFile,
       signOut,
       wipeDevice,
+      signOutRisk,
+      signOutOfDevice,
       setClientId,
       notify: (message: string) => patch({ notice: message }),
       dismissError: () => patch({ error: null }),
@@ -2386,6 +2490,8 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       unlockWithBiometrics,
       updatePreferences,
       wipeDevice,
+      signOutRisk,
+      signOutOfDevice,
     ],
   );
 

@@ -13,6 +13,8 @@ const KEY_CLIENT_ID = 'keeper.google.clientId';
 const KEY_PICKER_KEY = 'keeper.google.pickerKey';
 const KEY_MS_CLIENT_ID = 'keeper.microsoft.clientId';
 const KEY_PROVIDER = 'keeper.storage.provider';
+/** Edits on this device that the cloud has not received. See `markSyncPending`. */
+const KEY_SYNC_PENDING = 'keeper.sync.pending';
 const KEY_ACCOUNT = 'keeper.google.account';
 const KEY_THEME = 'keeper.theme';
 const KEY_BIOMETRIC = 'keeper.biometric.v1';
@@ -289,8 +291,47 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 }
 
 /** Wipes every trace of the vault from this device (the Drive copy is untouched). */
+/**
+ * Everything in localStorage that belongs to the person rather than to the
+ * device: the vault, the account, the shared vaults, and the trail of what
+ * they have been creating. What stays is configuration and looks — the client
+ * ids, the theme, how the sidebar was split — none of which says anything about
+ * whoever used the app last.
+ *
+ * The IndexedDB halves (the stored key, the attachment cache, the invite
+ * identity) are separate stores with their own clear functions; signing out
+ * calls all of them.
+ */
 export function wipeLocalData(): void {
-  for (const key of [KEY_CACHE, KEY_ACCOUNT, KEY_BIOMETRIC, KEY_DRIVE_FOLDER, KEY_SHARED_VAULTS]) safeRemove(key);
+  for (const key of [
+    KEY_CACHE,
+    KEY_ACCOUNT,
+    KEY_BIOMETRIC,
+    KEY_DRIVE_FOLDER,
+    KEY_SHARED_VAULTS,
+    KEY_RECENT_TYPES,
+    KEY_SYNC_PENDING,
+  ]) {
+    safeRemove(key);
+  }
+}
+
+/**
+ * Edits made on this device that have not reached the cloud.
+ *
+ * The sync loop has always kept this in memory, and that copy dies with the
+ * page: after a reload the app could not tell whether the local vault was
+ * ahead of the cloud. Signing out has to be able to tell, because it is about
+ * to delete the local copy. Written synchronously, like the lock, so a reload
+ * straight after an edit cannot outrun it.
+ */
+export function markSyncPending(pending: boolean): void {
+  if (pending) safeSet(KEY_SYNC_PENDING, '1');
+  else safeRemove(KEY_SYNC_PENDING);
+}
+
+export function isSyncPending(): boolean {
+  return safeGet(KEY_SYNC_PENDING) === '1';
 }
 
 const NOTE_PANES_KEY = 'keeper.note.panes.v1';

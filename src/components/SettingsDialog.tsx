@@ -6,6 +6,7 @@ import { useKeeper } from '../state/keeper';
 import { exportBundle, exportEncrypted, exportPlaintext } from '../lib/backup';
 import { estimateStrength } from '../lib/generator';
 import { createPerson, getType, type CustomTypeDef, type Person } from '../lib/model';
+import { signOutFlow } from './sign-out-flow';
 import { getClientId, getMsClientId, getPickerApiKey, setMsClientId, setPickerApiKey } from '../lib/storage';
 import { TOMBSTONE_TTL_DAYS, activeCustomTypes, activePeople } from '../lib/vault';
 import { KEEPER_FOLDER_NAME, type DrivePermission, type DriveUsage } from '../lib/drive';
@@ -1134,15 +1135,10 @@ function AdvancedPane({ onClose }: { onClose: () => void }) {
             size="sm"
             variant="danger"
             icon="trash"
-            onClick={() => {
-              if (
-                confirm(
-                  `Apagar o cofre salvo neste navegador? A cópia no ${service} permanece intacta e pode ser baixada de novo.`,
-                )
-              ) {
-                actions.wipeDevice();
-                onClose();
-              }
+            onClick={async () => {
+              // The old confirmation promised "the copy in the cloud stays
+              // intact" to people whose vault had never been uploaded.
+              if (await signOutFlow(actions, 'wipe', service)) onClose();
             }}
           >
             Apagar dados deste dispositivo

@@ -1969,6 +1969,86 @@ const run = async () => {
   });
   await page.fill('input[type="search"]', '');
 
+  /*
+   * 11d. Leaving the device.
+   *
+   * Last on this page because it ends the session it runs in (the phone below
+   * gets a context of its own). The vault here was never uploaded, which makes
+   * it the case that matters most: signing out must REFUSE, because this is the
+   * only copy there is. Then the deliberate wipe from Advanced, which must take
+   * everything — asserted by reading what is on disk before and after. "The
+   * screen changed" is exactly the check that passed for months while the
+   * encrypted attachment cache and the invite identity sat there untouched.
+   */
+  const onDevice = () =>
+    page.evaluate(async () => {
+      const existing = new Set((await indexedDB.databases()).map((db) => db.name));
+      const count = (name, store) =>
+        existing.has(name)
+          ? new Promise((resolve) => {
+              const request = indexedDB.open(name);
+              request.onsuccess = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(store)) {
+                  db.close();
+                  return resolve(0);
+                }
+                const counted = db.transaction(store, 'readonly').objectStore(store).count();
+                counted.onsuccess = () => {
+                  db.close();
+                  resolve(counted.result);
+                };
+                counted.onerror = () => resolve(-1);
+              };
+              request.onerror = () => resolve(-1);
+            })
+          : Promise.resolve(0);
+      return {
+        cache: localStorage.getItem('keeper.vault.cache.v1') !== null,
+        recentTypes: localStorage.getItem('keeper.recentTypes.v1') !== null,
+        attachments: await count('keeper-attachments', 'ciphertext'),
+        identity: await count('keeper-identity', 'identity'),
+        keystore: await count('keeper-keystore', 'derived'),
+      };
+    });
+
+  const before = await onDevice();
+  console.log(`      (antes de sair: ${JSON.stringify(before)})`);
+  // Without this, every "empty afterwards" below would pass on a device that
+  // never had anything to begin with.
+  await check('antes de sair há mesmo coisas suas neste aparelho', async () =>
+    before.cache && before.recentTypes && before.attachments > 0 && before.identity > 0);
+
+  let refusal = { type: '', message: '' };
+  page.once('dialog', (dialog) => {
+    refusal = { type: dialog.type(), message: dialog.message() };
+    return dialog.accept();
+  });
+  await page.locator('[data-sidebar-footer] [data-sign-out]').click();
+  await page.waitForTimeout(800);
+  await check('sair recusa apagar um cofre que só existe aqui', async () =>
+    refusal.type === 'alert' && refusal.message.includes('nunca foi enviado'));
+  await check('e o cofre continua inteiro depois da recusa', async () =>
+    (await onDevice()).cache && (await page.locator('main li').count()) > 0);
+
+  await openSettings(page, 'Avançado');
+  let warning = '';
+  page.once('dialog', (dialog) => {
+    warning = dialog.message();
+    return dialog.accept();
+  });
+  await page.click('[role="dialog"] button:has-text("Apagar dados deste dispositivo")');
+  await page.waitForSelector('text=Continuar com o Google', { timeout: 10000 });
+  await check('apagar diz que um cofre sem cópia se vai para sempre', async () =>
+    warning.includes('para sempre') && !warning.includes('continua no'));
+
+  const after = await onDevice();
+  console.log(`      (depois de apagar: ${JSON.stringify(after)})`);
+  await check('apagar leva o cofre e o rastro do que foi criado', async () => !after.cache && !after.recentTypes);
+  await check('apagar leva os anexos cifrados guardados no aparelho', async () => after.attachments === 0);
+  await check('apagar leva a identidade de convites deste aparelho', async () => after.identity === 0);
+  await check('apagar leva a chave guardada', async () => after.keystore === 0);
+
   // 12. Mobile: the same vault on a phone-sized, touch-first viewport. A fresh
   // page (fresh context) so the flow is seeded from scratch at 375px.
   const phone = await browser.newPage({

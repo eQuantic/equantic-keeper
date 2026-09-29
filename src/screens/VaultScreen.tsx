@@ -38,6 +38,7 @@ import { PullToSync } from '../components/PullToSync';
 import * as storage from '../lib/storage';
 import { OpenSharedDialog, ensurePickerKey } from '../components/InviteCode';
 import { useCloseOnBack } from '../components/use-close-on-back';
+import { signOutFlow } from '../components/sign-out-flow';
 
 /** A sidebar row: one type in use, or a whole family of them. */
 type SidebarEntry =
@@ -1135,15 +1136,24 @@ export function VaultScreen() {
 
       <div
         data-sidebar-footer
-        className="shrink-0 border-t border-line bg-surface px-3 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:pb-2">
+        className="flex shrink-0 items-center gap-1 border-t border-line bg-surface px-3 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] lg:pb-2">
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-muted transition hover:bg-raised hover:text-ink"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-muted transition hover:bg-raised hover:text-ink"
         >
           <Icon name="settings" size={15} />
           <span className="min-w-0 flex-1 truncate">{account?.email ?? 'Configurações'}</span>
         </button>
+        {/* Beside the account, which is where people look for it. Locking is the
+            padlock in the header; this is the other thing — leaving the device
+            with nothing of yours on it. */}
+        <IconButton
+          icon="logout"
+          label="Sair deste aparelho"
+          data-sign-out
+          onClick={() => void signOutFlow(actions, 'sign-out', provider === 'microsoft' ? 'OneDrive' : 'Google Drive')}
+        />
       </div>
     </nav>
   );

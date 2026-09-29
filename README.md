@@ -45,6 +45,7 @@ is never transmitted, never stored, and cannot be recovered.
 | Google scope | `drive.appdata` (the app's own hidden folder) + email/profile. `drive.file` — files this app created or that the user picked, and nothing else — is asked for only if you move the vault into a folder of your own, or open one shared with you |
 | Sharing | The vault's data key wrapped to a recipient's ECDH public key (ephemeral ECDH + HKDF + AES-GCM). The invite code carries no secret; revoking rotates the data key so a kept copy dies |
 | OAuth token | Short-lived access token, held in memory only |
+| Signing out | *Sair deste aparelho* removes everything of the person's from the browser — vault cache, stored key, encrypted attachment cache, invite identity, account, shared vaults, recent types — and revokes the token. Pending edits are synced first, and it refuses outright to delete a vault that was never uploaded, since that is the only copy. Configuration (client ids) and looks (theme) stay |
 | Clipboard | Automatic clearing (default: 30s) after copying a secret; a wipe that came due while the app was in the background runs as soon as it is visible again — a background tab cannot touch the clipboard |
 | CSP | `default-src 'none'` with a minimal allow-list; no inline scripts; iframe blocked |
 | Search | Never indexes secret values — only name, description, tags and non-sensitive fields |
