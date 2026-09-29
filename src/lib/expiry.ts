@@ -59,10 +59,28 @@ export function endOfPeriod(value: string): string {
   return `${month[1]}-${month[2]}-${String(last).padStart(2, '0')}`;
 }
 
+/**
+ * Calendar days from today to `day`, counted as a person counts them.
+ *
+ * As dates, not as spans of 24 hours. The night the clocks go back is 25 hours
+ * long, and dividing milliseconds by a day made every date past it one day
+ * further away for the first hour after midnight: "expira em 26 dias" for a
+ * document that expires in 25, and a "vence em breve" that disagreed with the
+ * calendar on the wall. The spring change did the mirror image in the last hour
+ * before midnight. Date.UTC has no daylight saving, so both dates are placed
+ * there and subtracted — which counts days and nothing else.
+ *
+ * Today is the local date: a document is valid through the whole of its last
+ * day, wherever the person reading it happens to be.
+ */
 function daysUntil(day: string, now: number): number | null {
-  const end = Date.parse(`${endOfPeriod(day)}T23:59:59`);
-  if (Number.isNaN(end)) return null;
-  return Math.ceil((end - now) / 86_400_000) - 1;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(endOfPeriod(day).trim());
+  if (!match) return null;
+  const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(target)) return null;
+  const today = new Date(now);
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((target - start) / 86_400_000);
 }
 
 export function statusOf(days: number, warningDays: number): ExpiryStatus {
