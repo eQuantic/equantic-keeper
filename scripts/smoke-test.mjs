@@ -1927,6 +1927,45 @@ const run = async () => {
   await page.waitForSelector('text=GitHub PAT', { timeout: 20000 });
 
   /*
+   * 11b2. A lock that lands in the middle of a password change.
+   *
+   * The change derives a key twice (PBKDF2, most of a second each) and only
+   * then writes: the new key into memory, and into the keystore. A lock pressed
+   * during those seconds used to be undone when the change resumed — and the
+   * keystore write also cleared the lock's revocation mark, so the next reload
+   * opened the vault with no password at all.
+   *
+   * Not a race: the click and the lock run in the same synchronous piece of
+   * script, so the lock always lands while the first derivation is pending.
+   */
+  const MID_LOCK_PASSWORD = `${PASSWORD}-durante-o-bloqueio`;
+  await openSettings(page, 'Segurança');
+  await page.click('[role="dialog"] button:has-text("Alterar senha mestra")');
+  await page.locator('[role="dialog"] label:has-text("Senha mestra atual") input').first().fill(PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Nova senha mestra") input').first().fill(MID_LOCK_PASSWORD);
+  await page.locator('[role="dialog"] label:has-text("Confirme a nova senha") input').first().fill(MID_LOCK_PASSWORD);
+  await page.evaluate(() => {
+    const submit = [...document.querySelectorAll('[role="dialog"] button')].find(
+      (button) => button.textContent?.trim() === 'Alterar senha',
+    );
+    submit.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }));
+  });
+  await page.waitForSelector('text=Desbloquear cofre', { timeout: 10000 });
+  // Long enough for both derivations and the seal to finish, had it gone on.
+  await page.waitForTimeout(4000);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+  await check('um bloqueio no meio da troca de senha não é desfeito', async () =>
+    (await page.locator('text=Desbloquear cofre').count()) === 1 &&
+    (await page.locator('text=GitHub PAT').count()) === 0);
+  // Abandoned, not half-done: the old password still opens it.
+  await page.fill('input[type="password"]', PASSWORD);
+  await page.click('button:has-text("Desbloquear")');
+  await page.waitForSelector('text=GitHub PAT', { timeout: 30000 });
+  await check('e a senha continua a antiga, sem troca pela metade', async () => true);
+
+  /*
    * 11c. A passkey, created through the real form.
    *
    * Last on this page because it adds an item, and every count asserted above

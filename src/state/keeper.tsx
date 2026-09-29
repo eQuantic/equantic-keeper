@@ -399,6 +399,21 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     [patch],
   );
 
+  /**
+   * Whether the vault session `keys` came from is still the open one.
+   *
+   * The keys object IS the session: a lock drops it, and every unlock mints a
+   * new one. Anything that awaits and then writes session state asks this
+   * first. Without it, a lock that landed during the await is quietly undone
+   * when the work resumes: the decrypted vault goes back into memory behind the
+   * lock screen — and a password change even wrote its new key to disk, so the
+   * next reload opened the vault with no password at all.
+   *
+   * Writes that describe what is now in the cloud (ids, revisions, ciphertext)
+   * are not session state and still land; only the secrets stay out.
+   */
+  const stillOpen = useCallback((keys: VaultKeys) => keysRef.current === keys, []);
+
   const setPayload = useCallback(
     (payload: VaultPayload | null) => {
       payloadRef.current = payload;
@@ -594,7 +609,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // first, so the vault we write already points at them — the reverse
         // order would publish a reference to a file that does not exist.
         const pushed = await pushPendingAttachments(drive, payload);
-        if (pushed !== payload) setPayload(pushed);
+        // Uploads can take many seconds on a phone, long enough for the
+        // auto-lock to fire. The push still finishes below, from `pushed`;
+        // what must not happen is the decrypted vault going back into memory.
+        if (pushed !== payload && stillOpen(keys)) setPayload(pushed);
 
         const result = await syncVault(
           {
@@ -610,7 +628,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         driveIdRef.current = result.driveFileId;
         revisionRef.current = result.revision;
         fileRef.current = result.file;
-        if (result.merged) setPayload(result.payload);
+        if (result.merged && stillOpen(keys)) setPayload(result.payload);
         storage.saveCachedVault({
           file: result.file,
           driveFileId: result.driveFileId,
@@ -646,7 +664,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         if (!options.silent && !expired) patch({ error: message });
       }
     },
-    [patch, pushPendingAttachments, setPayload],
+    [patch, pushPendingAttachments, setPayload, stillOpen],
   );
 
   const scheduleSync = useCallback(() => {
@@ -872,6 +890,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
           driveFileId: driveIdRef.current,
           knownRevision: revisionRef.current,
         });
+        // Locked while the download was in flight: drop the result whole, ids
+        // and revision included. Keeping those while skipping the merge would
+        // tell the next unlock it already holds a revision it never cached.
+        if (!stillOpen(keys)) return;
         if (remote) {
           driveIdRef.current = remote.driveFileId;
           revisionRef.current = remote.revision;
@@ -887,7 +909,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         patch({ sync: { status: 'error', message } });
       }
     },
-    [patch, persistLocal, scheduleSync, setPayload],
+    [patch, persistLocal, scheduleSync, setPayload, stillOpen],
   );
 
   const unlock = useCallback(
@@ -1002,6 +1024,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(syncTimerRef.current);
     ownSessionRef.current = null;
     derivedRef.current = null;
+    // The data key too, not only the password's. It is the one that opens the
+    // payload and every attachment, and it used to stay in memory until the
+    // next unlock replaced it — usable by anything still running.
+    keysRef.current = null;
     payloadRef.current = null;
     // Nothing of a guest session survives a lock: there is no local copy of
     // someone else's vault to come back to, by design.
@@ -1327,7 +1353,10 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
     async (current: string, next: string) => {
       const file = fileRef.current;
       const payload = payloadRef.current;
-      if (!file || !payload) throw new Error('O cofre precisa estar aberto.');
+      // Taken now, before the first await, and never re-read: the change
+      // belongs to the session it started in.
+      const session = keysRef.current;
+      if (!file || !payload || !session) throw new Error('O cofre precisa estar aberto.');
       patch({ busy: true, error: null });
       try {
         const check = await deriveKey(current, file.kdf);
@@ -1336,11 +1365,18 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         // The content key does not change: only its wrapping does. That is why
         // attachments survive a password change now — their keys hang off the
         // data key, which is exactly the same key before and after.
-        const data = keysRef.current?.data;
-        if (!data) throw new Error('O cofre está bloqueado.');
+        const data = session.data;
         const derived = await deriveKey(next, newKdfParams());
         const keys: VaultKeys = { derived, data };
         const rebuilt = await sealVault(keys, payload);
+        // Two derivations and a seal lie behind this line — seconds, not
+        // milliseconds. Every write below is session state, and one of them
+        // puts a key on disk. A lock that landed in those seconds must stand:
+        // the change is abandoned whole rather than finished into a locked
+        // vault. Nothing has been written yet, so nothing is left half-done.
+        if (!stillOpen(session)) {
+          throw new Error('O cofre foi bloqueado durante a troca. A senha mestra não foi alterada.');
+        }
         derivedRef.current = derived;
         keysRef.current = keys;
         fileRef.current = rebuilt;
@@ -1367,7 +1403,7 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [fail, patch, refreshBiometric, runSync],
+    [fail, patch, refreshBiometric, runSync, stillOpen],
   );
 
   const importBackup = useCallback(
@@ -1643,12 +1679,61 @@ export function KeeperProvider({ children }: { children: ReactNode }) {
       await writeShares(drive, stored, await Promise.all(keep.map((record) => rewrapShare(record, next.data))));
 
       const rotated = { ...payload, items };
-      keysRef.current = next;
-      setPayload(rotated);
-      await persistLocal(rotated);
-      await runSync({ force: true });
+      if (stillOpen(keys)) {
+        keysRef.current = next;
+        setPayload(rotated);
+        await persistLocal(rotated);
+        await runSync({ force: true });
+        return;
+      }
+
+      /*
+       * Locked somewhere in the rotation. Stopping is not an option once the
+       * shares above hold the new key: the vault must follow, or everyone
+       * staying is locked out while future writes keep a key the person just
+       * removed still holds. So it finishes from the values in hand — sealed
+       * and saved straight to the cache, then forced to the cloud — without
+       * touching a single ref: nothing decrypted goes back into memory. The
+       * next unlock opens the rotated vault, since the cache wraps the new key
+       * under the same password.
+       */
+      const sealed = await sealVault(next, rotated);
+      fileRef.current = sealed;
+      storage.saveCachedVault({
+        file: sealed,
+        ...(driveIdRef.current ? { driveFileId: driveIdRef.current } : {}),
+        ...(revisionRef.current ? { driveRevision: revisionRef.current } : {}),
+        cachedAt: new Date().toISOString(),
+      });
+      try {
+        const result = await syncVault(
+          {
+            drive,
+            derived: next.derived,
+            keys: next,
+            driveFileId: driveIdRef.current,
+            knownRevision: revisionRef.current,
+          },
+          rotated,
+          { force: true },
+        );
+        driveIdRef.current = result.driveFileId;
+        revisionRef.current = result.revision;
+        fileRef.current = result.file;
+        storage.saveCachedVault({
+          file: result.file,
+          driveFileId: result.driveFileId,
+          ...(result.revision ? { driveRevision: result.revision } : {}),
+          cachedAt: new Date().toISOString(),
+        });
+        setPending(false);
+      } catch {
+        // Offline, or the session ran out: the cache already holds the rotated
+        // vault, and the first sync after the next unlock carries it up.
+        setPending(true);
+      }
     },
-    [persistLocal, runSync, setPayload],
+    [persistLocal, runSync, setPayload, setPending, stillOpen],
   );
 
   const revokeShare = useCallback(
