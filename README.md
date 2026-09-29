@@ -144,9 +144,14 @@ wraps the vault's master bits into a record kept in `localStorage`.
 
 ## Features
 
-- **12 secret types** with purpose-built fields: API Token, API Client/Secret, Username and
-  password, Container Registry, Cloud/Provider, SSH Key, Database, Variables/`.env`,
+- **13 secret types** with purpose-built fields: API Token, API Client/Secret, Username and
+  password, Passkey, Container Registry, Cloud/Provider, SSH Key, Database, Variables/`.env`,
   Certificate, Webhook, License and Secure note — plus custom fields on any item.
+- **Passkeys are recorded, not stored.** The private half of a passkey never leaves its
+  authenticator, so no vault can hold it and a web page cannot sign with it. What the type
+  keeps is what people lose track of: which account, which authenticator (iCloud, Google,
+  a YubiKey…), which device when it does not sync, and the recovery codes. Search reads the
+  authenticator and the device, so typing `yubikey` lists exactly what that key opens.
 - **46 personal document types**, each with the fields that document actually has:
   - *Portugal*: residence permit (per issuance, with issuing entity, process number and
     validity), Cartão de Cidadão, NIF, NISS, health service number, criminal record,
