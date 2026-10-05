@@ -9,4 +9,7 @@ dev-dist
 .vite
 coverage
 *.log
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/commands/
